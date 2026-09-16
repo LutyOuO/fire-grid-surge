@@ -1,0 +1,8 @@
+{
+  "name": "fire-grid-surge",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "test": "node run-tests.cjs"
+  }
+}
