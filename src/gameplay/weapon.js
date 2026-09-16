@@ -645,7 +645,12 @@
     range: CONFIG.CONTENT.FLAME.RANGE,
     burnLife: CONFIG.BALANCE.FLAME_BURN_DURATION,
     burns: [],
+    patches: [],
     visual: 0,
+    napalm: false,
+    backdraft: false,
+    inferno: false,
+    infernoTimer: 0,
     init: function () {
       this.burns.length = 0;
       for (var i = 0; i < CONFIG.ENEMY.POOL_SIZE; i++) this.burns.push({
@@ -653,6 +658,8 @@
         time: 0,
         tick: 0
       });
+      this.patches.length = 0;
+      for (var p = 0; p < 8; p++) this.patches.push({ active: false, x: 0, y: 0, r: 70, t: 0, life: 3 });
     },
     reset: function () {
       this.unlocked = false;
@@ -663,7 +670,12 @@
       this.range = CONFIG.CONTENT.FLAME.RANGE;
       this.burnLife = CONFIG.BALANCE.FLAME_BURN_DURATION;
       this.visual = 0;
+      this.napalm = false;
+      this.backdraft = false;
+      this.inferno = false;
+      this.infernoTimer = 0;
       for (var i = 0; i < this.burns.length; i++) this.burns[i].active = false;
+      for (var p = 0; p < this.patches.length; p++) this.patches[p].active = false;
     },
     update: function (dt) {
       for (var i = 0; i < this.burns.length; i++) {
@@ -687,6 +699,44 @@
       if (this.timer <= 0) {
         this.timer = .1 / (this.rate * (1 + (root.W8 && root.W8.rateBonusFor ? root.W8.rateBonusFor('flame') : 0)));
         this.fire();
+      }
+      this.updatePatches(dt);
+      if (this.inferno && this.visual > 0) {
+        this.infernoTimer -= dt;
+        if (this.infernoTimer <= 0) {
+          this.infernoTimer = 2;
+          var src = Combat.killSource;
+          Combat.killSource = 'flame';
+          for (var i = 0; i < Enemy.pool.length; i++) {
+            var e = Enemy.pool[i];
+            if (!e.active) continue;
+            var dx = e.x - Player.x, dy = e.y - Player.y;
+            if (dx * dx + dy * dy <= 90 * 90) Combat.hitEnemy(e, CONFIG.CONTENT.FLAME.DAMAGE * this.damageMul * 0.6, e.x, e.y);
+          }
+          Combat.killSource = src;
+          Player.hp = Math.min(Player.maxHp, Player.hp + Player.maxHp * 0.04);
+        }
+      }
+    },
+    updatePatches: function (dt) {
+      var dps = CONFIG.CONTENT.FLAME.DAMAGE * this.damageMul * 0.08;
+      for (var i = 0; i < this.patches.length; i++) {
+        var p = this.patches[i];
+        if (!p.active) continue;
+        p.t += dt;
+        if (p.t >= p.life) {
+          p.active = false;
+          continue;
+        }
+        var src = Combat.killSource;
+        Combat.killSource = 'flame';
+        for (var j = 0; j < Enemy.pool.length; j++) {
+          var e = Enemy.pool[j];
+          if (!e.active) continue;
+          var dx = e.x - p.x, dy = e.y - p.y;
+          if (dx * dx + dy * dy <= p.r * p.r) Combat.hitEnemyFixed(e, dps * dt, e.x, e.y);
+        }
+        Combat.killSource = src;
       }
     },
     fire: function () {
@@ -714,6 +764,30 @@
         }
       }
       root.Combat.killSource = '';
+      if (this.napalm) {
+        for (var p = 0; p < this.patches.length; p++) if (!this.patches[p].active) {
+          var patch = this.patches[p];
+          patch.active = true;
+          patch.x = Player.x + Math.cos(a) * this.range * 0.7;
+          patch.y = Player.y + Math.sin(a) * this.range * 0.7;
+          patch.r = 70;
+          patch.t = 0;
+          patch.life = 3;
+          break;
+        }
+      }
+      if (this.backdraft) {
+        var bx = Player.x + Math.cos(a) * this.range, by = Player.y + Math.sin(a) * this.range;
+        root.Combat.killSource = 'flame';
+        for (var i = 0; i < Enemy.pool.length; i++) {
+          var e = Enemy.pool[i];
+          if (!e.active) continue;
+          var dx = e.x - bx, dy = e.y - by;
+          if (dx * dx + dy * dy <= 70 * 70) Combat.hitEnemy(e, CONFIG.CONTENT.FLAME.DAMAGE * this.damageMul * 0.4, e.x, e.y);
+        }
+        root.Combat.killSource = '';
+        if (root.FX) root.FX.burst(bx, by);
+      }
       for (var i = 0; i < this.burns.length; i++) if (this.burns[i].active) {
         this.burns[i].time = CONFIG.BALANCE.FLAME_BURN_DURATION;
         this.burns[i].tick = Math.min(this.burns[i].tick, CONFIG.BALANCE.FLAME_BURN_TICK);
@@ -759,6 +833,17 @@
         }
         ctx.restore();
       }
+      for (var pi = 0; pi < this.patches.length; pi++) {
+        var patch = this.patches[pi];
+        if (!patch.active) continue;
+        ctx.save();
+        ctx.globalAlpha = 0.35 * (1 - patch.t / patch.life);
+        ctx.fillStyle = '#ff6928';
+        ctx.beginPath();
+        ctx.ellipse(patch.x - Camera.x, patch.y - Camera.y, patch.r, patch.r * 0.55, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
     },
     // 火焰扇形底层。
     drawCone: function (ctx) {
@@ -791,6 +876,10 @@
     count: 1,
     decay: CONFIG.CONTENT.CROSSBOW.DECAY,
     crit: 0,
+    piledriver: false,
+    pileBonus: 0,
+    scatter: false,
+    marksman: false,
     arrows: [],
     init: function () {
       for (var i = 0; i < CONFIG.CONTENT.CROSSBOW.POOL; i++) this.arrows.push({
@@ -802,7 +891,10 @@
         damage: 0,
         angle: 0,
         hitIds: [],
-        hitCount: 0
+        hitCount: 0,
+        life: 1,
+        scatter: false,
+        firstDist: 0
       });
     },
     reset: function () {
@@ -813,24 +905,33 @@
       this.count = 1;
       this.decay = CONFIG.CONTENT.CROSSBOW.DECAY;
       this.crit = 0;
+      this.piledriver = false;
+      this.pileBonus = 0;
+      this.scatter = false;
+      this.marksman = false;
       for (var i = 0; i < this.arrows.length; i++) {
         this.arrows[i].active = false;
         this.arrows[i].hitCount = 0;
       }
     },
-    spawn: function (a) {
+    spawn: function (a, opts) {
+      opts = opts || {};
       for (var i = 0; i < this.arrows.length; i++) {
         var b = this.arrows[i];
         if (b.active) continue;
         b.active = true;
-        b.x = Player.x;
-        b.y = Player.y;
-        b.vx = Math.cos(a) * 700;
-        b.vy = Math.sin(a) * 700;
+        b.x = opts.x != null ? opts.x : Player.x;
+        b.y = opts.y != null ? opts.y : Player.y;
+        var spd = opts.speed || 700;
+        b.vx = Math.cos(a) * spd;
+        b.vy = Math.sin(a) * spd;
         b.angle = a;
-        b.damage = this.damage;
+        b.damage = this.damage * (1 + (this.pileBonus || 0));
         b.hitCount = 0;
-        return;
+        b.life = opts.life || 2;
+        b.scatter = !!opts.scatter;
+        b.firstDist = 0;
+        return b;
       }
     },
     fire: function () {
@@ -852,7 +953,9 @@
         if (!b.active) continue;
         b.x += b.vx * dt;
         b.y += b.vy * dt;
-        if (b.x < 0 || b.x > CONFIG.WORLD.WIDTH || b.y < 0 || b.y > CONFIG.WORLD.HEIGHT) {
+        b.life -= dt;
+        if (b.life <= 0 || b.x < 0 || b.x > CONFIG.WORLD.WIDTH || b.y < 0 || b.y > CONFIG.WORLD.HEIGHT) {
+          if (this.scatter && !b.scatter) this.splitBolt(b);
           b.active = false;
           continue;
         }
@@ -865,21 +968,32 @@
           if (dx * dx + dy * dy <= r * r) {
             b.hitIds[b.hitCount++] = e.spawnId;
             var d = b.damage * (1 + (root.W8 && root.W8.dmgBonusFor ? root.W8.dmgBonusFor('crossbow') : 0)) * (1 + Player.globalDamageBonus) * (1 + Meta.getEffectTotal('WEAPON_DAMAGE'));
-            if (Math.random() < Player.critChance + this.crit) d *= CONFIG.PLAYER.CRIT_MULTIPLIER + Player.critDamageBonus;
+            var dist = Math.hypot(e.x - Player.x, e.y - Player.y);
+            var crit = Math.random() < Player.critChance + this.crit;
+            if (this.marksman && b.hitCount === 1 && dist > 420) {
+              crit = true;
+              d *= CONFIG.PLAYER.CRIT_MULTIPLIER + Player.critDamageBonus + 0.5;
+            } else if (crit) d *= CONFIG.PLAYER.CRIT_MULTIPLIER + Player.critDamageBonus;
             root.Combat.killSource = 'bow';
             Combat.hitEnemyFixed(e, d, e.x, e.y);
             root.Combat.killSource = '';
             b.damage *= Math.max(0, 1 - this.decay);
+            if (this.piledriver) this.pileBonus = Math.min(0.6, this.pileBonus + 0.12);
           }
         }
       }
       for (var i = 0; i < this.arrows.length; i++) {
         var b = this.arrows[i];
         if (b.active && root.WallCollision.inside(b.x, b.y, 8)) {
+          if (this.scatter && !b.scatter) this.splitBolt(b);
           b.active = false;
           b.hitCount = 0;
         }
       }
+    },
+    splitBolt: function (b) {
+      this.spawn(b.angle - 0.4, { x: b.x, y: b.y, speed: 420, life: 0.35, scatter: true });
+      this.spawn(b.angle + 0.4, { x: b.x, y: b.y, speed: 420, life: 0.35, scatter: true });
     },
     wasHit: function (b, id) {
       for (var i = 0; i < b.hitCount; i++) if (b.hitIds[i] === id) return true;

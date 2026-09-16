@@ -536,4 +536,111 @@ var MortarExplosionFX = {
     }
   };
 root.MortarExplosionFX = MortarExplosionFX;
+  var TeslaArcFX = {
+    pool: [],
+    init: function () {
+      this.pool.length = 0;
+      for (var i = 0; i < CONFIG.TURRETS.KINDS.tesla.POOL_ARCS; i++) {
+        this.pool.push({ active: false, x1: 0, y1: 0, x2: 0, y2: 0, age: 0, life: 0.18, seed: i * 13.7 });
+      }
+    },
+    reset: function () {
+      for (var i = 0; i < this.pool.length; i++) this.pool[i].active = false;
+    },
+    spawn: function (x1, y1, x2, y2) {
+      var e = this.pool[0];
+      for (var i = 0; i < this.pool.length; i++) if (!this.pool[i].active) {
+        e = this.pool[i];
+        break;
+      }
+      e.active = true;
+      e.x1 = x1;
+      e.y1 = y1;
+      e.x2 = x2;
+      e.y2 = y2;
+      e.age = 0;
+      e.life = 0.18;
+      e.seed = (e.seed + 19.1) % 997;
+    },
+    update: function (dt) {
+      for (var i = 0; i < this.pool.length; i++) {
+        var e = this.pool[i];
+        if (!e.active) continue;
+        e.age += dt;
+        if (e.age >= e.life) e.active = false;
+      }
+    },
+    draw: function (ctx) {
+      for (var i = 0; i < this.pool.length; i++) {
+        var e = this.pool[i];
+        if (!e.active) continue;
+        var a = 1 - e.age / e.life;
+        ctx.save();
+        ctx.strokeStyle = '#c8fbff';
+        ctx.globalAlpha = a;
+        ctx.lineWidth = 3;
+        ctx.shadowColor = CONFIG.COLORS.TESLA;
+        ctx.shadowBlur = 10;
+        ctx.beginPath();
+        ctx.moveTo(e.x1 - Camera.x, e.y1 - Camera.y);
+        var mx = (e.x1 + e.x2) / 2, my = (e.y1 + e.y2) / 2;
+        var nx = e.y2 - e.y1, ny = e.x1 - e.x2, nlen = Math.hypot(nx, ny) || 1;
+        mx += nx / nlen * Math.sin(e.seed) * 18;
+        my += ny / nlen * Math.cos(e.seed) * 18;
+        ctx.lineTo(mx - Camera.x, my - Camera.y);
+        ctx.lineTo(e.x2 - Camera.x, e.y2 - Camera.y);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  };
+  var FrostPatchFX = {
+    pool: [],
+    init: function () {
+      this.pool.length = 0;
+      for (var i = 0; i < CONFIG.TURRETS.KINDS.frost.POOL_PATCHES; i++) {
+        this.pool.push({ active: false, x: 0, y: 0, r: 0, age: 0, life: 2.4 });
+      }
+    },
+    reset: function () {
+      for (var i = 0; i < this.pool.length; i++) this.pool[i].active = false;
+    },
+    spawn: function (x, y, r, life) {
+      var e = this.pool[0];
+      for (var i = 0; i < this.pool.length; i++) if (!this.pool[i].active) {
+        e = this.pool[i];
+        break;
+      }
+      e.active = true;
+      e.x = x;
+      e.y = y;
+      e.r = r;
+      e.age = 0;
+      e.life = life || 2.4;
+    },
+    update: function (dt) {
+      for (var i = 0; i < this.pool.length; i++) {
+        var e = this.pool[i];
+        if (!e.active) continue;
+        e.age += dt;
+        if (e.age >= e.life) e.active = false;
+      }
+    },
+    draw: function (ctx) {
+      for (var i = 0; i < this.pool.length; i++) {
+        var e = this.pool[i];
+        if (!e.active) continue;
+        ctx.save();
+        ctx.globalAlpha = 0.2 * (1 - e.age / e.life);
+        ctx.strokeStyle = '#d8f4ff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(e.x - Camera.x, e.y - Camera.y, e.r * 0.85, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  };
+  root.TeslaArcFX = TeslaArcFX;
+  root.FrostPatchFX = FrostPatchFX;
 })();

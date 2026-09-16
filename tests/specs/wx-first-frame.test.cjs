@@ -198,15 +198,15 @@ global.Input.pendingTap.y = global.CONFIG.UI.BASE_LIST_Y + global.CONFIG.UI.BASE
 global.Game.updateBase(0.016);
 if (global.Meta.getGadgetLevel('medkit', 'heal') !== healBefore + 1) throw new Error('道具强化购买热区错误');
 
-// v004：82张命运牌必须完整、编号唯一、品质数量与文档一致。
-if (!global.FateCards || global.FateCards.defs.length !== 82) throw new Error('命运牌池不是82张');
+// v004：86张命运牌必须完整、编号唯一、品质数量与文档一致。
+if (!global.FateCards || global.FateCards.defs.length !== 86) throw new Error('命运牌池不是86张');
 var cardIds = Object.create(null), cardRarity = { COMMON: 0, RARE: 0, EPIC: 0, LEGENDARY: 0 };
 global.FateCards.defs.forEach(function (d) {
   if (cardIds[d[0]]) throw new Error('命运牌编号重复: ' + d[0]);
   cardIds[d[0]] = true; cardRarity[d[3]] += 1;
 });
-if (cardRarity.COMMON !== 35 || cardRarity.RARE !== 25 ||
-    cardRarity.EPIC !== 15 || cardRarity.LEGENDARY !== 7) throw new Error('命运牌品质池数量错误');
+if (cardRarity.COMMON !== 35 || cardRarity.RARE !== 27 ||
+    cardRarity.EPIC !== 17 || cardRarity.LEGENDARY !== 7) throw new Error('命运牌品质池数量错误');
 
 // v007：非法渐变参数必须被钳制和回退，连续300次抽取升级不得异常。
 var stops = [];
@@ -285,4 +285,4 @@ for (var stress = 0; stress < 6000; stress++) {
   }
 }
 
-console.log('PASS: 首帧、双指、四档升级、82张命运牌、DEV与5分钟压力模拟均正常。');
+console.log('PASS: 首帧、双指、四档升级、86张命运牌、DEV与5分钟压力模拟均正常。');

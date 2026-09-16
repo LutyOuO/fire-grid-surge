@@ -269,7 +269,7 @@
       UI.drawActionButton(ctx, 24, 34 + top, 132, 62, '返回', true, 22);
       trophy(ctx, 375, 92 + top, 26);
       UI.drawCenteredText(ctx, '成就', 142 + top, 46, true, '#f4d58d');
-      UI.drawCenteredText(ctx, '已完成 ' + Meta.data.achievements.completed.length + ' / 29', 184 + top, 18, false, '#ffd54a');
+      UI.drawCenteredText(ctx, '已完成 ' + Meta.data.achievements.completed.length + ' / ' + CONFIG.CONTENT.ACHIEVEMENT_COUNT, 184 + top, 18, false, '#ffd54a');
       for (var i = 0; i < this.categories.length; i++) {
         var x = 18 + i * 120,
           y = 214 + top,

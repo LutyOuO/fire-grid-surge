@@ -516,8 +516,8 @@
             AMOUNT: 2
           }]
         },
-        mortar: {
-          NAME: '迫击炮空袭',
+        turret_mortar: {
+          NAME: '迫击炮台',
           items: [{
             ID: 'damage',
             NAME: '高爆弹头',
@@ -528,7 +528,7 @@
           }, {
             ID: 'count',
             NAME: '密集轰炸',
-            DESC: '炮弹数量 +1',
+            DESC: '齐射炮弹 +1',
             BASE: 120,
             MAX_LEVEL: 3,
             AMOUNT: 1
@@ -553,6 +553,84 @@
             BASE: 400,
             MAX_LEVEL: 1,
             AMOUNT: 2
+          }]
+        },
+        turret_tesla: {
+          NAME: '电弧塔',
+          items: [{
+            ID: 'dmg',
+            NAME: '高压线圈',
+            DESC: '电弧伤害 +15%',
+            BASE: 80,
+            MAX_LEVEL: 5,
+            AMOUNT: 0.15
+          }, {
+            ID: 'chain',
+            NAME: '连锁跃迁',
+            DESC: '连锁跳数 +1',
+            BASE: 140,
+            MAX_LEVEL: 2,
+            AMOUNT: 1
+          }, {
+            ID: 'range',
+            NAME: '电网延伸',
+            DESC: '射程 +40px',
+            BASE: 70,
+            MAX_LEVEL: 3,
+            AMOUNT: 40
+          }, {
+            ID: 'rate',
+            NAME: '过载频率',
+            DESC: '射击间隔 -10%',
+            BASE: 100,
+            MAX_LEVEL: 3,
+            AMOUNT: 0.1
+          }, {
+            ID: 'storm',
+            NAME: '雷暴领域',
+            DESC: '每8发在主目标处半径80爆炸',
+            BASE: 380,
+            MAX_LEVEL: 1,
+            AMOUNT: 80
+          }]
+        },
+        turret_frost: {
+          NAME: '霜冻塔',
+          items: [{
+            ID: 'slow',
+            NAME: '深度冻结',
+            DESC: '冻土减速再 -8%',
+            BASE: 70,
+            MAX_LEVEL: 3,
+            AMOUNT: 0.08
+          }, {
+            ID: 'patch',
+            NAME: '冻土扩张',
+            DESC: '冻土半径 +20px',
+            BASE: 70,
+            MAX_LEVEL: 3,
+            AMOUNT: 20
+          }, {
+            ID: 'duration',
+            NAME: '永冻层',
+            DESC: '冻土持续 +0.5s',
+            BASE: 80,
+            MAX_LEVEL: 3,
+            AMOUNT: 0.5
+          }, {
+            ID: 'damage',
+            NAME: '冰刺',
+            DESC: '冰球伤害 +20%',
+            BASE: 80,
+            MAX_LEVEL: 5,
+            AMOUNT: 0.2
+          }, {
+            ID: 'shatter',
+            NAME: '碎冰',
+            DESC: '冻结目标受迫击伤害 +25%',
+            BASE: 360,
+            MAX_LEVEL: 1,
+            AMOUNT: 0.25
           }]
         }
       }
@@ -1402,14 +1480,15 @@
       WAVE_NOTICE: function (n) {
         return '第 ' + n + ' 波 · 敌群来袭';
       },
+      BOSS_SUMMON_BANNER: '分身炮台已展开',
       DEBUG_LINE: function (fps, e, b, p, d) {
         return 'FPS ' + fps + ' | 敌 ' + e + ' | 弹 ' + b + ' | 粒 ' + p + ' | 字 ' + d;
       },
-      TURRET_ACTIVATE: '站立激活迫击炮 · 支援 60 秒',
+      TURRET_ACTIVATE: '站立激活炮台 · 支援 60 秒',
       TURRET_READY: '站立 3 秒激活',
       TURRET_SPENT: '冷却中',
       FIELD_STATUS: function (turrets) {
-        return '炮塔支援 ' + turrets;
+        return '炮台支援 ' + turrets;
       },
       LOOT_NOTICE: function (t) {
         return 'Boss 已击败 · 安全拾取 ' + Math.ceil(t) + ' 秒';
@@ -1419,12 +1498,12 @@
       },
       // 营地 Tab / 道具强化
       BASE_TAB_CHARACTER: '角色强化',
-      BASE_TAB_GADGET: '道具强化',
+      BASE_TAB_GADGET: '炮台强化',
       GADGET_LOCKED: '局内拾取后解锁',
-      GADGET_TAB_HINT: '强化对应战术道具，购买后永久生效',
+      GADGET_TAB_HINT: '强化战场炮台，购买后永久生效',
       BASE_CHARACTER_SECTION: '生存者训练',
       BASE_CHARACTER_HINT: '永久属性 · 下一局开始时生效',
-      BASE_GADGET_HINT: '战术道具专项改造 · 左右切换装备',
+      BASE_GADGET_HINT: '迫击 / 电弧 / 霜冻 · 左右切换',
       BASE_PAGE: function (page, total) {
         return '第 ' + page + ' / ' + total + ' 页';
       },
@@ -1614,6 +1693,8 @@
     BOSS_HP: 18000,
     BOSS_DAMAGE: 80,
     BOSS_NORMAL_QUOTA_RATIO: .55,
+    DUAL_BOSS_WAVE: 20,
+    DUAL_RANGED_HP: .7,
     BOMB_RADIUS: 200,
     BOMB_ELITE_MULTIPLIER: 80,
     BOMB_BOSS_CURRENT_HP_RATIO: .15,
@@ -1666,7 +1747,7 @@
       DECAY: 0.1,
       POOL: 48
     },
-    ACHIEVEMENT_COUNT: 29,
+    ACHIEVEMENT_COUNT: 35,
     OUTFIT_COUNT: 12,
     SKIN_COUNT: 17
   };
@@ -1817,4 +1898,158 @@
     AMOUNT: 1
   }];
   CONFIG.TEXT.ENTER_FATE = '进入命运抽取';
+
+  CONFIG.TURRETS = {
+    SHARED: {
+      ACTIVATE_RADIUS: 140,
+      CHARGE_TIME: 3,
+      DURATION: 60,
+      COOLDOWN: 60,
+      PROMPT_RANGE: 480
+    },
+    KINDS: {
+      mortar: {
+        INTERVAL: 1.8,
+        RANGE: 950,
+        DAMAGE: 600,
+        FLIGHT: 0.8,
+        RADIUS: 150,
+        BURN_DURATION: 3,
+        POOL: 32
+      },
+      tesla: {
+        INTERVAL: 0.55,
+        RANGE: 420,
+        DAMAGE: 90,
+        CHAIN: 3,
+        CHAIN_RANGE: 160,
+        FALLOFF: 0.7,
+        STUN: 0.15,
+        POOL_ARCS: 24,
+        STORM_EVERY: 8,
+        STORM_RADIUS: 80
+      },
+      frost: {
+        INTERVAL: 1.2,
+        RANGE: 520,
+        DAMAGE: 70,
+        ORB_SPEED: 280,
+        PATCH_RADIUS: 110,
+        PATCH_LIFE: 2.4,
+        SLOW: 0.45,
+        FREEZE: 0.4,
+        SHATTER: 0.25,
+        POOL_ORBS: 16,
+        POOL_PATCHES: 12
+      }
+    }
+  };
+  CONFIG.FIELD.LAYOUTS = [{
+    id: 'cross_ruin',
+    extract: { x: 1200, y: 1200, r: 120 },
+    walls: [
+      { x: 480, y: 500, w: 270, h: 90, kind: 'concrete' },
+      { x: 1580, y: 520, w: 110, h: 300, kind: 'container' },
+      { x: 560, y: 1440, w: 100, h: 280, kind: 'container' },
+      { x: 1460, y: 1490, w: 300, h: 90, kind: 'concrete' },
+      { x: 970, y: 780, w: 230, h: 80, kind: 'concrete' },
+      { x: 1000, y: 1980, w: 300, h: 95, kind: 'rubble' }
+    ],
+    turrets: [
+      { x: 1040, y: 1120, kind: 'mortar' },
+      { x: 1820, y: 1160, kind: 'tesla' },
+      { x: 920, y: 1790, kind: 'frost' }
+    ]
+  }, {
+    id: 'ring_street',
+    extract: { x: 1200, y: 1200, r: 120 },
+    walls: [
+      { x: 360, y: 340, w: 1680, h: 70, kind: 'concrete' },
+      { x: 360, y: 1990, w: 1680, h: 70, kind: 'concrete' },
+      { x: 360, y: 680, w: 80, h: 1040, kind: 'container' },
+      { x: 1960, y: 680, w: 80, h: 1040, kind: 'container' },
+      { x: 780, y: 1080, w: 200, h: 70, kind: 'rubble' },
+      { x: 1420, y: 1250, w: 200, h: 70, kind: 'rubble' }
+    ],
+    turrets: [
+      { x: 1200, y: 500, kind: 'tesla' },
+      { x: 500, y: 1200, kind: 'frost' },
+      { x: 1880, y: 1780, kind: 'mortar' }
+    ]
+  }, {
+    id: 'slash_yard',
+    extract: { x: 1180, y: 1260, r: 120 },
+    walls: [
+      { x: 180, y: 720, w: 920, h: 80, kind: 'concrete' },
+      { x: 1280, y: 880, w: 80, h: 920, kind: 'container' },
+      { x: 380, y: 1520, w: 720, h: 80, kind: 'concrete' },
+      { x: 1580, y: 380, w: 540, h: 80, kind: 'rubble' },
+      { x: 860, y: 380, w: 80, h: 520, kind: 'container' },
+      { x: 1680, y: 1620, w: 420, h: 90, kind: 'rubble' }
+    ],
+    turrets: [
+      { x: 2080, y: 620, kind: 'mortar' },
+      { x: 680, y: 1040, kind: 'tesla' },
+      { x: 1480, y: 1980, kind: 'frost' }
+    ]
+  }];
+  CONFIG.FIELD.WALLS = CONFIG.FIELD.LAYOUTS[0].walls;
+  CONFIG.FIELD.TURRETS = CONFIG.FIELD.LAYOUTS[0].turrets;
+  CONFIG.EVENTS = {
+    FIRST_DELAY: 45,
+    INTERVAL_MIN: 45,
+    INTERVAL_MAX: 70,
+    CONCURRENT: 1,
+    KINDS: {
+      airdrop: { MIN_WAVE: 2, DURATION: 16, LAND: 6, GEMS: 8, MAX_PER_RUN: 3, BANNER: '空投坐标已标记', WEIGHT: 3 },
+      elite_rush: { MIN_WAVE: 3, DURATION: 20, EXTRA_ELITES: 2, BANNER: '精英坐标已暴露', WEIGHT: 3 },
+      grid_surge: { MIN_WAVE: 3, DURATION: 14, STRIPS: 2, WIDTH: 40, DPS: 8, BANNER: '网格过载 避开电带', WEIGHT: 2 },
+      sanctuary: { MIN_WAVE: 4, DURATION: 12, HEAL: 2, BANNER: '撤离点灯柱启动', WEIGHT: 2 }
+    }
+  };
+  CONFIG.AFFIXES = {
+    ROLL_DOUBLE_WAVE: 8,
+    DEFS: {
+      swift: { NAME: '迅捷', SPEED: 1.45 },
+      shield: { NAME: '护盾', RATIO: 0.35 },
+      blast: { NAME: '自爆', DELAY: 0.6, RADIUS: 90, DAMAGE: 18 },
+      split: { NAME: '分裂', COUNT: 2, HP: 0.4, GEMS: 2 },
+      gunner: { NAME: '载弹', INTERVAL: 2.8, SPEED: 90, DAMAGE: 12, RADIUS: 10 }
+    },
+    MUTEX: [['shield', 'blast']],
+    POOL: ['swift', 'blast', 'shield', 'split', 'gunner']
+  };
+  CONFIG.FATE_MUTEX = [['AMMO_START', 'BAREHANDS'], ['BLOOD_TAX', 'IRON_WALL']];
+  CONFIG.COLORS.TESLA = '#5ad4e6';
+  CONFIG.COLORS.FROST = '#8eb4d4';
+  CONFIG.COLORS.AIRDROP = '#e9ad58';
+  CONFIG.COLORS.WAVE_THEME = '#e9ad58';
+  CONFIG.BOSS_MELEE = {
+    CHARGE_WARN: 1.2,
+    CHARGE_SPEED: 340,
+    CHARGE_DURATION: 0.85,
+    CHARGE_COOLDOWN: 5.5,
+    CHARGE_RANGE_MIN: 160,
+    CHARGE_RANGE_MAX: 780,
+    CHARGE_DAMAGE_MUL: 1.5,
+    AIM_LINE_WIDTH: 4
+  };
+  CONFIG.BOSS_SUMMON = {
+    HP_RATIO: 0.5,
+    COUNT: 2,
+    RADIUS: 22,
+    HP: 220,
+    INTERVAL: 2.2,
+    CHARGE_TIME: 0.9,
+    OFFSET: 110,
+    CONTACT: 12
+  };
+  CONFIG.WAVE_THEMES = {
+    WAVES: [4, 7, 11, 14],
+    KINDS: {
+      burn_night: { NAME: '燃烧夜', LABEL: '燃烧夜 · 快跑者过密', RUNNER: 1.4 },
+      iron_tide: { NAME: '铁壁潮', LABEL: '铁壁潮 · 重甲推进', TANK: 1.5, WALKER: 0.7 },
+      silent_hunt: { NAME: '静默猎杀', LABEL: '静默猎杀 · 精英提前', INTERVAL: 1.2, ELITE: 1 }
+    }
+  };
 })();

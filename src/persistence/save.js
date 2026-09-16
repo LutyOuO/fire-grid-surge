@@ -79,7 +79,8 @@
         achievements: {
           completed: [],
           progress: {}
-        }
+        },
+        runs: 0
       };
     },
     createDefaultGadget: function () {
@@ -115,6 +116,7 @@
       this.data.bestWave = this.safeInt(saved.bestWave, 0);
       this.data.bestTime = this.safeNumber(saved.bestTime, 0);
       this.data.bestKills = this.safeInt(saved.bestKills, 0);
+      this.data.runs = this.safeInt(saved.runs, 0);
       this.pendingOfflineCoins = this.safeInt(saved.pendingOfflineCoins, 0);
       this.pendingOfflineMinutes = Math.min(CONFIG.META.OFFLINE_MAX_HOURS * 60, this.safeInt(saved.pendingOfflineMinutes, 0));
       this.data.lastOfflineTs = this.safeTimestamp(saved.lastOfflineTs, Date.now());
@@ -173,6 +175,7 @@
       // 道具升级（upg.gadget{}）安全合并，缺失项默认 0
       this.data.upg.gadget = this.createDefaultGadget();
       var savedGadget = savedUpgrades.gadget && typeof savedUpgrades.gadget === 'object' ? savedUpgrades.gadget : {};
+      if (savedGadget.mortar && !savedGadget.turret_mortar) savedGadget.turret_mortar = savedGadget.mortar;
       for (var gadgetId in CONFIG.META.GADGET_UPGRADES) {
         var items = CONFIG.META.GADGET_UPGRADES[gadgetId].items;
         var savedG = savedGadget[gadgetId] && typeof savedGadget[gadgetId] === 'object' ? savedGadget[gadgetId] : {};
@@ -262,6 +265,7 @@
       this.data.bestTime = Math.max(this.data.bestTime, seconds);
       this.data.bestKills = Math.max(this.data.bestKills, kills);
       this.data.bestWave = Math.max(this.data.bestWave, wave);
+      this.data.runs = (this.data.runs || 0) + 1;
       this.save();
       this.recordRunAchievements(seconds, kills, wave, coins);
     },

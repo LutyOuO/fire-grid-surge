@@ -149,6 +149,8 @@
       root.Crossbow.init();
       root.MortarFX.init();
       root.MortarExplosionFX.init();
+      if (root.TeslaArcFX) root.TeslaArcFX.init();
+      if (root.FrostPatchFX) root.FrostPatchFX.init();
       root.Bullet.initPool();
       Experience.initPool();
       CoinDrops.initPool();
@@ -204,6 +206,7 @@
       root.WeaponProgress.selected = Meta.data.selectedWeapon || 'pistol';
       root.applyEquippedLooks();
       root.Field.reset();
+      if (root.BattleEvents) root.BattleEvents.reset();
       FX.reset();
       this.state = CONFIG.GAME.STATE_PLAYING;
       this.exitType = 'death';
@@ -383,6 +386,7 @@
       }
       if (this.state === CONFIG.GAME.STATE_PLAYING) {
         root.Field.update(dt);
+        if (root.BattleEvents) root.BattleEvents.update(dt);
         root.FlameWeapon.update(dt);
         root.Crossbow.update(dt);
         var objectives = root.Objectives,

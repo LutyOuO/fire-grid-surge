@@ -145,6 +145,48 @@
       EFFECT: 'BOW_CRIT',
       MAX_LEVEL: 3,
       weapon: 'crossbow'
+    }, {
+      ID: 'NAPALM',
+      TEXT_KEY: 'NAPALM',
+      RARITY: 'EPIC',
+      EFFECT: 'NAPALM',
+      MAX_LEVEL: 1,
+      weapon: 'flamer'
+    }, {
+      ID: 'BACKDRAFT',
+      TEXT_KEY: 'BACKDRAFT',
+      RARITY: 'EPIC',
+      EFFECT: 'BACKDRAFT',
+      MAX_LEVEL: 1,
+      weapon: 'flamer'
+    }, {
+      ID: 'INFERNO',
+      TEXT_KEY: 'INFERNO',
+      RARITY: 'LEGENDARY',
+      EFFECT: 'INFERNO',
+      MAX_LEVEL: 1,
+      weapon: 'flamer'
+    }, {
+      ID: 'PILEDRIVER',
+      TEXT_KEY: 'PILEDRIVER',
+      RARITY: 'EPIC',
+      EFFECT: 'PILEDRIVER',
+      MAX_LEVEL: 1,
+      weapon: 'crossbow'
+    }, {
+      ID: 'SCATTER_BOLT',
+      TEXT_KEY: 'SCATTER_BOLT',
+      RARITY: 'EPIC',
+      EFFECT: 'SCATTER_BOLT',
+      MAX_LEVEL: 1,
+      weapon: 'crossbow'
+    }, {
+      ID: 'MARKSMAN',
+      TEXT_KEY: 'MARKSMAN',
+      RARITY: 'LEGENDARY',
+      EFFECT: 'MARKSMAN',
+      MAX_LEVEL: 1,
+      weapon: 'crossbow'
     }];
     for (var ai = 0; ai < additions.length; ai++) CONFIG.UPGRADES.DEFINITIONS.push(additions[ai]);
     var names = {
@@ -159,7 +201,13 @@
       BOW_RATE: ['快速装填', '弩箭攻速 +15%'],
       BOW_COUNT: ['连弩', '弩箭数量 +1'],
       BOW_DECAY: ['穿透强化', '穿透衰减 -10%'],
-      BOW_CRIT: ['重击', '弩箭暴击率 +10%']
+      BOW_CRIT: ['重击', '弩箭暴击率 +10%'],
+      NAPALM: ['凝固汽油', '地面留燃烧带 3 秒，每秒 8% 喷火伤害'],
+      BACKDRAFT: ['回燃', '扇形末端爆炸，半径 70，伤害 40%'],
+      INFERNO: ['炼狱', '喷火时每 2 秒脉冲清近身并回 4% 生命'],
+      PILEDRIVER: ['贯石', '每穿透 1 个敌人，下一发伤害 +12%，最多 +60%'],
+      SCATTER_BOLT: ['裂矢', '命中墙或世界边界后分裂 2 支短弩'],
+      MARKSMAN: ['神射', '超过 420px 的第一目标必暴，暴击倍率 +0.5']
     };
     for (var nk in names) (function (k) {
       CONFIG.TEXT.UPGRADES[k] = {
@@ -214,7 +262,7 @@
         items: 0,
         dashes: 0
       },
-      defs: [['survive120', '存活120秒', 'time', 120, 5], ['kill50', '击杀50名敌人', 'kills', 50, 5], ['level10', '升到10级', 'level', 10, 5], ['exp100', '拾取100经验', 'exp', 100, 5], ['dash3', '使用3次冲刺', 'dash', 3, 5], ['item2', '使用2个道具', 'items', 2, 5], ['coin5', '拾取5金币', 'coins', 5, 5], ['elite1', '击杀1只精英', 'elite', 1, 5], ['rare1', '获得1个稀有词条', 'rare', 1, 5], ['safe30', '连续30秒不受伤', 'safe', 30, 5], ['survive300', '存活300秒', 'time', 300, 10], ['kill200', '击杀200名敌人', 'kills', 200, 10], ['level20', '升到20级', 'level', 20, 10], ['mortar30', '迫击炮击杀30', 'mortar', 30, 10], ['bomb20', '炸弹击杀20', 'bomb', 20, 10], ['dash5', '使用5次冲刺', 'dash', 5, 10], ['item5', '使用5个道具', 'items', 5, 10], ['elite3', '击杀3只精英', 'elite', 3, 10], ['epic1', '获得1个史诗词条', 'epic', 1, 10], ['wave5', '坚持到第5波', 'wave', 5, 10], ['coin500', '获得500金币', 'coins', 500, 10], ['still10', '静止10秒不受伤', 'still', 10, 10], ['survive600', '存活600秒', 'time', 600, 20], ['kill500', '击杀500名敌人', 'kills', 500, 20], ['level30', '升到30级', 'level', 30, 20], ['mortar80', '迫击炮击杀80', 'mortar', 80, 20], ['nodash120', '不冲刺存活120秒', 'nodash', 120, 20], ['boss1', '击杀Boss', 'boss', 1, 20], ['legend1', '获得1个传说词条', 'legend', 1, 20], ['wave10', '坚持到第10波', 'wave', 10, 20], ['extract1', '成功撤退', 'extract', 1, 20], ['coin2000', '获得2000金币', 'coins', 2000, 20]],
+      defs: [['survive120', '存活120秒', 'time', 120, 5], ['kill50', '击杀50名敌人', 'kills', 50, 5], ['level10', '升到10级', 'level', 10, 5], ['exp100', '拾取100经验', 'exp', 100, 5], ['dash3', '使用3次冲刺', 'dash', 3, 5], ['item2', '使用2个道具', 'items', 2, 5], ['coin5', '拾取5金币', 'coins', 5, 5], ['elite1', '击杀1只精英', 'elite', 1, 5], ['rare1', '获得1个稀有词条', 'rare', 1, 5], ['safe30', '连续30秒不受伤', 'safe', 30, 5], ['survive300', '存活300秒', 'time', 300, 10], ['kill200', '击杀200名敌人', 'kills', 200, 10], ['level20', '升到20级', 'level', 20, 10], ['mortar30', '炮台击杀30', 'mortar', 30, 10], ['flame30', '喷火击杀30', 'flame', 30, 10], ['bow30', '弩箭击杀30', 'bow', 30, 10], ['bomb20', '炸弹击杀20', 'bomb', 20, 10], ['dash5', '使用5次冲刺', 'dash', 5, 10], ['item5', '使用5个道具', 'items', 5, 10], ['elite3', '击杀3只精英', 'elite', 3, 10], ['epic1', '获得1个史诗词条', 'epic', 1, 10], ['wave5', '坚持到第5波', 'wave', 5, 10], ['coin500', '获得500金币', 'coins', 500, 10], ['still10', '静止10秒不受伤', 'still', 10, 10], ['survive600', '存活600秒', 'time', 600, 20], ['kill500', '击杀500名敌人', 'kills', 500, 20], ['level30', '升到30级', 'level', 30, 20], ['mortar80', '炮台击杀80', 'mortar', 80, 20], ['nodash120', '不冲刺存活120秒', 'nodash', 120, 20], ['boss1', '击杀Boss', 'boss', 1, 20], ['legend1', '获得1个传说词条', 'legend', 1, 20], ['wave10', '坚持到第10波', 'wave', 10, 20], ['extract1', '成功撤退', 'extract', 1, 20], ['coin2000', '获得2000金币', 'coins', 2000, 20]],
       stats: {},
       reset: function () {
         this.active.length = 0;
@@ -232,6 +280,10 @@
           epic: 0,
           legend: 0,
           mortar: 0,
+          flame: 0,
+          bow: 0,
+          tesla: 0,
+          frost: 0,
           bomb: 0,
           extract: 0,
           safe: 0,
@@ -240,10 +292,24 @@
         };
         this.collapsed = false;
         this.notice = 0;
+        var sel = root.Meta && Meta.data ? Meta.data.selectedWeapon : 'pistol';
         var pool = this.defs.slice();
-        for (var i = 0; i < 3; i++) {
-          var n = Math.floor(Math.random() * pool.length),
-            d = pool.splice(n, 1)[0];
+        for (var i = 0; i < 3 && pool.length; i++) {
+          var total = 0, weights = [];
+          for (var p = 0; p < pool.length; p++) {
+            var w = 1;
+            if (sel === 'flamer' && pool[p][2] === 'flame') w = 1.6;
+            if (sel === 'crossbow' && pool[p][2] === 'bow') w = 1.6;
+            weights.push(w);
+            total += w;
+          }
+          var roll = Math.random() * total, acc = 0, n = 0;
+          for (; n < pool.length; n++) {
+            acc += weights[n];
+            if (roll <= acc) break;
+          }
+          if (n >= pool.length) n = pool.length - 1;
+          var d = pool.splice(n, 1)[0];
           this.active.push({
             d: d,
             done: false,
@@ -389,7 +455,7 @@
       toast: '',
       toastTime: 0,
       init: function () {
-        var rows = [['A1', '初出茅庐', '累计击杀50', 'kills', 50, 'coins', 50], ['A2', '百人斩', '累计击杀100', 'kills', 100, 'skin', 'pulse_silver'], ['A3', '千人斩', '累计击杀1000', 'kills', 1000, 'diamonds', 100], ['A4', '万人斩', '累计击杀10000', 'kills', 10000, 'diamonds', 200], ['A5', '精英猎人', '击杀50精英', 'elite', 50, 'diamonds', 100], ['A6', '精英克星', '击杀200精英', 'elite', 200, 'skin', 'blade_blood'], ['A7', 'Boss终结者', '击杀10 Boss', 'boss', 10, 'skin', 'pulse_gold'], ['A8', '炮火洗礼', '迫击炮击杀500', 'mortar', 500, 'skin', 'flame_hell'], ['A9', '幸存者', '累计存活1小时', 'time', 3600, 'coins', 100], ['A10', '坚韧不拔', '累计存活10小时', 'time', 36000, 'outfit', 'special'], ['A11', '马拉松', '单局存活600秒', 'bestTime', 600, 'diamonds', 100], ['A12', '毫发无伤', '连续60秒不受伤', 'safe', 60, 'diamonds', 50], ['A13', '不死鸟', '单局复活3次', 'revives', 3, 'outfit', 'ninja'], ['A14', '小富翁', '累计获得10000金币', 'coinsTotal', 10000, 'coins', 200], ['A15', '大富翁', '累计获得100000金币', 'coinsTotal', 100000, 'skin', 'blade_thunder'], ['A16', '钻石收藏家', '累计获得100钻石', 'diamondsTotal', 100, 'diamonds', 50], ['A17', '道具猎人', '拾取100道具', 'items', 100, 'skin', 'bow_hunter'], ['A18', '经验大师', '拾取10000经验', 'exp', 10000, 'diamonds', 100], ['A19', '等级突破', '单局20级', 'bestLevel', 20, 'coins', 50], ['A20', '满级大佬', '单局50级', 'bestLevel', 50, 'diamonds', 200], ['A21', '波次征服者', '单局第10波', 'bestWave', 10, 'outfit', 'mechanic'], ['A22', '终极挑战', '单局第20波', 'bestWave', 20, 'outfit', 'gold'], ['A23', '词条收藏家', '单局5史诗', 'epicRun', 5, 'diamonds', 100], ['A24', '天选之人', '单局3传说', 'legendRun', 3, 'skin', 'bow_holy'], ['A25', '战略家', '撤退10次', 'extract', 10, 'skin', 'flame_frost'], ['A26', '神枪手', '弩箭单局击杀100', 'bowRun', 100, 'diamonds', 50], ['A27', '烈焰法师', '喷火器单局击杀200', 'flameRun', 200, 'diamonds', 100], ['A28', '服装收藏家', '拥有5套服装', 'outfits', 5, 'diamonds', 100], ['A29', '涂装收藏家', '拥有5个涂装', 'skins', 5, 'skin', 'blade_void']];
+        var rows = [['A1', '初出茅庐', '累计击杀50', 'kills', 50, 'coins', 50], ['A2', '百人斩', '累计击杀100', 'kills', 100, 'skin', 'pulse_silver'], ['A3', '千人斩', '累计击杀1000', 'kills', 1000, 'diamonds', 100], ['A4', '万人斩', '累计击杀10000', 'kills', 10000, 'diamonds', 200], ['A5', '精英猎人', '击杀50精英', 'elite', 50, 'diamonds', 100], ['A6', '精英克星', '击杀200精英', 'elite', 200, 'skin', 'blade_blood'], ['A7', 'Boss终结者', '击杀10 Boss', 'boss', 10, 'skin', 'pulse_gold'], ['A8', '炮火洗礼', '炮台击杀500', 'mortar', 500, 'skin', 'flame_hell'], ['A9', '幸存者', '累计存活1小时', 'time', 3600, 'coins', 100], ['A10', '坚韧不拔', '累计存活10小时', 'time', 36000, 'outfit', 'special'], ['A11', '马拉松', '单局存活600秒', 'bestTime', 600, 'diamonds', 100], ['A12', '毫发无伤', '连续60秒不受伤', 'safe', 60, 'diamonds', 50], ['A13', '不死鸟', '单局复活3次', 'revives', 3, 'outfit', 'ninja'], ['A14', '小富翁', '累计获得10000金币', 'coinsTotal', 10000, 'coins', 200], ['A15', '大富翁', '累计获得100000金币', 'coinsTotal', 100000, 'skin', 'blade_thunder'], ['A16', '钻石收藏家', '累计获得100钻石', 'diamondsTotal', 100, 'diamonds', 50], ['A17', '道具猎人', '拾取100道具', 'items', 100, 'skin', 'bow_hunter'], ['A18', '经验大师', '拾取10000经验', 'exp', 10000, 'diamonds', 100], ['A19', '等级突破', '单局20级', 'bestLevel', 20, 'coins', 50], ['A20', '满级大佬', '单局50级', 'bestLevel', 50, 'diamonds', 200], ['A21', '波次征服者', '单局第10波', 'bestWave', 10, 'outfit', 'mechanic'], ['A22', '终极挑战', '单局第20波', 'bestWave', 20, 'outfit', 'gold'], ['A23', '词条收藏家', '单局5史诗', 'epicRun', 5, 'diamonds', 100], ['A24', '天选之人', '单局3传说', 'legendRun', 3, 'skin', 'bow_holy'], ['A25', '战略家', '撤退10次', 'extract', 10, 'skin', 'flame_frost'], ['A26', '神枪手', '弩箭单局击杀100', 'bowRun', 100, 'diamonds', 50], ['A27', '烈焰法师', '喷火器单局击杀200', 'flameRun', 200, 'diamonds', 100], ['A28', '服装收藏家', '拥有5套服装', 'outfits', 5, 'diamonds', 100], ['A29', '涂装收藏家', '拥有5个涂装', 'skins', 5, 'skin', 'blade_void'], ['A30', '电弧杀手', '电塔击杀200', 'tesla', 200, 'diamonds', 80], ['A31', '霜冻掌控', '霜塔击杀200', 'frost', 200, 'diamonds', 80], ['A32', '喷火大师', '喷火累计击杀500', 'flameRun', 500, 'diamonds', 120], ['A33', '神射手', '弩箭累计击杀500', 'bowRun', 500, 'diamonds', 120], ['A34', '战场建筑师', '启动炮台100次', 'turretOn', 100, 'diamonds', 80], ['A35', '词缀猎手', '击杀带词缀精英100', 'affixElite', 100, 'diamonds', 100]];
         for (var i = 0; i < rows.length; i++) this.defs.push(rows[i]);
       },
       add: function (k, n) {
@@ -438,7 +504,7 @@
           h = CONFIG.VIEW.HEIGHT - y;
         panel(ctx, 30, y, 690, h, 24, '#111d1a', '#d6aa55');
         text(ctx, '永久成就', 70, y + 48, 34, '#f4d58d');
-        text(ctx, '已完成 ' + Meta.data.achievements.completed.length + ' / 29', 520, y + 48, 18, '#ffd54a', 'center');
+        text(ctx, '已完成 ' + Meta.data.achievements.completed.length + ' / ' + CONFIG.CONTENT.ACHIEVEMENT_COUNT, 520, y + 48, 18, '#ffd54a', 'center');
         text(ctx, '×', 680, y + 48, 34, '#fff', 'center');
         var start = Math.floor(this.scroll),
           firstY = y + 95;

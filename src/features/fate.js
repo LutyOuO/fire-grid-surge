@@ -228,7 +228,7 @@
         this.defs = [[1, '强健体魄', '最大生命 +20', C, 'MAX_HP', 20], [2, '轻盈步伐', '移速 +10%', C, 'MOVE', .1], [3, '武器打磨', '伤害 +10%', C, 'DAMAGE', .1], [4, '快速射击', '攻速 +10%', C, 'FIRE', .1], [5, '锐利目光', '暴击率 +5%', C, 'CRIT', .05], [6, '致命一击', '暴击伤害 +20%', C, 'CRIT_DMG', .2], [7, '磁力增强', '拾取范围 +15%', C, 'PICKUP', .15], [8, '领悟之力', '经验获取 +15%', C, 'EXP', .15], [9, '贪婪之手', '金币获取 +15%', C, 'GOLD', .15], [10, '穿透弹', '子弹穿透 +1', C, 'PIERCE', 1], [11, '多重射击', '子弹弹道 +1', C, 'PROJECTILE', 1], [12, '飞刃专精', '飞刃数量 +1', C, 'BLADE_COUNT', 1], [13, '飞刃加速', '飞刃转速 +20%', C, 'BLADE_SPEED', .2], [14, '飞刃强化', '飞刃伤害 +20%', C, 'BLADE_DAMAGE', .2], [15, '坚韧意志', '受击无敌 +0.2秒', C, 'INV_TIME', .2], [16, '生命回复', '每3秒回复2生命', C, 'REGEN', {
           n: 2,
           t: 3
-        }], [17, '皮糙肉厚', '受到伤害 -5%', C, 'REDUCE', .05], [18, '先发制人', '开局等级 +2', C, 'START_LEVEL', 2], [19, '虚弱诅咒', '敌人血量 -10%', C, 'ENEMY_HP', .1], [20, '减速陷阱', '敌人速度 -10%', C, 'ENEMY_SPEED', .1], [21, '喘息空间', '刷怪间隔 +0.2秒', C, 'SPAWN_GAP', .2], [22, '经验丰收', '经验晶石价值 +20%', C, 'EXP', .2], [23, '金币丰收', '金币掉落 +20%', C, 'GOLD', .2], [24, '幸运儿', '道具掉率 +20%', C, 'DROP', .2], [25, '爆破专家', '开局炸弹 +1', C, 'ITEM', [0, 1]], [26, '磁力王', '开局磁铁 +1', C, 'ITEM', [1, 1]], [27, '医疗兵', '开局血包 +1', C, 'ITEM', [2, 1]], [28, '冰霜法师', '开局冻结 +1', C, 'ITEM', [3, 1]], [29, '冲刺大师', '冲刺冷却 -2秒', C, 'DASH_CD', 2], [30, '疾风步', '冲刺速度 +20%', C, 'DASH_SPEED', .2], [31, '持久冲刺', '冲刺时长 +0.3秒', C, 'DASH_TIME', .3], [32, '远程射击', '子弹寿命 +0.3秒', C, 'BULLET_LIFE', .3], [33, '高速弹', '弹速 +15%', C, 'BULLET_SPEED', .15], [34, '生命强化', '最大生命 +30', C, 'MAX_HP', 30], [35, '余生机会', '免费复活 +1', C, 'REVIVE', 1], [36, '短暂无敌', '开局无敌30秒', R, 'START_INV', 30], [37, '自动炮击', '每15秒自动炮击', R, 'AUTO_MORTAR', 15], [38, '弹幕开局', '开局弹道 +4', R, 'PROJECTILE', 4], [39, '急速射击', '射速 +50%', R, 'FIRE', .5], [40, '重型弹药', '伤害 +30%', R, 'DAMAGE', .3], [41, '风之疾走', '移速 +25%', R, 'MOVE', .25], [42, '鹰眼', '暴击率 +15%', R, 'CRIT', .15], [43, '毁灭打击', '暴击伤害 +50%', R, 'CRIT_DMG', .5], [44, '黑洞磁场', '拾取范围 +40%', R, 'PICKUP', .4], [45, '顿悟', '经验获取 +30%', R, 'EXP', .3], [46, '点金术', '金币获取 +30%', R, 'GOLD', .3], [47, '高位起步', '开局等级 +5', R, 'START_LEVEL', 5], [48, '瘟疫使者', '敌人血量 -20%', R, 'ENEMY_HP', .2], [49, '冰霜领域', '敌人速度 -15%', R, 'ENEMY_SPEED', .15], [50, '吸血攻击', '每击杀回复3生命', R, 'KILL_HEAL', 3], [51, '能量护盾', '20%可再生护盾', R, 'SHIELD', .2], [52, '时间加速', '武器冷却 -20%', R, 'COOLDOWN', .2], [53, '双飞刃', '飞刃数量 +2', R, 'BLADE_COUNT', 2], [54, '穿甲弹', '子弹穿透 +3', R, 'PIERCE', 3], [55, '三连射', '子弹弹道 +2', R, 'PROJECTILE', 2], [56, '道具猎人', '道具掉率 +50%', R, 'DROP', .5], [57, '冲刺狂人', '冲刺冷却 -4秒', R, 'DASH_CD', 4], [58, '钢铁之躯', '受到伤害 -20%', R, 'REDUCE', .2], [59, '全屏磁吸', '晶石自动全屏吸附', R, 'FULL_MAGNET', 1], [60, '全副武装', '四种道具各 +1', R, 'ALL_ITEMS', 1], [61, '神圣庇护', '开局无敌60秒', E, 'START_INV', 60], [62, '无冷却炮击', '每8秒自动炮击', E, 'AUTO_MORTAR', 8], [63, '枪林弹雨', '开局弹道 +7', E, 'PROJECTILE', 7], [64, '暴风射击', '射速 +80%', E, 'FIRE', .8], [65, '毁灭之力', '伤害 +60%', E, 'DAMAGE', .6], [66, '武器过载', '伤害/弹道/穿透 ×2', E, 'WEAPON_OVERLOAD', 2], [67, '暴击宗师', '暴击率+25% 暴伤+100%', E, 'CRIT_MASTER', 1], [68, '疾风剑圣', '移速+40% 冲刺冷却-50%', E, 'WIND_MASTER', 1], [69, '衰弱光环', '敌人血量 -35%', E, 'ENEMY_HP', .35], [70, '黄金时代', '金币获取 +100%', E, 'GOLD', 1], [71, '智慧之光', '经验+50% 开局等级+8', E, 'WISDOM', 1], [72, '生命汲取', '击杀回血5，10%掉血包', E, 'LIFE_DRAIN', 1], [73, '自动激光', '每20秒自动激光', E, 'AUTO_LASER', 20], [74, '永恒冰封', '每25秒自动冻结3秒', E, 'AUTO_FREEZE', 25], [75, '激光化', '主武器激光化，伤害+50%', E, 'LASER', 1], [76, '不死之身', '下一局全程无敌', L, 'GOD', 1], [77, '战神降世', '武器伤害×3，攻速×2', L, 'WAR_GOD', 1], [78, '天选之人', '开局直接50级', L, 'CHOSEN', 50], [79, '割草模式', '敌血-50%，速度-30%', L, 'MOW', 1], [80, '爆肝模式', '金币×5，经验×3', L, 'GRIND', 1], [81, '神之怒', '每10秒自动清屏', L, 'AUTO_CLEAR', 10], [82, '万物主宰', '所有道具轮流自动释放', L, 'ITEM_MASTER', 1]];
+        }], [17, '皮糙肉厚', '受到伤害 -5%', C, 'REDUCE', .05], [18, '先发制人', '开局等级 +2', C, 'START_LEVEL', 2], [19, '虚弱诅咒', '敌人血量 -10%', C, 'ENEMY_HP', .1], [20, '减速陷阱', '敌人速度 -10%', C, 'ENEMY_SPEED', .1], [21, '喘息空间', '刷怪间隔 +0.2秒', C, 'SPAWN_GAP', .2], [22, '经验丰收', '经验晶石价值 +20%', C, 'EXP', .2], [23, '金币丰收', '金币掉落 +20%', C, 'GOLD', .2], [24, '幸运儿', '道具掉率 +20%', C, 'DROP', .2], [25, '爆破专家', '开局炸弹 +1', C, 'ITEM', [0, 1]], [26, '磁力王', '开局磁铁 +1', C, 'ITEM', [1, 1]], [27, '医疗兵', '开局血包 +1', C, 'ITEM', [2, 1]], [28, '冰霜法师', '开局冻结 +1', C, 'ITEM', [3, 1]], [29, '冲刺大师', '冲刺冷却 -2秒', C, 'DASH_CD', 2], [30, '疾风步', '冲刺速度 +20%', C, 'DASH_SPEED', .2], [31, '持久冲刺', '冲刺时长 +0.3秒', C, 'DASH_TIME', .3], [32, '远程射击', '子弹寿命 +0.3秒', C, 'BULLET_LIFE', .3], [33, '高速弹', '弹速 +15%', C, 'BULLET_SPEED', .15], [34, '生命强化', '最大生命 +30', C, 'MAX_HP', 30], [35, '余生机会', '免费复活 +1', C, 'REVIVE', 1], [36, '短暂无敌', '开局无敌30秒', R, 'START_INV', 30], [37, '自动炮击', '每15秒自动启动最近炮台', R, 'AUTO_MORTAR', 15], [38, '弹幕开局', '开局弹道 +4', R, 'PROJECTILE', 4], [39, '急速射击', '射速 +50%', R, 'FIRE', .5], [40, '重型弹药', '伤害 +30%', R, 'DAMAGE', .3], [41, '风之疾走', '移速 +25%', R, 'MOVE', .25], [42, '鹰眼', '暴击率 +15%', R, 'CRIT', .15], [43, '毁灭打击', '暴击伤害 +50%', R, 'CRIT_DMG', .5], [44, '黑洞磁场', '拾取范围 +40%', R, 'PICKUP', .4], [45, '顿悟', '经验获取 +30%', R, 'EXP', .3], [46, '点金术', '金币获取 +30%', R, 'GOLD', .3], [47, '高位起步', '开局等级 +5', R, 'START_LEVEL', 5], [48, '瘟疫使者', '敌人血量 -20%', R, 'ENEMY_HP', .2], [49, '冰霜领域', '敌人速度 -15%', R, 'ENEMY_SPEED', .15], [50, '吸血攻击', '每击杀回复3生命', R, 'KILL_HEAL', 3], [51, '能量护盾', '20%可再生护盾', R, 'SHIELD', .2], [52, '时间加速', '武器冷却 -20%', R, 'COOLDOWN', .2], [53, '双飞刃', '飞刃数量 +2', R, 'BLADE_COUNT', 2], [54, '穿甲弹', '子弹穿透 +3', R, 'PIERCE', 3], [55, '三连射', '子弹弹道 +2', R, 'PROJECTILE', 2], [56, '道具猎人', '道具掉率 +50%', R, 'DROP', .5], [57, '冲刺狂人', '冲刺冷却 -4秒', R, 'DASH_CD', 4], [58, '钢铁之躯', '受到伤害 -20%', R, 'REDUCE', .2], [59, '全屏磁吸', '晶石自动全屏吸附', R, 'FULL_MAGNET', 1], [60, '全副武装', '四种道具各 +1', R, 'ALL_ITEMS', 1], [61, '神圣庇护', '开局无敌60秒', E, 'START_INV', 60], [62, '无冷却炮击', '每8秒自动炮击', E, 'AUTO_MORTAR', 8], [63, '枪林弹雨', '开局弹道 +7', E, 'PROJECTILE', 7], [64, '暴风射击', '射速 +80%', E, 'FIRE', .8], [65, '毁灭之力', '伤害 +60%', E, 'DAMAGE', .6], [66, '武器过载', '伤害/弹道/穿透 ×2', E, 'WEAPON_OVERLOAD', 2], [67, '暴击宗师', '暴击率+25% 暴伤+100%', E, 'CRIT_MASTER', 1], [68, '疾风剑圣', '移速+40% 冲刺冷却-50%', E, 'WIND_MASTER', 1], [69, '衰弱光环', '敌人血量 -35%', E, 'ENEMY_HP', .35], [70, '黄金时代', '金币获取 +100%', E, 'GOLD', 1], [71, '智慧之光', '经验+50% 开局等级+8', E, 'WISDOM', 1], [72, '生命汲取', '击杀回血5，10%掉血包', E, 'LIFE_DRAIN', 1], [73, '自动激光', '每20秒自动激光', E, 'AUTO_LASER', 20], [74, '永恒冰封', '每25秒自动冻结3秒', E, 'AUTO_FREEZE', 25], [75, '激光化', '主武器激光化，伤害+50%', E, 'LASER', 1], [76, '不死之身', '下一局全程无敌', L, 'GOD', 1], [77, '战神降世', '武器伤害×3，攻速×2', L, 'WAR_GOD', 1], [78, '天选之人', '开局直接50级', L, 'CHOSEN', 50], [79, '割草模式', '敌血-50%，速度-30%', L, 'MOW', 1], [80, '爆肝模式', '金币×5，经验×3', L, 'GRIND', 1], [81, '神之怒', '每10秒自动清屏', L, 'AUTO_CLEAR', 10], [82, '万物主宰', '所有道具轮流自动释放', L, 'ITEM_MASTER', 1], [83, '先发弹药', '开局弹道 +3', R, 'AMMO_START', 3], [84, '空手求生', '不携带道具，受伤 -15%', R, 'BAREHANDS', .15], [85, '血税', '最大生命 -20%，伤害 +25%', E, 'BLOOD_TAX', .25], [86, '铁壁', '受伤 -20%，移速 -8%', E, 'IRON_WALL', .2]];
       },
       open: function () {
         this.active = true;
@@ -309,6 +309,7 @@
         if (playerPick !== false) {
           this.picked.push(i);
           if (this.selected < 0) this.selected = i;
+          this.enforceMutex(c.def);
         }
         if (c.def[3] === 'LEGENDARY') {
           this.flash = .2;
@@ -318,6 +319,25 @@
         if (playerPick !== false && this.picked.length === CONFIG.BALANCE.FATE_PICK_COUNT) {
           this.phase = 'reveal';
           this.phaseTimer = CONFIG.BALANCE.FATE_REVEAL_GAP;
+        }
+      },
+      enforceMutex: function (def) {
+        var t = def[4], banned = {}, pairs = CONFIG.FATE_MUTEX || [];
+        for (var i = 0; i < pairs.length; i++) {
+          if (pairs[i][0] === t) banned[pairs[i][1]] = true;
+          if (pairs[i][1] === t) banned[pairs[i][0]] = true;
+        }
+        if (!Object.keys(banned).length) return;
+        for (var i = 0; i < this.cards.length; i++) {
+          if (this.cards[i].open) continue;
+          if (!banned[this.cards[i].def[4]]) continue;
+          for (var j = 0; j < this.defs.length; j++) {
+            var alt = this.defs[Math.floor(Math.random() * this.defs.length)];
+            if (!banned[alt[4]] && alt[4] !== t) {
+              this.cards[i].def = alt;
+              break;
+            }
+          }
         }
       },
       confirm: function () {
@@ -483,7 +503,17 @@
         } else if (t === 'MOVE') Player.moveSpeedBonus += v;else if (t === 'DAMAGE') Player.globalDamageBonus += v;else if (t === 'FIRE') PulseGun.fireRateBonus += v;else if (t === 'CRIT') Player.critChance += v;else if (t === 'CRIT_DMG') Player.critDamageBonus += v;else if (t === 'PICKUP') Player.pickupRadius *= 1 + v;else if (t === 'EXP') Player.expGainBonus += v;else if (t === 'GOLD') Player.nextGoldBonus = v;else if (t === 'PIERCE') PulseGun.penetration += v;else if (t === 'PROJECTILE') PulseGun.projectileCount += v;else if (t === 'BLADE_COUNT') OrbitBlade.count += v;else if (t === 'BLADE_SPEED') OrbitBlade.speedBonus += v;else if (t === 'BLADE_DAMAGE') OrbitBlade.damageFlat += CONFIG.WEAPONS.BLADE.DAMAGE * v;else if (t === 'INV_TIME') Player.invincibleTimeBonus = v;else if (t === 'REGEN') {
           Player.nextRegen = v;
           this.regen = v.t;
-        } else if (t === 'REDUCE') Player.incomingDamageMultiplier *= 1 - v;else if (t === 'START_LEVEL') this.level(v);else if (t === 'ENEMY_HP') Player.nextEnemyHp = 1 - v;else if (t === 'ENEMY_SPEED') Player.enemySpeedMultiplier *= 1 - v;else if (t === 'SPAWN_GAP') Player.nextSpawnGap = v;else if (t === 'DROP') Player.nextDropBonus = v;else if (t === 'ITEM') PowerUps.inventory[v[0]] += v[1];else if (t === 'DASH_CD') Player.nextDashCd = v;else if (t === 'DASH_SPEED') Player.nextDashSpeed = v;else if (t === 'DASH_TIME') Player.nextDashTime = v;else if (t === 'BULLET_LIFE') Player.nextBulletLife = v;else if (t === 'BULLET_SPEED') PulseGun.speedFlat += CONFIG.WEAPONS.PULSE.SPEED * v;else if (t === 'REVIVE') Player.reviveCharges += v;else if (t === 'START_INV') Player.invincibleTimer = v;else if (t === 'AUTO_MORTAR') this.autoMortar = v;else if (t === 'KILL_HEAL') Player.killHeal += v;else if (t === 'SHIELD') {
+        } else if (t === 'REDUCE') Player.incomingDamageMultiplier *= 1 - v;else if (t === 'START_LEVEL') this.level(v);else if (t === 'ENEMY_HP') Player.nextEnemyHp = 1 - v;else if (t === 'ENEMY_SPEED') Player.enemySpeedMultiplier *= 1 - v;else if (t === 'SPAWN_GAP') Player.nextSpawnGap = v;else if (t === 'DROP') Player.nextDropBonus = v;else if (t === 'ITEM') PowerUps.inventory[v[0]] += v[1];else if (t === 'DASH_CD') Player.nextDashCd = v;else if (t === 'DASH_SPEED') Player.nextDashSpeed = v;else if (t === 'DASH_TIME') Player.nextDashTime = v;else if (t === 'BULLET_LIFE') Player.nextBulletLife = v;else if (t === 'BULLET_SPEED') PulseGun.speedFlat += CONFIG.WEAPONS.PULSE.SPEED * v;else if (t === 'REVIVE') Player.reviveCharges += v;else if (t === 'START_INV') Player.invincibleTimer = v;else if (t === 'AUTO_MORTAR') this.autoMortar = v;else if (t === 'AMMO_START') PulseGun.projectileCount += v;else if (t === 'BAREHANDS') {
+          Player.incomingDamageMultiplier *= 0.85;
+          for (var bi = 0; bi < PowerUps.inventory.length; bi++) PowerUps.inventory[bi] = 0;
+        } else if (t === 'BLOOD_TAX') {
+          Player.maxHp = Math.max(20, Math.floor(Player.maxHp * 0.8));
+          Player.hp = Math.min(Player.hp, Player.maxHp);
+          Player.globalDamageBonus += v;
+        } else if (t === 'IRON_WALL') {
+          Player.incomingDamageMultiplier *= 0.8;
+          Player.moveSpeedBonus -= 0.08;
+        } else if (t === 'KILL_HEAL') Player.killHeal += v;else if (t === 'SHIELD') {
           Player.upgradeShieldMax = Player.maxHp * v;
           Player.shield = Player.upgradeShieldMax;
         } else if (t === 'COOLDOWN') {
@@ -538,7 +568,7 @@
           }
         }
         this.tick('autoMortar', dt, function () {
-          root.MortarStrike.activate();
+          if (root.Field) root.Field.activateNearestReady();
         });
         this.tick('autoLaser', dt, function () {
           root.LaserEmitter.activate();

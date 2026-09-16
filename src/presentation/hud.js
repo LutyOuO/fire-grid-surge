@@ -7,18 +7,83 @@
   var Field = {
     turrets: [],
     shells: [],
+    frostOrbs: [],
+    frostPatches: [],
+    layoutIndex: 0,
     bossMax: 0,
     lootTimer: 0,
     bossDefeated: false,
+    eventBanner: '',
+    eventBannerTimer: 0,
+    applyLayout: function (index) {
+      var layouts = CONFIG.FIELD.LAYOUTS;
+      this.layoutIndex = ((index % layouts.length) + layouts.length) % layouts.length;
+      var layout = layouts[this.layoutIndex];
+      CONFIG.FIELD.WALLS = layout.walls;
+      CONFIG.FIELD.TURRETS = layout.turrets;
+      CONFIG.EXTRACTION.X = layout.extract.x;
+      CONFIG.EXTRACTION.Y = layout.extract.y;
+      CONFIG.EXTRACTION.RADIUS = layout.extract.r;
+      return layout;
+    },
+    gadgetAmt: function (kind, id) {
+      if (!root.Meta || !Meta.getGadgetLevel) return 0;
+      var lv = Meta.getGadgetLevel('turret_' + kind, id);
+      var def = Meta.getGadgetDef && Meta.getGadgetDef('turret_' + kind, id);
+      return lv * (def && def.AMOUNT || 0);
+    },
+    kindStats: function (kind) {
+      var k = CONFIG.TURRETS.KINDS[kind] || CONFIG.TURRETS.KINDS.mortar;
+      if (kind === 'tesla') {
+        return {
+          interval: k.INTERVAL * Math.max(0.4, 1 - this.gadgetAmt('tesla', 'rate')),
+          range: k.RANGE + this.gadgetAmt('tesla', 'range'),
+          damage: k.DAMAGE * (1 + this.gadgetAmt('tesla', 'dmg')),
+          chain: k.CHAIN + this.gadgetAmt('tesla', 'chain'),
+          chainRange: k.CHAIN_RANGE,
+          falloff: k.FALLOFF,
+          stun: k.STUN,
+          storm: this.gadgetAmt('tesla', 'storm')
+        };
+      }
+      if (kind === 'frost') {
+        return {
+          interval: k.INTERVAL,
+          range: k.RANGE,
+          damage: k.DAMAGE * (1 + this.gadgetAmt('frost', 'damage')),
+          orbSpeed: k.ORB_SPEED,
+          patchR: k.PATCH_RADIUS + this.gadgetAmt('frost', 'patch'),
+          patchLife: k.PATCH_LIFE + this.gadgetAmt('frost', 'duration'),
+          slow: Math.max(0.15, k.SLOW - this.gadgetAmt('frost', 'slow')),
+          freeze: k.FREEZE,
+          shatter: this.gadgetAmt('frost', 'shatter')
+        };
+      }
+      return {
+        interval: k.INTERVAL,
+        range: k.RANGE,
+        damage: k.DAMAGE * (1 + this.gadgetAmt('mortar', 'damage')),
+        radius: (CONFIG.FIELD.SHELL_RADIUS || k.RADIUS) + this.gadgetAmt('mortar', 'radius'),
+        extra: this.gadgetAmt('mortar', 'count') + (Meta.getGadgetLevel && Meta.getGadgetLevel('turret_mortar', 'fullcover') > 0 ? CONFIG.MORTAR.FULLCOVER_EXTRA : 0),
+        burn: this.gadgetAmt('mortar', 'burn')
+      };
+    },
     reset: function () {
       root.MortarExplosionFX.reset();
+      if (root.TeslaArcFX) root.TeslaArcFX.reset();
+      if (root.FrostPatchFX) root.FrostPatchFX.reset();
       this.lootTimer = 0;
       this.bossDefeated = false;
+      this.eventBanner = '';
+      this.eventBannerTimer = 0;
+      var runs = root.Meta && Meta.data ? Meta.data.runs || 0 : 0;
+      var layout = this.applyLayout(runs);
       this.turrets.length = 0;
-      for (var i = 0; i < CONFIG.FIELD.TURRETS.length; i++) {
+      for (var i = 0; i < layout.turrets.length; i++) {
         this.turrets.push({
-          x: CONFIG.FIELD.TURRETS[i].x,
-          y: CONFIG.FIELD.TURRETS[i].y,
+          x: layout.turrets[i].x,
+          y: layout.turrets[i].y,
+          kind: layout.turrets[i].kind || 'mortar',
           active: false,
           timer: 0,
           cooldown: 0,
@@ -27,7 +92,8 @@
           aimAngle: -Math.PI / 2,
           targetAngle: -Math.PI / 2,
           recoil: 0,
-          muzzleFlash: 0
+          muzzleFlash: 0,
+          shotCount: 0
         });
       }
       this.shells.length = 0;
@@ -41,15 +107,24 @@
           t: 0,
           sx: 0,
           sy: 0,
-          angle: 0
+          angle: 0,
+          kind: 'mortar'
         });
+      }
+      this.frostOrbs.length = 0;
+      for (var i = 0; i < CONFIG.TURRETS.KINDS.frost.POOL_ORBS; i++) {
+        this.frostOrbs.push({ active: false, x: 0, y: 0, vx: 0, vy: 0, tx: 0, ty: 0, damage: 0 });
+      }
+      this.frostPatches.length = 0;
+      for (var i = 0; i < CONFIG.TURRETS.KINDS.frost.POOL_PATCHES; i++) {
+        this.frostPatches.push({ active: false, x: 0, y: 0, r: 0, t: 0, life: 0, slow: 0.45, freeze: 0.4, id: i + 1 });
       }
     },
     update: function (dt) {
       for (var i = 0; i < this.turrets.length; i++) {
         var t = this.turrets[i];
+        var stats = this.kindStats(t.kind);
         if (t.active) {
-          // 激活中：倒计时，结束后进入冷却
           t.timer -= dt;
           if (t.timer <= 0) {
             t.active = false;
@@ -58,15 +133,13 @@
           }
           t.cooldown -= dt;
           if (t.cooldown <= 0) {
-            t.cooldown = CONFIG.FIELD.TURRET_INTERVAL;
+            t.cooldown = stats.interval;
             this.fireTurret(t);
           }
         } else if (t.cooldownTimer > 0) {
-          // 冷却中
           t.cooldownTimer -= dt;
           if (t.cooldownTimer < 0) t.cooldownTimer = 0;
         } else {
-          // 待机：玩家在范围内则充能，离开则重置
           var dx = Player.x - t.x,
             dy = Player.y - t.y;
           var inRange = dx * dx + dy * dy <= CONFIG.FIELD.TURRET_ACTIVATE_RADIUS * CONFIG.FIELD.TURRET_ACTIVATE_RADIUS;
@@ -78,6 +151,7 @@
               t.cooldown = 0;
               t.charge = 0;
               FX.burst(t.x, t.y);
+              if (root.Achievements) root.Achievements.add('turretOn', 1);
             }
           } else {
             if (t.charge > 0) t.charge = Math.max(0, t.charge - dt * 2);
@@ -105,6 +179,8 @@
           y = s.y + (s.ty - s.y) * f - Math.sin(f * Math.PI) * 120;
         if (root.WallCollision.inside(x, y, 10)) s.active = false;
       }
+      this.updateFrost(dt);
+      this.applyFrostControl();
       for (var i = 0; i < this.turrets.length; i++) {
         var t = this.turrets[i];
         t.recoil = Math.max(0, (t.recoil || 0) - dt);
@@ -119,48 +195,268 @@
         }
       }
       root.MortarExplosionFX.update(dt);
+      if (root.TeslaArcFX) root.TeslaArcFX.update(dt);
+      if (root.FrostPatchFX) root.FrostPatchFX.update(dt);
+      this.eventBannerTimer = Math.max(0, this.eventBannerTimer - dt);
     },
     fireTurret: function (t) {
+      if (t.kind === 'tesla') return this.fireTesla(t);
+      if (t.kind === 'frost') return this.fireFrost(t);
+      return this.fireMortar(t);
+    },
+    fireMortar: function (t) {
+      var stats = this.kindStats('mortar');
+      var extra = stats.extra || 0;
+      var shots = 1 + extra;
+      var used = {};
+      for (var n = 0; n < shots; n++) {
+        var target = this.pickMortarTarget(t, stats.range, extra > 0, used);
+        if (!target) break;
+        used[target.spawnId] = true;
+        t.targetAngle = Math.atan2(target.y - t.y, target.x - t.x);
+        t.aimAngle = t.targetAngle;
+        t.recoil = .16;
+        t.muzzleFlash = .12;
+        var mx = t.x + Math.cos(t.aimAngle) * CONFIG.TURRET_VISUAL.TUBE_LENGTH,
+          my = t.y + Math.sin(t.aimAngle) * CONFIG.TURRET_VISUAL.TUBE_LENGTH;
+        for (var i = 0; i < this.shells.length; i++) {
+          var s = this.shells[i];
+          if (s.active) continue;
+          s.active = true;
+          s.x = mx;
+          s.y = my;
+          s.sx = mx;
+          s.sy = my;
+          s.tx = target.x;
+          s.ty = target.y;
+          s.t = 0;
+          s.angle = t.aimAngle;
+          s.kind = 'mortar';
+          break;
+        }
+      }
+    },
+    pickMortarTarget: function (t, range, preferElite, used) {
+      var best = null, bestScore = 1e15;
+      for (var i = 0; i < Enemy.pool.length; i++) {
+        var e = Enemy.pool[i];
+        if (!e.active || used[e.spawnId]) continue;
+        var d = Math.hypot(e.x - t.x, e.y - t.y);
+        if (d > range) continue;
+        var score = d;
+        if (preferElite && (e.typeIndex >= CONFIG.ENEMY.TYPE_ELITE)) score -= 400;
+        if (score < bestScore) {
+          bestScore = score;
+          best = e;
+        }
+      }
+      return best;
+    },
+    fireTesla: function (t) {
+      var stats = this.kindStats('tesla');
+      var first = null, firstD = 1e15;
+      for (var i = 0; i < Enemy.pool.length; i++) {
+        var e = Enemy.pool[i];
+        if (!e.active) continue;
+        var d = Math.hypot(e.x - t.x, e.y - t.y);
+        if (d > stats.range + e.radius) continue;
+        if (root.WallCollision.segment(t.x, t.y, e.x, e.y, 4)) continue;
+        if (d < firstD) {
+          firstD = d;
+          first = e;
+        }
+      }
+      if (!first) return;
+      t.aimAngle = Math.atan2(first.y - t.y, first.x - t.x);
+      t.recoil = .1;
+      t.muzzleFlash = .1;
+      t.shotCount = (t.shotCount || 0) + 1;
+      var hits = [first];
+      var last = first;
+      var hops = Math.max(1, Math.floor(stats.chain));
+      for (var h = 1; h < hops; h++) {
+        var nxt = null, nd = 1e15;
+        for (var j = 0; j < Enemy.pool.length; j++) {
+          var e2 = Enemy.pool[j];
+          if (!e2.active) continue;
+          var already = false;
+          for (var k = 0; k < hits.length; k++) if (hits[k] === e2) already = true;
+          if (already) continue;
+          var d2 = Math.hypot(e2.x - last.x, e2.y - last.y);
+          if (d2 > stats.chainRange) continue;
+          if (d2 < nd) {
+            nd = d2;
+            nxt = e2;
+          }
+        }
+        if (!nxt) break;
+        hits.push(nxt);
+        last = nxt;
+      }
+      var src = Combat.killSource;
+      Combat.killSource = 'tesla';
+      var dmg = stats.damage;
+      for (var h = 0; h < hits.length; h++) {
+        Combat.hitEnemy(hits[h], dmg, hits[h].x, hits[h].y);
+        if (h === 0) hits[h].stunTimer = Math.max(hits[h].stunTimer || 0, stats.stun);
+        dmg *= stats.falloff;
+        var from = h === 0 ? t : hits[h - 1];
+        if (root.TeslaArcFX) root.TeslaArcFX.spawn(from.x, from.y, hits[h].x, hits[h].y);
+      }
+      if (stats.storm > 0 && t.shotCount % CONFIG.TURRETS.KINDS.tesla.STORM_EVERY === 0) {
+        var sr = stats.storm;
+        for (var i = 0; i < Enemy.pool.length; i++) {
+          var e = Enemy.pool[i];
+          if (!e.active) continue;
+          var dx = e.x - first.x, dy = e.y - first.y;
+          if (dx * dx + dy * dy <= sr * sr) Combat.hitEnemy(e, stats.damage, e.x, e.y);
+        }
+      }
+      Combat.killSource = src;
+    },
+    fireFrost: function (t) {
+      var stats = this.kindStats('frost');
       var target = Enemy.findNearest(t.x, t.y);
       if (!target) return;
-      var dx = target.x - t.x,
-        dy = target.y - t.y,
-        dist = Math.hypot(dx, dy);
-      if (dist > CONFIG.FIELD.TURRET_RANGE) return;
-      t.targetAngle = Math.atan2(dy, dx);
-      t.aimAngle = t.targetAngle;
-      t.recoil = .16;
-      t.muzzleFlash = .12;
-      var mx = t.x + Math.cos(t.aimAngle) * CONFIG.TURRET_VISUAL.TUBE_LENGTH,
-        my = t.y + Math.sin(t.aimAngle) * CONFIG.TURRET_VISUAL.TUBE_LENGTH;
-      for (var i = 0; i < this.shells.length; i++) {
-        var s = this.shells[i];
-        if (s.active) continue;
-        s.active = true;
-        s.x = mx;
-        s.y = my;
-        s.sx = mx;
-        s.sy = my;
-        s.tx = target.x;
-        s.ty = target.y;
-        s.t = 0;
-        s.angle = t.aimAngle;
+      var dist = Math.hypot(target.x - t.x, target.y - t.y);
+      if (dist > stats.range) return;
+      t.aimAngle = Math.atan2(target.y - t.y, target.x - t.x);
+      t.recoil = .12;
+      t.muzzleFlash = .1;
+      for (var i = 0; i < this.frostOrbs.length; i++) {
+        var o = this.frostOrbs[i];
+        if (o.active) continue;
+        o.active = true;
+        o.x = t.x;
+        o.y = t.y;
+        var a = t.aimAngle;
+        o.vx = Math.cos(a) * stats.orbSpeed;
+        o.vy = Math.sin(a) * stats.orbSpeed;
+        o.tx = target.x;
+        o.ty = target.y;
+        o.damage = stats.damage;
+        o.patchR = stats.patchR;
+        o.patchLife = stats.patchLife;
+        o.slow = stats.slow;
+        o.freeze = stats.freeze;
         return;
       }
     },
+    updateFrost: function (dt) {
+      for (var i = 0; i < this.frostOrbs.length; i++) {
+        var o = this.frostOrbs[i];
+        if (!o.active) continue;
+        o.x += o.vx * dt;
+        o.y += o.vy * dt;
+        var hit = false;
+        for (var j = 0; j < Enemy.pool.length; j++) {
+          var e = Enemy.pool[j];
+          if (!e.active) continue;
+          var dx = e.x - o.x, dy = e.y - o.y, r = e.radius + 10;
+          if (dx * dx + dy * dy <= r * r) {
+            var src = Combat.killSource;
+            Combat.killSource = 'frost';
+            Combat.hitEnemy(e, o.damage, e.x, e.y);
+            Combat.killSource = src;
+            this.spawnFrostPatch(o.x, o.y, o);
+            hit = true;
+            break;
+          }
+        }
+        if (hit) {
+          o.active = false;
+          continue;
+        }
+        if (root.WallCollision.inside(o.x, o.y, 8) || o.x < 0 || o.y < 0 || o.x > CONFIG.WORLD.WIDTH || o.y > CONFIG.WORLD.HEIGHT) {
+          this.spawnFrostPatch(o.x, o.y, o);
+          o.active = false;
+        }
+      }
+      for (var i = 0; i < this.frostPatches.length; i++) {
+        var p = this.frostPatches[i];
+        if (!p.active) continue;
+        p.t += dt;
+        if (p.t >= p.life) p.active = false;
+      }
+    },
+    spawnFrostPatch: function (x, y, orb) {
+      for (var i = 0; i < this.frostPatches.length; i++) {
+        var p = this.frostPatches[i];
+        if (p.active) continue;
+        p.active = true;
+        p.x = x;
+        p.y = y;
+        p.r = orb.patchR;
+        p.t = 0;
+        p.life = orb.patchLife;
+        p.slow = orb.slow;
+        p.freeze = orb.freeze;
+        p.id = (p.id || i + 1) + 17;
+        if (root.FrostPatchFX) root.FrostPatchFX.spawn(x, y, p.r, p.life);
+        return;
+      }
+    },
+    applyFrostControl: function () {
+      for (var i = 0; i < Enemy.pool.length; i++) {
+        var e = Enemy.pool[i];
+        if (!e.active) continue;
+        var inPatch = false;
+        for (var j = 0; j < this.frostPatches.length; j++) {
+          var p = this.frostPatches[j];
+          if (!p.active) continue;
+          var dx = e.x - p.x, dy = e.y - p.y;
+          if (dx * dx + dy * dy <= (p.r + e.radius) * (p.r + e.radius)) {
+            inPatch = true;
+            e.slowMul = p.slow;
+            e.frostTouched = e.frostTouched || {};
+            if (!e.frostTouched[p.id]) {
+              e.frostTouched[p.id] = 1;
+              e.freezeTimer = Math.max(e.freezeTimer || 0, p.freeze);
+            }
+          }
+        }
+        if (!inPatch) e.slowMul = 1;
+      }
+    },
     explode: function (x, y) {
-      var r = CONFIG.FIELD.SHELL_RADIUS;
+      var stats = this.kindStats('mortar');
+      var r = stats.radius;
+      var src = Combat.killSource;
+      Combat.killSource = 'mortar';
       for (var i = 0; i < Enemy.pool.length; i++) {
         var e = Enemy.pool[i];
         if (!e.active) continue;
         var dx = e.x - x,
           dy = e.y - y;
         if (dx * dx + dy * dy <= r * r) {
-          Combat.hitEnemy(e, CONFIG.FIELD.TURRET_DAMAGE, e.x, e.y);
+          var mul = 1;
+          if (stats.shatter > 0 && ((e.freezeTimer || 0) > 0 || (e.slowMul || 1) < 1)) mul += stats.shatter;
+          Combat.hitEnemy(e, stats.damage * mul, e.x, e.y);
         }
       }
+      Combat.killSource = src;
       FX.burst(x, y);
       root.MortarExplosionFX.spawn(x, y);
+    },
+    activateNearestReady: function () {
+      var best = null, bestD = 1e15;
+      for (var i = 0; i < this.turrets.length; i++) {
+        var t = this.turrets[i];
+        if (t.active || t.cooldownTimer > 0) continue;
+        var d = (Player.x - t.x) * (Player.x - t.x) + (Player.y - t.y) * (Player.y - t.y);
+        if (d < bestD) {
+          bestD = d;
+          best = t;
+        }
+      }
+      if (!best) return false;
+      best.active = true;
+      best.timer = CONFIG.FIELD.TURRET_DURATION;
+      best.cooldown = 0;
+      best.charge = 0;
+      FX.burst(best.x, best.y);
+      if (root.Achievements) root.Achievements.add('turretOn', 1);
+      return true;
     },
     pullLoot: function (dt) {
       var speed = CONFIG.FIELD.LOOT_PULL_SPEED;
@@ -278,31 +574,34 @@
       var baseImg = UI.icon('mortar_base'),
         tubeImg = UI.icon('mortar_tube'),
         shellImg = UI.icon('mortar_shell');
-      // 素材组装覆盖旧圆形炮塔：底座固定，炮管以底部中心为轴旋转。
+      this.drawFrostPatches(ctx);
       for (var i = 0; i < this.turrets.length; i++) {
         var t = this.turrets[i],
           x = t.x - Camera.x,
           y = t.y - Camera.y;
         if (x < -120 || x > CONFIG.VIEW.WIDTH + 120 || y < -120 || y > CONFIG.VIEW.HEIGHT + 120) continue;
-        if (!baseImg || !tubeImg) continue;
-        ctx.save();
-        ctx.drawImage(baseImg, x - CONFIG.TURRET_VISUAL.BASE_SIZE / 2, y - CONFIG.TURRET_VISUAL.BASE_SIZE / 2, CONFIG.TURRET_VISUAL.BASE_SIZE, CONFIG.TURRET_VISUAL.BASE_SIZE);
-        ctx.translate(x, y);
-        ctx.rotate((Number.isFinite(t.aimAngle) ? t.aimAngle : -Math.PI / 2) + Math.PI / 2);
-        var recoil = (t.recoil || 0) > 0 ? 8 * (t.recoil / .16) : 0;
-        ctx.drawImage(tubeImg, -CONFIG.TURRET_VISUAL.TUBE_SIZE / 2, -CONFIG.TURRET_VISUAL.TUBE_SIZE + recoil, CONFIG.TURRET_VISUAL.TUBE_SIZE, CONFIG.TURRET_VISUAL.TUBE_SIZE);
-        if ((t.muzzleFlash || 0) > 0) {
-          ctx.globalAlpha = t.muzzleFlash / .12;
-          ctx.fillStyle = '#ffbd4a';
-          ctx.shadowColor = '#ff7b24';
-          ctx.shadowBlur = 18;
-          ctx.beginPath();
-          ctx.arc(0, -CONFIG.TURRET_VISUAL.TUBE_LENGTH, 12, 0, Math.PI * 2);
-          ctx.fill();
+        if (t.kind === 'tesla') this.drawTeslaTurret(ctx, t, x, y);
+        else if (t.kind === 'frost') this.drawFrostTurret(ctx, t, x, y);
+        else {
+          if (!baseImg || !tubeImg) continue;
+          ctx.save();
+          ctx.drawImage(baseImg, x - CONFIG.TURRET_VISUAL.BASE_SIZE / 2, y - CONFIG.TURRET_VISUAL.BASE_SIZE / 2, CONFIG.TURRET_VISUAL.BASE_SIZE, CONFIG.TURRET_VISUAL.BASE_SIZE);
+          ctx.translate(x, y);
+          ctx.rotate((Number.isFinite(t.aimAngle) ? t.aimAngle : -Math.PI / 2) + Math.PI / 2);
+          var recoil = (t.recoil || 0) > 0 ? 8 * (t.recoil / .16) : 0;
+          ctx.drawImage(tubeImg, -CONFIG.TURRET_VISUAL.TUBE_SIZE / 2, -CONFIG.TURRET_VISUAL.TUBE_SIZE + recoil, CONFIG.TURRET_VISUAL.TUBE_SIZE, CONFIG.TURRET_VISUAL.TUBE_SIZE);
+          if ((t.muzzleFlash || 0) > 0) {
+            ctx.globalAlpha = t.muzzleFlash / .12;
+            ctx.fillStyle = '#ffbd4a';
+            ctx.shadowColor = '#ff7b24';
+            ctx.shadowBlur = 18;
+            ctx.beginPath();
+            ctx.arc(0, -CONFIG.TURRET_VISUAL.TUBE_LENGTH, 12, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          ctx.restore();
         }
-        ctx.restore();
       }
-      // 炮弹素材沿抛物线切线旋转；原点来自炮口。
       for (var s = 0; s < this.shells.length; s++) {
         var sh = this.shells[s];
         if (!sh.active || !shellImg) continue;
@@ -318,8 +617,97 @@
         ctx.drawImage(shellImg, -CONFIG.TURRET_VISUAL.SHELL_SIZE / 2, -CONFIG.TURRET_VISUAL.SHELL_SIZE / 2, CONFIG.TURRET_VISUAL.SHELL_SIZE, CONFIG.TURRET_VISUAL.SHELL_SIZE);
         ctx.restore();
       }
+      this.drawFrostOrbs(ctx);
       root.MortarExplosionFX.draw(ctx);
+      if (root.TeslaArcFX) root.TeslaArcFX.draw(ctx);
+      if (root.FrostPatchFX) root.FrostPatchFX.draw(ctx);
       this.drawTurretStatus(ctx);
+    },
+    drawTeslaTurret: function (ctx, t, x, y) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.fillStyle = t.active ? '#1b3a40' : '#2a3233';
+      ctx.strokeStyle = t.active ? CONFIG.COLORS.TESLA : '#6d716e';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.rect(-28, -28, 56, 56);
+      ctx.fill();
+      ctx.stroke();
+      ctx.rotate(Number.isFinite(t.aimAngle) ? t.aimAngle : -Math.PI / 2);
+      ctx.strokeStyle = CONFIG.COLORS.TESLA;
+      ctx.lineWidth = 3;
+      for (var k = 0; k < 3; k++) {
+        var a = (k - 1) * 0.55;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * 34, Math.sin(a) * 34);
+        ctx.stroke();
+      }
+      if ((t.muzzleFlash || 0) > 0) {
+        ctx.globalAlpha = t.muzzleFlash / .12;
+        ctx.fillStyle = '#c8fbff';
+        ctx.beginPath();
+        ctx.arc(28, 0, 10, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    },
+    drawFrostTurret: function (ctx, t, x, y) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.fillStyle = t.active ? '#1c2a38' : '#243038';
+      ctx.strokeStyle = t.active ? CONFIG.COLORS.FROST : '#6d716e';
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      for (var k = 0; k < 6; k++) {
+        var a = k * Math.PI / 3 - Math.PI / 6;
+        var px = Math.cos(a) * 32, py = Math.sin(a) * 32;
+        if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.rotate(Number.isFinite(t.aimAngle) ? t.aimAngle : -Math.PI / 2);
+      ctx.fillStyle = '#cfe8f6';
+      ctx.fillRect(4, -6, 26, 12);
+      ctx.beginPath();
+      ctx.moveTo(30, 0);
+      ctx.lineTo(42, -8);
+      ctx.lineTo(42, 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    },
+    drawFrostPatches: function (ctx) {
+      for (var i = 0; i < this.frostPatches.length; i++) {
+        var p = this.frostPatches[i];
+        if (!p.active) continue;
+        var x = p.x - Camera.x, y = p.y - Camera.y;
+        ctx.save();
+        ctx.globalAlpha = 0.35 * (1 - p.t / p.life);
+        ctx.fillStyle = '#7eb7d8';
+        ctx.beginPath();
+        ctx.ellipse(x, y, p.r, p.r * 0.62, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#cfefff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        ctx.restore();
+      }
+    },
+    drawFrostOrbs: function (ctx) {
+      for (var i = 0; i < this.frostOrbs.length; i++) {
+        var o = this.frostOrbs[i];
+        if (!o.active) continue;
+        ctx.save();
+        ctx.fillStyle = '#d8f4ff';
+        ctx.shadowColor = '#8eb4d4';
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.arc(o.x - Camera.x, o.y - Camera.y, 9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
     },
     // 激活、剩余时长与冷却提示独立于迫击炮图片。
     drawTurretStatus: function (ctx) {
@@ -649,6 +1037,7 @@
         CoinDrops.draw(ctx);
         PowerUps.drawWorldItems(ctx);
         Field.draw(ctx);
+        if (root.BattleEvents) root.BattleEvents.draw(ctx);
         Extraction.draw(ctx);
         Enemy.draw(ctx);
         Enemy.drawBossProjectiles(ctx);
@@ -662,6 +1051,7 @@
         ctx.restore();
       }
       UI.drawHud(ctx);
+      if (root.BattleEvents) root.BattleEvents.drawBanner(ctx);
       if (Game.state === CONFIG.GAME.STATE_PLAYING) {
         UI.drawJoystick(ctx);
         UI.drawPowerUpButtons(ctx);
@@ -703,6 +1093,10 @@
       // 波次提示
       if (FX.notice > 0 && Game.state === CONFIG.GAME.STATE_PLAYING) {
         UI.drawCenteredText(ctx, CONFIG.TEXT.WAVE_NOTICE(FX.wave), 310 + (CONFIG.UI.TOP_INSET || 0), 30, true, CONFIG.COLORS.COIN);
+      }
+      if (root.Spawner && Spawner.theme && Game.state === CONFIG.GAME.STATE_PLAYING) {
+        var themeDef = CONFIG.WAVE_THEMES.KINDS[Spawner.theme];
+        if (themeDef) UI.drawCenteredText(ctx, themeDef.LABEL, 348 + (CONFIG.UI.TOP_INSET || 0), 22, true, CONFIG.COLORS.WAVE_THEME);
       }
 
       // 撤退点激活提示
