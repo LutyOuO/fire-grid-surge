@@ -662,7 +662,7 @@
         ctx.restore();
       }
       UI.drawHud(ctx);
-      if (this.state === CONFIG.GAME.STATE_PLAYING) {
+      if (Game.state === CONFIG.GAME.STATE_PLAYING) {
         UI.drawJoystick(ctx);
         UI.drawPowerUpButtons(ctx);
         UI.drawDashButton(ctx);
@@ -670,11 +670,11 @@
         UI.drawDashSpeedLines(ctx);
         UI.drawDashDirectionArrow(ctx);
         UI.drawExtractionButtons(ctx);
-      } else if (this.state === CONFIG.GAME.STATE_LEVELUP) {
+      } else if (Game.state === CONFIG.GAME.STATE_LEVELUP) {
         UI.drawLevelUp(ctx);
-      } else if (this.state === CONFIG.GAME.STATE_GAMEOVER) {
+      } else if (Game.state === CONFIG.GAME.STATE_GAMEOVER) {
         UI.drawGameOver(ctx);
-      } else if (this.state === CONFIG.GAME.STATE_VICTORY) {
+      } else if (Game.state === CONFIG.GAME.STATE_VICTORY) {
         UI.drawVictory(ctx);
       }
       Ads.draw(ctx);
