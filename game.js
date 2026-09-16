@@ -9,47 +9,53 @@
 // ============================================================
 
 // 1. 平台适配层（必须最先加载）
-require('./js/platform.js');
+require('./src/platform/platform.js');
 
 // 2. 全局配置（保持不变）
-require('./js/config.js');
-require('./js/collision.js');
+require('./src/config/config.js');
+require('./src/config/collision.js');
 
 // 3. 核心：G 全局状态 + CanvasView/Camera/DamageText/Combat + Game 主循环与状态机
-require('./js/core.js');
+require('./src/core/core.js');
 
 // 4. 输入：键盘 + 虚拟摇杆 + 多点触控 + 点击排队
-require('./js/input.js');
+require('./src/core/input.js');
 
 // 5. 存档：Meta 永久存档 / Settings 设置
-require('./js/save.js');
+require('./src/persistence/save.js');
 
 // 6. 玩家：移动/冲刺/受击/属性
-require('./js/player.js');
+require('./src/gameplay/player.js');
 
 // 7. 敌人：Enemy AI / BossSystem / WallCollision
-require('./js/enemy.js');
+require('./src/gameplay/enemy.js');
 
 // 8. 武器：Bullet/PulseGun/OrbitBlade/Weapons/MortarStrike/LaserEmitter/WeaponProgress/WeaponSelect
-require('./js/weapon.js');
+require('./src/gameplay/weapon.js');
 
 // 9. 波次：Spawner 刷怪
-require('./js/wave.js');
+require('./src/gameplay/wave.js');
 
 // 10. 道具/掉落：RunStats/Experience/ExpLevelUp/CoinDrops/PowerUps
-require('./js/item.js');
+require('./src/gameplay/item.js');
 
 // 11. 广告（保持独立，必须先于 fx.js：effects 加载时 var Ads=root.Ads）
-require('./js/ads.js');
+require('./src/services/ads.js');
 
-// 12. 特效/工具：UI 绘制库 + FX/Metrics/Spatial/ButtonUI/Panels/AudioFX + effects 层补丁
-require('./js/fx.js');
+// 12. 表现基础：Canvas UI、合成音频、粒子与面板服务
+require('./src/presentation/ui.js');
+require('./src/services/audio.js');
+require('./src/presentation/effects.js');
 
 // 13. 局内 HUD/战场：Field 墙壁炮塔 + Extraction 撤退点 + field 层补丁
-require('./js/hud.js');
+require('./src/presentation/hud.js');
 
-// 14. 菜单/营地/结算：主菜单/CampNav/Wardrobe/Achievements/FateCards/QUALITY + v004~v008 合并补丁
-require('./js/menu.js');
+// 14. 功能界面：命运、成长、页面、基地与武器选择
+require('./src/features/fate.js');
+require('./src/features/progression.js');
+require('./src/presentation/screens.js');
+require('./src/presentation/camp.js');
+require('./src/features/weapon-selection.js');
 
 // ---------- boot 启动（原 boot.js，所有模块加载完成后执行） ----------
 var root = typeof window !== 'undefined' ? window : global;

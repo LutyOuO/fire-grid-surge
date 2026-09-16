@@ -31,21 +31,27 @@
   <canvas id="gameCanvas" width="750" height="1334"></canvas>
 
   <!-- 按依赖顺序加载游戏逻辑（#55 重构后，与微信小游戏 game.js 中 require 顺序一致） -->
-  <script src="../js/platform.js"></script>
-  <script src="../js/config.js"></script>
-  <script src="../js/collision.js"></script>
-  <script src="../js/core.js"></script>
-  <script src="../js/input.js"></script>
-  <script src="../js/save.js"></script>
-  <script src="../js/player.js"></script>
-  <script src="../js/enemy.js"></script>
-  <script src="../js/weapon.js"></script>
-  <script src="../js/wave.js"></script>
-  <script src="../js/item.js"></script>
-  <script src="../js/ads.js"></script>
-  <script src="../js/fx.js"></script>
-  <script src="../js/hud.js"></script>
-  <script src="../js/menu.js"></script>
+  <script src="../src/platform/platform.js"></script>
+  <script src="../src/config/config.js"></script>
+  <script src="../src/config/collision.js"></script>
+  <script src="../src/core/core.js"></script>
+  <script src="../src/core/input.js"></script>
+  <script src="../src/persistence/save.js"></script>
+  <script src="../src/gameplay/player.js"></script>
+  <script src="../src/gameplay/enemy.js"></script>
+  <script src="../src/gameplay/weapon.js"></script>
+  <script src="../src/gameplay/wave.js"></script>
+  <script src="../src/gameplay/item.js"></script>
+  <script src="../src/services/ads.js"></script>
+  <script src="../src/presentation/ui.js"></script>
+  <script src="../src/services/audio.js"></script>
+  <script src="../src/presentation/effects.js"></script>
+  <script src="../src/presentation/hud.js"></script>
+  <script src="../src/features/fate.js"></script>
+  <script src="../src/features/progression.js"></script>
+  <script src="../src/presentation/screens.js"></script>
+  <script src="../src/presentation/camp.js"></script>
+  <script src="../src/features/weapon-selection.js"></script>
   <script>
     // boot 启动（原 boot.js，所有模块加载完成后执行）
     window.FX.init();

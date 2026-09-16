@@ -4,14 +4,6 @@
     "ignore": [
       {
         "type": "folder",
-        "value": "backup_pre_v009_refactor"
-      },
-      {
-        "type": "folder",
-        "value": "js/_chk"
-      },
-      {
-        "type": "folder",
         "value": "tests"
       },
       {
@@ -24,51 +16,11 @@
       },
       {
         "type": "file",
-        "value": "ARCHITECTURE.md"
+        "value": "README.md"
       },
       {
         "type": "file",
         "value": "package.json"
-      },
-      {
-        "type": "file",
-        "value": "run-tests.cjs"
-      },
-      {
-        "type": "file",
-        "value": "test-upgrade-filter.cjs"
-      },
-      {
-        "type": "file",
-        "value": "test-h5-smoke.cjs"
-      },
-      {
-        "type": "file",
-        "value": "test-hud.cjs"
-      },
-      {
-        "type": "file",
-        "value": "test-laser.cjs"
-      },
-      {
-        "type": "file",
-        "value": "test-mortar.cjs"
-      },
-      {
-        "type": "file",
-        "value": "test-runtime-integration.cjs"
-      },
-      {
-        "type": "file",
-        "value": "test-wave-items-fate.cjs"
-      },
-      {
-        "type": "file",
-        "value": "test-world-weapons.cjs"
-      },
-      {
-        "type": "file",
-        "value": "test-wx-first-frame.cjs"
       }
     ],
     "include": []

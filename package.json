@@ -3,6 +3,6 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "test": "node run-tests.cjs"
+    "test": "node tests/run-all.cjs"
   }
 }
