@@ -125,6 +125,10 @@
         var t = this.turrets[i];
         var stats = this.kindStats(t.kind);
         if (t.active) {
+          if (!t.endingNotified && t.timer <= CONFIG.PRODUCT.TURRET_WARNING) {
+            t.endingNotified = true;
+            AudioFX.play('warning');
+          }
           t.timer -= dt;
           if (t.timer <= 0) {
             t.active = false;
@@ -150,6 +154,9 @@
               t.timer = CONFIG.FIELD.TURRET_DURATION;
               t.cooldown = 0;
               t.charge = 0;
+              t.endingNotified = false;
+              AudioFX.play('turret');
+              Meta.showToast(CONFIG.TEXT.PRODUCT.TURRETS[t.kind] + ' · ' + CONFIG.TEXT.PRODUCT.ACTIVE);
               FX.burst(t.x, t.y);
               if (root.Achievements) root.Achievements.add('turretOn', 1);
             }
@@ -335,6 +342,7 @@
         o.tx = target.x;
         o.ty = target.y;
         o.damage = stats.damage;
+        o.shatter = stats.shatter;
         o.patchR = stats.patchR;
         o.patchLife = stats.patchLife;
         o.slow = stats.slow;
@@ -356,7 +364,7 @@
           if (dx * dx + dy * dy <= r * r) {
             var src = Combat.killSource;
             Combat.killSource = 'frost';
-            Combat.hitEnemy(e, o.damage, e.x, e.y);
+            Combat.hitEnemy(e, o.damage * ((e.freezeTimer > 0 || PowerUps.isFrozen()) ? 1 + o.shatter : 1), e.x, e.y);
             Combat.killSource = src;
             this.spawnFrostPatch(o.x, o.y, o);
             hit = true;
@@ -429,9 +437,8 @@
         var dx = e.x - x,
           dy = e.y - y;
         if (dx * dx + dy * dy <= r * r) {
-          var mul = 1;
-          if (stats.shatter > 0 && ((e.freezeTimer || 0) > 0 || (e.slowMul || 1) < 1)) mul += stats.shatter;
-          Combat.hitEnemy(e, stats.damage * mul, e.x, e.y);
+          Combat.hitEnemy(e, stats.damage, e.x, e.y);
+          if (e.active && stats.burn > 0) Enemy.applyMortarBurn(e, stats.damage * stats.burn);
         }
       }
       Combat.killSource = src;
@@ -454,6 +461,8 @@
       best.timer = CONFIG.FIELD.TURRET_DURATION;
       best.cooldown = 0;
       best.charge = 0;
+      best.endingNotified = false;
+      AudioFX.play('turret');
       FX.burst(best.x, best.y);
       if (root.Achievements) root.Achievements.add('turretOn', 1);
       return true;
@@ -622,6 +631,25 @@
       if (root.TeslaArcFX) root.TeslaArcFX.draw(ctx);
       if (root.FrostPatchFX) root.FrostPatchFX.draw(ctx);
       this.drawTurretStatus(ctx);
+    },
+    // 边缘箭头避开HUD与操作区；同时最多提示两座附近设施。
+    drawDirections: function (ctx) {
+      var cfg = CONFIG.PRODUCT, shown = 0;
+      ctx.save(); ctx.textAlign = 'center'; ctx.font = cfg.PREVIEW_SIZE + 'px Arial';
+      for (var i = 0; i < this.turrets.length && shown < cfg.GUIDE_LIMIT; i++) {
+        var t = this.turrets[i];
+        if (t.active || t.cooldownTimer > 0 || Math.hypot(t.x - Player.x, t.y - Player.y) > cfg.GUIDE_RANGE) continue;
+        var x = t.x - Camera.x, y = t.y - Camera.y;
+        if (x > cfg.GUIDE_MARGIN && x < CONFIG.VIEW.WIDTH - cfg.GUIDE_MARGIN && y > cfg.GUIDE_TOP && y < CONFIG.VIEW.HEIGHT - cfg.GUIDE_BOTTOM) continue;
+        var px = Math.max(cfg.GUIDE_MARGIN, Math.min(CONFIG.VIEW.WIDTH - cfg.GUIDE_MARGIN, x));
+        var py = Math.max(cfg.GUIDE_TOP, Math.min(CONFIG.VIEW.HEIGHT - cfg.GUIDE_BOTTOM, y));
+        ctx.fillStyle = CONFIG.COLORS.COIN;
+        ctx.save(); ctx.translate(px, py); ctx.rotate(Math.atan2(y - py, x - px));
+        ctx.beginPath(); ctx.moveTo(16, 0); ctx.lineTo(-9, -9); ctx.lineTo(-9, 9); ctx.closePath(); ctx.fill(); ctx.restore();
+        ctx.fillText(CONFIG.TEXT.PRODUCT.TURRETS[t.kind], Math.max(100, Math.min(CONFIG.VIEW.WIDTH - 100, px)), py + 30);
+        shown++;
+      }
+      ctx.restore();
     },
     drawTeslaTurret: function (ctx, t, x, y) {
       ctx.save();
@@ -808,7 +836,8 @@
         ctx.font = 'bold 18px Arial';
         ctx.textAlign = 'center';
         ctx.fillStyle = CONFIG.COLORS.COIN;
-        ctx.fillText(t.active ? Math.ceil(t.timer) + 's' : t.cooldownTimer > 0 ? '冷却 ' + Math.ceil(t.cooldownTimer) + 's' : t.charge > 0 ? '充能中' : '靠近激活', sx, sy + 65);
+        ctx.fillText(CONFIG.TEXT.PRODUCT.TURRETS[t.kind], sx, sy - 70);
+        ctx.fillText(t.active ? (t.timer <= CONFIG.PRODUCT.TURRET_WARNING ? CONFIG.TEXT.PRODUCT.ENDING : CONFIG.TEXT.PRODUCT.ACTIVE) + ' ' + Math.ceil(t.timer) + 's' : t.cooldownTimer > 0 ? '冷却 ' + Math.ceil(t.cooldownTimer) + 's' : t.charge > 0 ? '充能 ' + Math.ceil(t.charge / CONFIG.FIELD.TURRET_CHARGE_TIME * 100) + '%' : CONFIG.TEXT.PRODUCT.READY, sx, sy + 65);
         ctx.restore();
       }
     }
@@ -1040,17 +1069,18 @@
         if (root.BattleEvents) root.BattleEvents.draw(ctx);
         Extraction.draw(ctx);
         Enemy.draw(ctx);
-        Enemy.drawBossProjectiles(ctx);
         LaserEmitter.draw(ctx);
         MortarStrike.draw(ctx);
         Weapons.draw(ctx);
         Player.draw(ctx);
         DamageText.draw(ctx);
         FX.draw(ctx);
+        Enemy.drawThreats(ctx);
       } finally {
         ctx.restore();
       }
       UI.drawHud(ctx);
+      if (Game.state === CONFIG.GAME.STATE_PLAYING) Field.drawDirections(ctx);
       if (root.BattleEvents) root.BattleEvents.drawBanner(ctx);
       if (Game.state === CONFIG.GAME.STATE_PLAYING) {
         UI.drawJoystick(ctx);

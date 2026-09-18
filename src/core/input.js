@@ -93,7 +93,8 @@
         currentY: y,
         type: null,
         startTime: Date.now(),
-        state: root.Game.state
+        state: root.Game.state,
+        offerRevision: root.ExpLevelUp.offerRevision
       };
 
       // 冲刺是右下角独立按钮：按下即生效，方向在此刻锁定。
@@ -150,6 +151,12 @@
     onTouchEnd: function (x, y, touchId) {
       var touch = this.activeTouches.get(touchId);
       if (!touch) return;
+      // 连升/刷新后，旧卡片上尚未松开的第二根手指不能选择新卡。
+      if (touch.state === CONFIG.GAME.STATE_LEVELUP && touch.offerRevision !== root.ExpLevelUp.offerRevision) {
+        root.ButtonUI.pressedTouches.delete(touchId);
+        this.activeTouches.delete(touchId);
+        return;
+      }
       if (touch.type === 'joystick' && this.joystick.pointerId === touchId) this.stopJoystick();
       if (touch.type === 'button') {
         root.ButtonUI.pressedTouches.delete(touchId);

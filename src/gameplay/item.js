@@ -38,12 +38,36 @@
       this.greedBonus = 0;
       this.undoubledCoins = 0;
       this.committedCoins = 0;
+      this.runCounted = false;
+      this.freeRefreshUsed = 0;
+      this.choicesTaken = 0;
+      this.sourceKills = Object.create(null);
       this.adRefreshUsed = 0;
       this.adReviveUsed = 0;
       this.adCoinDoubleUsed = 0;
       this.coinDoubleClaimed = false;
       this.extractBonus = false;
       this.extractAdClaimed = false;
+    },
+    // 收益预览不修改结算状态，不触发存档发奖。
+    extractionPreview: function () {
+      var base = Math.floor(Game.survivedSeconds / CONFIG.REWARDS.SECONDS_PER_COIN) + this.kills * CONFIG.REWARDS.COINS_PER_KILL + ExpLevelUp.level * CONFIG.REWARDS.COINS_PER_LEVEL + this.pickedCoins;
+      return Math.floor(base * (1 + Meta.getEffectTotal('GREED'))) * CONFIG.EXTRACTION.REWARD_MULTIPLIER;
+    },
+    contribution: function () {
+      var best = '', count = 0;
+      for (var id in this.sourceKills) if (this.sourceKills[id] > count) { best = id; count = this.sourceKills[id]; }
+      return best ? CONFIG.TEXT.PRODUCT.SOURCE_COUNT(CONFIG.TEXT.PRODUCT.SOURCES[best] || best, count) : CONFIG.TEXT.SETTLEMENT_KILLS(this.kills);
+    },
+    nextGoal: function () {
+      var defs = root.Achievements.defs || [], data = Meta.data.achievements, best = null, ratio = 0;
+      for (var i = 0; i < defs.length; i++) {
+        var d = defs[i];
+        if (data.completed.indexOf(d[0]) >= 0) continue;
+        var progress = data.progress[d[3]] || 0;
+        if (progress > 0 && progress / d[4] > ratio && progress < d[4]) { best = d; ratio = progress / d[4]; }
+      }
+      return best ? best[1] + ' ' + (data.progress[best[3]] || 0) + '/' + best[4] : CONFIG.TEXT.PRODUCT.TRY_TURRET;
     },
     calculateCoins: function (seconds, level, isVictory) {
       var timeCoins = Math.floor(seconds / CONFIG.REWARDS.SECONDS_PER_COIN);
@@ -233,6 +257,7 @@
       return this.pendingChoices > 0;
     },
     prepareOffers: function () {
+      this.offerRevision = (this.offerRevision || 0) + 1;
       this.collectEligibleDefinitions();
       this.offerCount = Math.min(CONFIG.UPGRADES.OFFER_COUNT, this.candidateIndices.length);
       var legendarySeen = false;
@@ -254,7 +279,15 @@
           this.offerCount = i;
           break;
         }
-        var pick = matching[Math.floor(Math.random() * matching.length)];
+        var preferred = [];
+        for (var m = 0; m < matching.length; m++) {
+          var def = CONFIG.UPGRADES.DEFINITIONS[this.candidateIndices[matching[m]]];
+          var wanted = i === 0 ? def.weapon === root.WeaponProgress.selected :
+            i === 1 ? ['MAX_HP', 'MOVE_SPEED', 'PICKUP_RADIUS'].indexOf(def.EFFECT) >= 0 : false;
+          if (wanted) preferred.push(matching[m]);
+        }
+        var choices = preferred.length && (i > 0 || RunStats.choicesTaken < CONFIG.PRODUCT.EARLY_CHOICES) ? preferred : matching;
+        var pick = choices[Math.floor(Math.random() * choices.length)];
         var definitionIndex = this.candidateIndices[pick];
         var definition = CONFIG.UPGRADES.DEFINITIONS[definitionIndex];
         var offer = this.offers[i];
@@ -324,6 +357,18 @@
     getDiscreteAmount: function (amount, quality) {
       return Math.max(1, Math.round(amount * quality));
     },
+    // 只展示可直接核对的属性；机制词条使用对应操作提示。
+    previewOffer: function (offer) {
+      var d = offer.definition, amount = (d.AMOUNT || 0) * offer.rarity.MULTIPLIER;
+      var before, after;
+      if (d.EFFECT === 'MAX_HP') { before = Player.maxHp; after = before + amount; }
+      if (d.EFFECT === 'PICKUP_RADIUS') { before = Player.pickupRadius; after = Math.min(CONFIG.EXPERIENCE.MAX_PICKUP_RADIUS, before + amount); }
+      if (d.EFFECT === 'MULTISHOT') { before = PulseGun.projectileCount; after = Math.min(CONFIG.WEAPONS.PULSE.MAX_PROJECTILES, before + this.getDiscreteAmount(d.AMOUNT, offer.rarity.MULTIPLIER)); }
+      if (d.EFFECT === 'PENETRATION') { before = PulseGun.penetration; after = Math.min(CONFIG.WEAPONS.PULSE.MAX_PENETRATION, before + this.getDiscreteAmount(d.AMOUNT, offer.rarity.MULTIPLIER)); }
+      if (d.EFFECT === 'CRIT_CHANCE') { before = Player.critChance * 100; after = Math.min(CONFIG.PLAYER.MAX_CRIT_CHANCE, Player.critChance + amount) * 100; }
+      if (before !== undefined) return this.toCleanNumber(before) + ' → ' + this.toCleanNumber(after);
+      return CONFIG.TEXT.PRODUCT.MECHANICS[d.EFFECT] || '';
+    },
     toCleanNumber: function (value) {
       return Math.round(value * 10) / 10;
     },
@@ -353,6 +398,7 @@
       if (action === -2) Game.requestLevelRefresh();
     },
     selectOffer: function (index) {
+      if (Game.state !== CONFIG.GAME.STATE_LEVELUP || this.pendingChoices <= 0) return;
       if (index < 0 || index >= this.offerCount) return;
       var offer = this.offers[index];
       if (offer.rarity.ID === 'LEGENDARY' && root.FX && root.FX.legendaryBurst) {
@@ -360,6 +406,9 @@
       }
       this.applyUpgrade(offer.definition, offer.rarity);
       this.levels[offer.definition.ID] += 1;
+      RunStats.choicesTaken += 1;
+      var hint = CONFIG.TEXT.PRODUCT.MECHANICS[offer.definition.EFFECT];
+      if (hint) Meta.showToast(hint);
       this.pendingChoices = Math.max(0, this.pendingChoices - 1);
       Input.clearTap();
       Game.onLevelChoiceResolved();

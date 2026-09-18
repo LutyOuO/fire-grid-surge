@@ -319,7 +319,7 @@
         this.facingAngle = Math.atan2(this.lastMoveDirY, this.lastMoveDirX);
       }
     },
-    takeDamage: function (amount, source) {
+    takeDamage: function (amount, source, continuous) {
       if (root.DevConsole.god || this.nextGod) return false;
       if (this.invincibleTimer > 0) return false;
       // 护盾优先吸收伤害
@@ -341,7 +341,7 @@
         }
       }
       this.hp = Math.max(0, this.hp - amount * this.incomingDamageMultiplier);
-      this.invincibleTimer = CONFIG.PLAYER.INVINCIBLE_TIME;
+        if (!continuous) this.invincibleTimer = CONFIG.PLAYER.INVINCIBLE_TIME;
       if (this.hp <= 0 && this.phoenixReady) {
         this.phoenixReady = false;
         this.hp = Math.max(1, Math.ceil(this.maxHp * 0.5));

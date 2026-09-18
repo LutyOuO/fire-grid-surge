@@ -91,12 +91,15 @@
             var hit = CONFIG.WEAPONS.PULSE.RADIUS + e.radius;
             if (dx * dx + dy * dy > hit * hit) continue;
             var normalEnemy = e.typeIndex !== CONFIG.ENEMY.TYPE_ELITE && e.typeIndex !== CONFIG.ENEMY.TYPE_BOSS && e.typeIndex !== CONFIG.ENEMY.TYPE_BOSS_RANGED;
+            var killSource = root.Combat.killSource;
+            root.Combat.killSource = 'pulse';
             if (normalEnemy && Player.executeChance > 0 && Math.random() < Player.executeChance) {
               root.DamageText.spawn(e.x, e.y, e.hp, true);
               Enemy.applyDamage(e, e.hp + 1);
             } else {
               root.Combat.hitEnemy(e, bullet.damage, e.x, e.y);
             }
+            root.Combat.killSource = killSource;
             bullet.hitSpawnIds[bullet.hitCount++] = e.spawnId;
             if (bullet.pierceRemaining > 0) {
               bullet.pierceRemaining -= 1;
@@ -258,7 +261,10 @@
             dy = bladeY - enemy.y;
           if (dx * dx + dy * dy <= hitDistanceSquared) {
             enemy.bladeCooldown = CONFIG.WEAPONS.BLADE.HIT_COOLDOWN * this.cooldownMultiplier;
+            var source = Combat.killSource;
+            Combat.killSource = 'blade';
             Combat.hitEnemy(enemy, this.getDamage(), enemy.x, enemy.y);
+            Combat.killSource = source;
             break;
           }
         }

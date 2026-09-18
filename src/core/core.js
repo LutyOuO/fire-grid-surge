@@ -415,6 +415,11 @@
       }
     },
     requestLevelRefresh: function () {
+      if (this.state === CONFIG.GAME.STATE_LEVELUP && !Ads.active && RunStats.freeRefreshUsed < CONFIG.PRODUCT.FREE_REFRESH) {
+        if (ExpLevelUp.refreshOffersWithRareGuarantee()) RunStats.freeRefreshUsed++;
+        Input.clearTap();
+        return;
+      }
       if (this.state !== CONFIG.GAME.STATE_LEVELUP || RunStats.getRefreshRemaining() <= 0) return;
       Ads.showRewarded(CONFIG.ADS.PLACEMENT_LEVEL_REFRESH, function () {
         if (Game.state !== CONFIG.GAME.STATE_LEVELUP || RunStats.getRefreshRemaining() <= 0) return;
@@ -462,7 +467,8 @@
     commitSettlement: function (isVictory) {
       RunStats.calculateCoins(this.survivedSeconds, ExpLevelUp.level, isVictory);
       var newCoins = Math.max(0, RunStats.finalCoins - RunStats.committedCoins);
-      Meta.settleRun(this.survivedSeconds, RunStats.kills, Spawner.waveIndex, newCoins);
+      Meta.settleRun(this.survivedSeconds, RunStats.kills, Spawner.waveIndex, newCoins, !RunStats.runCounted);
+      RunStats.runCounted = true;
       RunStats.committedCoins = RunStats.finalCoins;
     },
     requestAdRevive: function () {

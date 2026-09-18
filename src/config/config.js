@@ -2044,6 +2044,39 @@
     OFFSET: 110,
     CONTACT: 12
   };
+  // 产品打磨参数：持续伤害、首局引导和免费刷新集中管理。
+  CONFIG.PRODUCT = { FREE_REFRESH: 1, EARLY_CHOICES: 3, BURN_TICK: 0.5,
+    TURRET_WARNING: 5, GUIDE_RANGE: 1100, GUIDE_LIMIT: 2, GUIDE_MARGIN: 64,
+    GUIDE_TOP: 320, GUIDE_BOTTOM: 310, FIRST_EVENT: 95, GRID_WARNING: 2,
+    WAVE_REST: 4, WAVE_MAX_WAIT: 12, WAVE_REMAINING: 12,
+    PREVIEW_SIZE: 19, PREVIEW_BOTTOM: 22, REPORT_SIZE: 21, REPORT_GAP: 32,
+    ONBOARD_TIME: 30, ONBOARD_END: 90 };
+  CONFIG.TEXT.PRODUCT = {
+    FREE_REFRESH: '免费刷新', REFRESH_HINT: '免费优先 · 广告刷新另计',
+    PENDING: function(n) { return '战斗已暂停 · 待选 ' + n + ' 次强化'; },
+    STACK: function(n, max) { return '当前 ' + n + '/' + max + ' → ' + (n + 1) + '/' + max; },
+    TURRETS: { mortar: '迫击·聚怪轰炸', tesla: '电弧·连锁清场', frost: '霜冻·控制通道' },
+    READY: '靠近站立充能', ACTIVE: '已启动', ENDING: '即将停机',
+    FIRST: '靠近炮台站立3秒，启动火力支援',
+    BURN: '燃烧', CONTRIBUTION: '本局主要火力：', NEXT: '下局目标：',
+    SOURCES: { mortar: '迫击炮', tesla: '电弧塔', frost: '霜冻塔', flame: '喷火器', bow: '弩箭', pulse: '手枪', blade: '飞刃' },
+    TRY_TURRET: '主动启动一座炮台，利用火力清场',
+    TRY_WEAPON: '尝试另一把主武器的专属路线',
+    EXTRACT: function(n) { return '现在撤离预计带走 ' + n + ' 金币'; },
+    CONTINUE: '继续：击杀与升级增加结算金币，撤离加成需成功撤离',
+    SOURCE_COUNT: function(name, n) { return name + '击杀 ' + n; },
+    GRID_WARN: '电网预警：2秒后通电，每秒8伤害',
+    AIRDROP: '空投：道具与经验补给，靠近领取',
+    SANCTUARY: '撤离圈回复生命，注意剩余时间',
+    MECHANICS: { NAPALM: '边退边烧：火焰会留下燃烧区域', BACKDRAFT: '利用火焰末端爆炸处理聚集敌群',
+      INFERNO: '近身脉冲恢复生命，留意触发间隔', PILEDRIVER: '引怪成线，连续穿透积累伤害',
+      SCATTER_BOLT: '向墙角引怪，利用裂矢追加攻击', MARKSMAN: '拉开距离，让远射首击暴击' }
+  };
+  CONFIG.POLISH.TONES.turret = [180, 650, 0.25];
+  CONFIG.POLISH.TONES.warning = [520, 220, 0.18];
+  CONFIG.META.GADGET_UPGRADES.turret_frost.items.forEach(function(item) {
+    if (item.ID === 'shatter') item.DESC = '霜塔冰球命中已冻结敌人伤害 +25%';
+  });
   CONFIG.WAVE_THEMES = {
     WAVES: [4, 7, 11, 14],
     KINDS: {

@@ -75,6 +75,9 @@
           enemy.bossTargetY = 0;
           enemy.stunTimer = 0;
           enemy.freezeTimer = 0;
+          enemy.mortarBurnTime = 0;
+          enemy.mortarBurnTick = 0;
+          enemy.mortarBurnDps = 0;
           enemy.slowMul = 1;
           enemy.affixes = [];
           enemy.affixShield = 0;
@@ -107,6 +110,8 @@
       for (var i = 0; i < this.pool.length; i++) {
         var enemy = this.pool[i];
         if (!enemy.active) continue;
+        this.updateMortarBurn(enemy, dt);
+        if (!enemy.active) continue;
         enemy.stunTimer = Math.max(0, (enemy.stunTimer || 0) - dt);
         enemy.freezeTimer = Math.max(0, (enemy.freezeTimer || 0) - dt);
         if (enemy.freezeTimer > 0) continue;
@@ -132,6 +137,25 @@
       }
       this.updateBlasts(dt);
       if (root.Spatial) root.Spatial.rebuild();
+    },
+    // 重复命中刷新持续时间，保留较强燃烧；击杀归属迫击炮。
+    applyMortarBurn: function (e, dps) {
+      if (!e.active || dps <= 0) return;
+      e.mortarBurnTime = CONFIG.TURRETS.KINDS.mortar.BURN_DURATION;
+      e.mortarBurnDps = Math.max(e.mortarBurnDps || 0, dps);
+    },
+    updateMortarBurn: function (e, dt) {
+      if (!(e.mortarBurnTime > 0)) return;
+      var elapsed = Math.min(dt, e.mortarBurnTime);
+      e.mortarBurnTime = Math.max(0, e.mortarBurnTime - elapsed);
+      e.mortarBurnTick = (e.mortarBurnTick || 0) + elapsed;
+      if (e.mortarBurnTick + 1e-9 < CONFIG.PRODUCT.BURN_TICK && e.mortarBurnTime > 1e-9) return;
+      var source = root.Combat.killSource;
+      root.Combat.killSource = 'mortar';
+      try { this.applyDamage(e, e.mortarBurnDps * e.mortarBurnTick); }
+      finally { root.Combat.killSource = source; }
+      e.mortarBurnTick = 0;
+      if (e.mortarBurnTime <= 1e-9) e.mortarBurnDps = 0;
     },
     moveTowardPlayer: function (e, dt) {
       if (e.stunTimer > 0) return;
@@ -655,6 +679,15 @@
       this.drawBody(ctx, e);
       ctx.restore();
       this.drawIce(ctx, e);
+      if (e.mortarBurnTime > 0) {
+        ctx.save();
+        ctx.strokeStyle = CONFIG.COLORS.COIN;
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(x, y, e.radius + 4, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = CONFIG.COLORS.COIN; ctx.font = '14px Arial';
+        ctx.fillText(CONFIG.TEXT.PRODUCT.BURN, x, y - e.radius - 8);
+        ctx.restore();
+      }
     },
     drawTypeMark: function (ctx, enemy, x, y, type) {
       ctx.strokeStyle = CONFIG.COLORS[type.OUTLINE_KEY];
@@ -787,9 +820,6 @@
       ctx.strokeStyle = CONFIG.COLORS[type.OUTLINE_KEY];
       ctx.stroke();
       this.drawTypeMark(ctx, enemy, screenX, screenY, type);
-      if (enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS && enemy.meleePhase === 'warn') {
-        this.drawMeleeChargeTelegraph(ctx, enemy, screenX, screenY);
-      }
       if (enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED) {
         this.drawRangedBossDetails(ctx, enemy, screenX, screenY);
       }
@@ -810,6 +840,14 @@
         ctx.fillText(label, screenX, screenY - enemy.radius - 10);
       }
       ctx.restore();
+    },
+    // 友方爆炸绘制完毕后再叠加敌方关键预警。
+    drawThreats: function (ctx) {
+      for (var i = 0; i < this.pool.length; i++) {
+        var e = this.pool[i];
+        if (e.active && e.typeIndex === CONFIG.ENEMY.TYPE_BOSS && e.meleePhase === 'warn') this.drawMeleeChargeTelegraph(ctx, e, e.x - Camera.x, e.y - Camera.y);
+      }
+      this.drawBossProjectiles(ctx);
     },
     drawMeleeChargeTelegraph: function (ctx, enemy, sx, sy) {
       var ax = enemy.meleeTx - Camera.x;
@@ -877,11 +915,12 @@
         a = root.Achievements;
       if (type < CONFIG.ENEMY.TYPE_ELITE && Player.nextMedkitDrop && Math.random() < Player.nextMedkitDrop) PowerUps.drop(e.x, e.y, CONFIG.POWERUPS.TYPE_MEDKIT);
       if (source) {
+        root.RunStats.sourceKills[source] = (root.RunStats.sourceKills[source] || 0) + 1;
         if (source === 'tesla' || source === 'frost' || source === 'mortar') {
           o.add('mortar', 1);
-          o.add(source, 1);
+          if (source !== 'mortar') o.add(source, 1);
           a.add('mortar', 1);
-          a.add(source, 1);
+          if (source !== 'mortar') a.add(source, 1);
         } else {
           o.add(source, 1);
           a.add(source === 'flame' ? 'flameRun' : source === 'bow' ? 'bowRun' : source, 1);

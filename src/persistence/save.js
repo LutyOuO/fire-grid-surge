@@ -260,12 +260,12 @@
       this.save();
       return true;
     },
-    settleRun: function (seconds, kills, wave, coins) {
+    settleRun: function (seconds, kills, wave, coins, countRun) {
       this.data.coins += Math.max(0, Math.floor(coins));
       this.data.bestTime = Math.max(this.data.bestTime, seconds);
       this.data.bestKills = Math.max(this.data.bestKills, kills);
       this.data.bestWave = Math.max(this.data.bestWave, wave);
-      this.data.runs = (this.data.runs || 0) + 1;
+      if (countRun) this.data.runs = (this.data.runs || 0) + 1;
       this.save();
       this.recordRunAchievements(seconds, kills, wave, coins);
     },

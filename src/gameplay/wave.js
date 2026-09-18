@@ -16,6 +16,7 @@
       this.rangedPending = false;
       this.waveRangedSpawned = false;
       this.theme = null;
+      this.pressureWait = 0;
       this.normalTimer = 0;
       this.waveRest = 2;
       this.waveQuota = 0;
@@ -156,7 +157,13 @@
         if (Enemy.activeCount < CONFIG.ENEMY.POOL_SIZE) this.spawnType(CONFIG.ENEMY.TYPE_ELITE, elapsed);
         this.eliteTimer = 60;
       }
-      if (this.waveQuota <= 0 && this.eliteQuota <= 0) this.waveRest = 2;
+      if (this.waveQuota <= 0 && this.eliteQuota <= 0) {
+        this.pressureWait += dt;
+        if (Enemy.activeCount <= CONFIG.PRODUCT.WAVE_REMAINING || this.pressureWait >= CONFIG.PRODUCT.WAVE_MAX_WAIT) {
+          this.waveRest = CONFIG.PRODUCT.WAVE_REST;
+          this.pressureWait = 0;
+        }
+      }
     }
   };
   root.Spawner = Spawner;
@@ -168,6 +175,9 @@
     seen: {},
     reset: function () {
       this.timer = CONFIG.EVENTS.FIRST_DELAY;
+      this.firstRun = (Meta.data.runs || 0) === 0;
+      this.guided = false;
+      if (this.firstRun) this.timer = CONFIG.PRODUCT.FIRST_EVENT;
       this.active = null;
       this.airdropCount = 0;
       this.seen = {};
@@ -179,6 +189,10 @@
       }
     },
     update: function (dt) {
+      if (this.firstRun && !this.guided && Game.survivedSeconds >= CONFIG.PRODUCT.ONBOARD_TIME) {
+        this.guided = true;
+        this.banner(CONFIG.TEXT.PRODUCT.FIRST);
+      }
       if (this.active) {
         this.active.t -= dt;
         this.tickActive(dt);
@@ -192,6 +206,7 @@
       if (this.timer <= 0) this.roll();
     },
     roll: function () {
+      if (this.firstRun && this.airdropCount === 0) { this.start('airdrop'); return; }
       var wave = Spawner.waveIndex;
       var pool = [];
       var kinds = CONFIG.EVENTS.KINDS;
@@ -211,6 +226,8 @@
       var def = CONFIG.EVENTS.KINDS[id];
       if (!def) return;
       this.active = { id: id, t: def.DURATION, land: def.LAND || 0, opened: false };
+      this.active.warning = id === 'grid_surge' ? CONFIG.PRODUCT.GRID_WARNING : 0;
+      this.active.t += this.active.warning;
       this.seen[id] = true;
       this.banner(def.BANNER);
       if (id === 'airdrop') {
@@ -218,9 +235,12 @@
         var pos = this.randomClear(80);
         this.active.x = pos.x;
         this.active.y = pos.y;
+        this.active.rewardType = Math.floor(Math.random() * CONFIG.POWERUPS.TYPE_MORTAR);
+        this.banner(CONFIG.TEXT.PRODUCT.AIRDROP);
       } else if (id === 'elite_rush') {
         for (var i = 0; i < def.EXTRA_ELITES; i++) Spawner.spawnType(CONFIG.ENEMY.TYPE_ELITE, Game.survivedSeconds);
       } else if (id === 'grid_surge') {
+        this.banner(CONFIG.TEXT.PRODUCT.GRID_WARN);
         this.active.strips = [];
         for (var s = 0; s < def.STRIPS; s++) {
           var axis = Math.random() < 0.5 ? 'x' : 'y';
@@ -239,6 +259,7 @@
     },
     tickActive: function (dt) {
       var ev = this.active, def = CONFIG.EVENTS.KINDS[ev.id];
+      if (ev.warning > 0) { ev.warning = Math.max(0, ev.warning - dt); return; }
       if (ev.id === 'airdrop') {
         if (!ev.opened && ev.t <= def.DURATION - def.LAND) {
           ev.opened = true;
@@ -246,8 +267,7 @@
         if (ev.opened) {
           var dx = Player.x - ev.x, dy = Player.y - ev.y;
           if (dx * dx + dy * dy <= 50 * 50) {
-            var types = [0, 1, 2, 3, 4];
-            PowerUps.drop(ev.x, ev.y, types[Math.floor(Math.random() * types.length)]);
+            PowerUps.drop(ev.x, ev.y, ev.rewardType);
             for (var g = 0; g < def.GEMS; g++) Experience.dropGem(ev.x + (Math.random() * 2 - 1) * 40, ev.y + (Math.random() * 2 - 1) * 40, 8);
             ev.t = 0;
           }
@@ -264,7 +284,7 @@
           }
           return false;
         };
-        if (hurt(Player)) Player.takeDamage(dps, 'event');
+        if (hurt(Player)) Player.takeDamage(dps, 'event', true);
         for (var i = 0; i < Enemy.pool.length; i++) {
           var e = Enemy.pool[i];
           if (e.active && hurt(e)) Enemy.applyDamage(e, dps);
@@ -292,7 +312,7 @@
         ctx.restore();
       } else if (ev.id === 'grid_surge' && ev.strips) {
         ctx.save();
-        ctx.fillStyle = 'rgba(90,212,230,0.22)';
+        ctx.fillStyle = ev.warning > 0 ? 'rgba(233,173,88,0.18)' : 'rgba(90,212,230,0.22)';
         for (var i = 0; i < ev.strips.length; i++) {
           var s = ev.strips[i], w = CONFIG.EVENTS.KINDS.grid_surge.WIDTH;
           if (s.axis === 'x') ctx.fillRect(s.pos - w / 2 - Camera.x, -Camera.y, w, CONFIG.WORLD.HEIGHT);

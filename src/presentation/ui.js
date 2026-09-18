@@ -801,6 +801,11 @@ var UI = {
       }
       this.drawCenteredText(ctx, CONFIG.TEXT.TOTAL_COINS(Meta.data.coins), CONFIG.UI.SETTLEMENT_START_Y + CONFIG.UI.SETTLEMENT_LINE_GAP * 4 + top, 28, false, CONFIG.COLORS.HINT_TEXT);
       this.drawSettlementAdButtons(ctx, isVictory);
+      var reportY = CONFIG.UI.SETTLEMENT_START_Y + CONFIG.UI.SETTLEMENT_LINE_GAP * 5 + top;
+      if (reportY + CONFIG.PRODUCT.REPORT_GAP < CONFIG.UI.SETTLEMENT_AD_Y) {
+        this.drawCenteredText(ctx, CONFIG.TEXT.PRODUCT.CONTRIBUTION + RunStats.contribution(), reportY, CONFIG.PRODUCT.REPORT_SIZE, false, CONFIG.COLORS.COIN);
+        this.drawCenteredText(ctx, CONFIG.TEXT.PRODUCT.NEXT + RunStats.nextGoal(), reportY + CONFIG.PRODUCT.REPORT_GAP, CONFIG.PRODUCT.REPORT_SIZE, false, CONFIG.COLORS.HINT_TEXT);
+      }
       this.drawRestartButton(ctx);
     },
     drawSettlementAdButtons: function (ctx, isVictory) {
@@ -871,13 +876,14 @@ var UI = {
       var top = CONFIG.UI.TOP_INSET || 0;
       this.drawOverlay(ctx);
       this.drawCenteredText(ctx, CONFIG.TEXT.LEVEL_UP, CONFIG.UI.LEVELUP_TITLE_Y + top, CONFIG.UI.LEVELUP_TITLE_SIZE, true, CONFIG.COLORS.TEXT);
-      this.drawCenteredText(ctx, CONFIG.TEXT.LEVEL_UP_SUBTITLE, CONFIG.UI.LEVELUP_SUBTITLE_Y + top, CONFIG.UI.LEVELUP_SUBTITLE_SIZE, false, CONFIG.COLORS.HINT_TEXT);
+      this.drawCenteredText(ctx, CONFIG.TEXT.PRODUCT.PENDING(ExpLevelUp.pendingChoices), CONFIG.UI.LEVELUP_SUBTITLE_Y + top, CONFIG.UI.LEVELUP_SUBTITLE_SIZE, false, CONFIG.COLORS.HINT_TEXT);
       for (var i = 0; i < ExpLevelUp.offerCount; i++) {
         this.drawUpgradeCard(ctx, i, ExpLevelUp.offers[i]);
       }
       this.drawCenteredText(ctx, CONFIG.TEXT.CARD_HINT, CONFIG.UI.CARD_HINT_Y, CONFIG.UI.CARD_HINT_SIZE, false, CONFIG.COLORS.HINT_TEXT);
       var remaining = RunStats.getRefreshRemaining();
-      this.drawTwoLineButton(ctx, CONFIG.UI.LEVEL_REFRESH_X, CONFIG.UI.LEVEL_REFRESH_Y, CONFIG.UI.LEVEL_REFRESH_WIDTH, CONFIG.UI.LEVEL_REFRESH_HEIGHT, remaining > 0 ? CONFIG.TEXT.AD_REFRESH : CONFIG.TEXT.AD_REFRESH_USED_UP, remaining > 0 ? CONFIG.TEXT.AD_REFRESH_COUNT(remaining) : '', remaining > 0);
+      var free = RunStats.freeRefreshUsed < CONFIG.PRODUCT.FREE_REFRESH;
+      this.drawTwoLineButton(ctx, CONFIG.UI.LEVEL_REFRESH_X, CONFIG.UI.LEVEL_REFRESH_Y, CONFIG.UI.LEVEL_REFRESH_WIDTH, CONFIG.UI.LEVEL_REFRESH_HEIGHT, free ? CONFIG.TEXT.PRODUCT.FREE_REFRESH : remaining > 0 ? CONFIG.TEXT.AD_REFRESH : CONFIG.TEXT.AD_REFRESH_USED_UP, CONFIG.TEXT.AD_REFRESH_COUNT(remaining), free || remaining > 0);
       if (root.DevConsole.active && ExpLevelUp.pendingChoices >= 10) this.drawActionButton(ctx, 245, this.getSkipLevelY(), 260, 58, '跳过剩余升级', true, 19);
     },
     drawUpgradeCard: function (ctx, index, offer) {
@@ -931,11 +937,13 @@ var UI = {
       ctx.fillStyle = rarityColor;
       ctx.fillText(CONFIG.TEXT.RARITY[offer.rarity.ID], x + CONFIG.UI.CARD_NAME_X_OFFSET, y + CONFIG.UI.CARD_RARITY_Y_OFFSET);
       ctx.textAlign = 'right';
-      ctx.fillText(CONFIG.TEXT.CARD_LEVEL(offer.level + 1, offer.definition.MAX_LEVEL), x + width - CONFIG.UI.CARD_LEVEL_RIGHT_OFFSET, y + CONFIG.UI.CARD_RARITY_Y_OFFSET);
+      ctx.fillText(CONFIG.TEXT.PRODUCT.STACK(offer.level, offer.definition.MAX_LEVEL), x + width - CONFIG.UI.CARD_LEVEL_RIGHT_OFFSET, y + CONFIG.UI.CARD_RARITY_Y_OFFSET);
       ctx.textAlign = 'left';
       ctx.font = CONFIG.UI.CARD_DESC_SIZE + 'px Arial, "Microsoft YaHei", sans-serif';
       ctx.fillStyle = CONFIG.COLORS.CARD_DESC;
       ctx.fillText(offer.description, x + CONFIG.UI.CARD_NAME_X_OFFSET, y + CONFIG.UI.CARD_DESC_Y_OFFSET);
+      ctx.font = CONFIG.PRODUCT.PREVIEW_SIZE + 'px Arial';
+      ctx.fillText(ExpLevelUp.previewOffer(offer), x + CONFIG.UI.CARD_NAME_X_OFFSET, y + height - CONFIG.PRODUCT.PREVIEW_BOTTOM, width - CONFIG.UI.CARD_NAME_X_OFFSET * 2);
       if (rarityId === 'LEGENDARY') {
         for (var p = 0; p < 6; p++) {
           var px = x + 16 + (p * 113 + Date.now() / 20) % (width - 32);
@@ -949,7 +957,7 @@ var UI = {
     },
     consumeLevelUpAction: function (offerCount) {
       if (!Input.consumeTap(this.tapPoint)) return -1;
-      if (RunStats.getRefreshRemaining() > 0 && this.isPointInRect(this.tapPoint, CONFIG.UI.LEVEL_REFRESH_X, CONFIG.UI.LEVEL_REFRESH_Y, CONFIG.UI.LEVEL_REFRESH_WIDTH, CONFIG.UI.LEVEL_REFRESH_HEIGHT)) return -2;
+      if ((RunStats.freeRefreshUsed < CONFIG.PRODUCT.FREE_REFRESH || RunStats.getRefreshRemaining() > 0) && this.isPointInRect(this.tapPoint, CONFIG.UI.LEVEL_REFRESH_X, CONFIG.UI.LEVEL_REFRESH_Y, CONFIG.UI.LEVEL_REFRESH_WIDTH, CONFIG.UI.LEVEL_REFRESH_HEIGHT)) return -2;
       if (this.tapPoint.x < CONFIG.UI.CARD_X || this.tapPoint.x > CONFIG.UI.CARD_X + CONFIG.UI.CARD_WIDTH) return -1;
       for (var i = 0; i < offerCount; i++) {
         var y = CONFIG.UI.CARD_START_Y + i * (CONFIG.UI.CARD_HEIGHT + CONFIG.UI.CARD_GAP);
@@ -1193,6 +1201,8 @@ var UI = {
       } else if (ext.state === 'extractable' && ext.playerInZone) {
         var c = this.getExtractionConfirmRect();
         this.drawActionButton(ctx, c.x, c.y, c.w, c.h, CONFIG.TEXT.EXTRACTION_EXTRACT, true, 30);
+        this.drawCenteredText(ctx, CONFIG.TEXT.PRODUCT.EXTRACT(RunStats.extractionPreview()), c.y - CONFIG.PRODUCT.REPORT_GAP * 2, CONFIG.PRODUCT.REPORT_SIZE, false, CONFIG.COLORS.COIN);
+        this.drawCenteredText(ctx, CONFIG.TEXT.PRODUCT.CONTINUE, c.y - CONFIG.PRODUCT.REPORT_GAP, CONFIG.PRODUCT.PREVIEW_SIZE, false, CONFIG.COLORS.HINT_TEXT);
       }
     },
     consumeExtractionAction: function () {
