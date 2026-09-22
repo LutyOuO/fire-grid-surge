@@ -22,6 +22,7 @@ var FX = {
     shake: 0,
     flash: 0,
     legendaryFlash: 0,
+    goldFlash: 0,
     notice: 0,
     wave: 0,
     rings: [],
@@ -39,20 +40,51 @@ var FX = {
       }
     },
     burst: function (x, y, color) {
-      var remaining = CONFIG.POLISH.KILL_PARTICLES;
-      for (var i = 0; i < this.pool.length && remaining > 0; i++) {
+      this.emitBurst(x, y, color, CONFIG.POLISH.KILL_PARTICLES, 1, 1);
+    },
+    // v014 #96 参数化粒子喷发（固定池，无 new）。
+    emitBurst: function (x, y, color, count, speedMul, lifeMul) {
+      var quality = root.Settings && root.Settings.getQuality ? root.Settings.getQuality() : CONFIG.RENDER_QUALITY.LEVELS.high;
+      count = Math.max(1, Math.ceil(count * quality.PARTICLES));
+      var speed = CONFIG.POLISH.PARTICLE_SPEED * (speedMul || 1);
+      var life = CONFIG.POLISH.PARTICLE_LIFE * (lifeMul || 1);
+      var made = 0;
+      for (var i = 0; i < this.pool.length && made < count; i++) {
         var p = this.pool[i];
         if (p.active) continue;
         var a = Math.random() * Math.PI * 2;
         p.active = true;
         p.x = x;
         p.y = y;
-        p.life = CONFIG.POLISH.PARTICLE_LIFE;
-        p.vx = Math.cos(a) * CONFIG.POLISH.PARTICLE_SPEED;
-        p.vy = Math.sin(a) * CONFIG.POLISH.PARTICLE_SPEED;
+        p.life = life;
+        p.vx = Math.cos(a) * speed;
+        p.vy = Math.sin(a) * speed;
         p.color = color || '';
-        remaining -= 1;
+        made += 1;
       }
+    },
+    // v014 #96 反馈分级：普通命中只小点不震屏；暴击中粒子+重音+轻震；精英/BOSS 重（BOSS 附慢动作）。
+    feedbackHit: function (x, y) {
+      this.emitBurst(x, y, CONFIG.COLORS.PARTICLE, CONFIG.FEEDBACK.NORMAL_HIT_PARTICLES || 3, 0.7, 0.7);
+    },
+    feedbackCrit: function (x, y) {
+      var F = CONFIG.FEEDBACK;
+      this.emitBurst(x, y, CONFIG.COLORS.DAMAGE_CRIT || '#ffd54a', F.CRIT_PARTICLES, 1.3, 1.1);
+      AudioFX.play('crit');
+      if (root.Settings && root.Settings.shake) Camera.startShake(F.CRIT_SHAKE_SIZE, F.CRIT_SHAKE_TIME);
+    },
+    feedbackEliteKill: function (x, y) {
+      var F = CONFIG.FEEDBACK;
+      this.emitBurst(x, y, CONFIG.COLORS.RARITY_EPIC || '#b388ff', F.ELITE_KILL_PARTICLES, 1.6, 1.4);
+      AudioFX.play('elite');
+      if (root.Settings && root.Settings.shake) Camera.startShake(F.ELITE_SHAKE_SIZE, F.ELITE_SHAKE_TIME);
+    },
+    feedbackBossKill: function (x, y) {
+      var F = CONFIG.FEEDBACK;
+      this.emitBurst(x, y, CONFIG.COLORS.RARITY_GOLD || '#ffd54a', F.BOSS_KILL_PARTICLES, 1.9, 1.7);
+      AudioFX.play('boss');
+      if (root.Settings && root.Settings.shake) Camera.startShake(F.BOSS_SHAKE_SIZE, F.BOSS_SHAKE_TIME);
+      if (root.Game && root.Game.startSlowMo) root.Game.startSlowMo(F.BOSS_SLOMO_SCALE, F.BOSS_SLOMO_TIME);
     },
     legendaryBurst: function (x, y) {
       var made = 0;
@@ -99,6 +131,7 @@ var FX = {
       this.shake = Math.max(0, this.shake - dt);
       this.flash = Math.max(0, this.flash - dt);
       this.legendaryFlash = Math.max(0, this.legendaryFlash - dt);
+      this.goldFlash = Math.max(0, this.goldFlash - dt);
       this.notice = Math.max(0, this.notice - dt);
       for (var i = 0; i < this.pool.length; i++) {
         var p = this.pool[i];
@@ -122,6 +155,13 @@ var FX = {
         ctx.globalAlpha = p.life / CONFIG.POLISH.PARTICLE_LIFE;
         ctx.fillRect(p.x - Camera.x, p.y - Camera.y, CONFIG.POLISH.PARTICLE_SIZE, CONFIG.POLISH.PARTICLE_SIZE);
       }
+      // v014 #96 金词条获得金光全屏短暂闪烁。
+      if (this.goldFlash > 0) {
+        ctx.globalAlpha = 0.35 * Math.min(1, this.goldFlash / (CONFIG.FEEDBACK.RARITY_GOLD_FLASH || 0.6));
+        ctx.fillStyle = '#ffd54a';
+        ctx.fillRect(0, 0, CONFIG.VIEW.WIDTH, CONFIG.VIEW.HEIGHT);
+        ctx.globalAlpha = 1;
+      }
       // 冲击波环
       for (var j = 0; j < this.rings.length; j++) {
         var r = this.rings[j];
@@ -142,6 +182,7 @@ var FX = {
       this.shake = 0;
       this.flash = 0;
       this.legendaryFlash = 0;
+      this.goldFlash = 0;
       this.notice = 0;
       this.wave = 0;
     }
@@ -150,15 +191,30 @@ var Metrics = {
     seconds: 0,
     frames: 0,
     fps: 0,
+    lowSamples: 0,
+    highSamples: 0,
+    qualityCooldown: 0,
     sample: function (dt) {
       if (dt <= 0 || dt > 1) return;
       this.seconds += dt;
+      this.qualityCooldown = Math.max(0, this.qualityCooldown - dt);
       this.frames += 1;
       if (this.seconds >= CONFIG.POLISH.FPS_SAMPLE) {
         this.fps = Math.round(this.frames / this.seconds);
+        this.updateAutoQuality();
         this.seconds = 0;
         this.frames = 0;
       }
+    },
+    updateAutoQuality: function () {
+      if (!Settings || Settings.quality !== 'auto' || this.qualityCooldown > 0) return;
+      var q = CONFIG.RENDER_QUALITY;
+      if (this.fps < q.LOW_FPS) { this.lowSamples++; this.highSamples = 0; }
+      else if (this.fps >= q.HIGH_FPS) { this.highSamples++; this.lowSamples = 0; }
+      else { this.lowSamples = this.highSamples = 0; }
+      var levels = ['low', 'medium', 'high'], index = levels.indexOf(Settings.autoLevel);
+      if (this.lowSamples >= q.LOW_SAMPLES && index > 0) { Settings.autoLevel = levels[index - 1]; this.lowSamples = 0; this.qualityCooldown = q.CHANGE_COOLDOWN; }
+      if (this.highSamples >= q.HIGH_SAMPLES && index < levels.length - 1) { Settings.autoLevel = levels[index + 1]; this.highSamples = 0; this.qualityCooldown = q.CHANGE_COOLDOWN; }
     },
     count: function (pool) {
       var n = 0;
@@ -175,7 +231,11 @@ var Metrics = {
       ctx.font = '20px Arial, "Microsoft YaHei", sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'middle';
-      ctx.fillText(CONFIG.TEXT.DEBUG_LINE(this.fps, Enemy.activeCount, Bullet.activeCount, this.count(FX.pool), this.count(root.DamageText.pool)), 32, debugY + 27);
+      var visibleEnemy = 0, visibleDrops = 0;
+      for (var i = 0; i < Enemy.pool.length; i++) if (Enemy.pool[i].active && Camera.isVisible(Enemy.pool[i].x, Enemy.pool[i].y, Enemy.pool[i].radius)) visibleEnemy++;
+      var pools = [root.Experience.pool, root.CoinDrops.pool, root.PowerUps.pool];
+      for (var pi = 0; pi < pools.length; pi++) for (var di = 0; di < pools[pi].length; di++) if (pools[pi][di].active && Camera.isVisible(pools[pi][di].x, pools[pi][di].y, 20)) visibleDrops++;
+      ctx.fillText(CONFIG.TEXT.DEBUG_LINE(this.fps, Enemy.activeCount, Bullet.activeCount, this.count(FX.pool), this.count(root.DamageText.pool), visibleEnemy, visibleDrops), 32, debugY + 27);
       ctx.restore();
     }
   };
@@ -198,6 +258,28 @@ var Spatial = {
     },
     cell: function (v, limit) {
       return Math.max(0, Math.min(limit - 1, Math.floor(v / CONFIG.POLISH.GRID_CELL) + 1));
+    },
+    // 只遍历圆形范围覆盖到的网格；实体仍以精确平方距离做最终判定。
+    forEachInRadius: function (x, y, radius, callback) {
+      var minCol = this.cell(x - radius, this.cols),
+        maxCol = this.cell(x + radius, this.cols),
+        minRow = this.cell(y - radius, this.rows),
+        maxRow = this.cell(y + radius, this.rows),
+        radiusSq = radius * radius;
+      for (var row = minRow; row <= maxRow; row++) {
+        for (var col = minCol; col <= maxCol; col++) {
+          var index = this.heads[row * this.cols + col];
+          var guard = 0;
+          while (index >= 0 && guard++ < Enemy.pool.length) {
+            var enemy = Enemy.pool[index];
+            if (enemy && enemy.active) {
+              var dx = enemy.x - x, dy = enemy.y - y;
+              if (dx * dx + dy * dy <= radiusSq) callback(enemy, index);
+            }
+            index = this.next[index];
+          }
+        }
+      }
     }
   };
 Spatial.heads = new Int32Array(Spatial.cols * Spatial.rows);
@@ -220,7 +302,7 @@ var ButtonUI = {
     pressedTouches: new Map(),
     lastClick: -Infinity,
     init: function () {
-      for (var i = 0; i < 40; i++) {
+      for (var i = 0; i < 96; i++) {
         this.pool.push({
           x: 0,
           y: 0,
@@ -236,20 +318,7 @@ var ButtonUI = {
       b.y = y;
       b.w = w;
       b.h = h;
-      var hover = UI.isPointInRect(this.hover, x, y, w, h);
-      var press = false;
-      this.pressedTouches.forEach(function (p) {
-        if (p.x === x && p.y === y && p.w === w && p.h === h) press = true;
-      });
-      if (!hover && !press) return;
-      ctx.save();
-      UI.roundedRectPath(ctx, x, y, w, h, 18);
-      ctx.fillStyle = press ? CONFIG.COLORS.BUTTON_PRESS : CONFIG.COLORS.BUTTON_HOVER;
-      ctx.fill();
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = CONFIG.COLORS.BUTTON_BORDER;
-      ctx.stroke();
-      ctx.restore();
+      // 仅登记点击热区。鼠标悬停不再额外绘制蓝色描边，避免 H5 与手机视觉不一致。
     }
   };
 var Panels = {
@@ -277,21 +346,29 @@ var Panels = {
     },
     button: function (ctx, row, label) {
       var c = CONFIG.POLISH;
-      UI.drawActionButton(ctx, c.PANEL_X, c.PANEL_TOP + row * c.PANEL_STEP, c.PANEL_W, c.PANEL_H, label, true, 27);
+      var compact = Game.state === 'SETTINGS';
+      var top = compact ? 265 : c.PANEL_TOP, step = compact ? 92 : c.PANEL_STEP, height = compact ? 66 : c.PANEL_H;
+      UI.drawActionButton(ctx, c.PANEL_X, top + row * step, c.PANEL_W, height, label, true, 27);
     },
     draw: function (ctx) {
-      ctx.fillStyle = CONFIG.COLORS.MENU_BACKGROUND;
+      var overBattle = Game.state === 'PAUSED' || this.parent === 'PAUSED';
+      ctx.fillStyle = overBattle ? 'rgba(0,0,0,' + CONFIG.POLISH.PAUSE_OVERLAY_ALPHA + ')' : CONFIG.COLORS.MENU_BACKGROUND;
       ctx.fillRect(0, 0, CONFIG.VIEW.WIDTH, CONFIG.VIEW.HEIGHT);
       var state = Game.state;
       var text = CONFIG.TEXT;
-      var title = state === 'PAUSED' ? text.PAUSE_TITLE : state === 'SETTINGS' ? text.SETTINGS : text.HELP;
+      var title = state === 'PAUSED' ? text.PAUSE_TITLE : state === 'SETTINGS' ? text.SETTINGS : state === 'BUILD' ? '当前构筑' : text.HELP;
+      var settingsIcon = UI.icon('nav_settings');
+      if (settingsIcon && state === 'SETTINGS') ctx.drawImage(settingsIcon, CONFIG.VIEW.WIDTH / 2 - 28, 105 + (CONFIG.UI.TOP_INSET || 0), 56, 56);
       UI.drawCenteredText(ctx, title, 180 + (CONFIG.UI.TOP_INSET || 0), 54, true, CONFIG.COLORS.COIN);
       if (state === 'PAUSED') {
         this.button(ctx, 0, text.RESUME);
         this.button(ctx, 1, text.SETTINGS);
         this.button(ctx, 2, text.HELP);
-        this.button(ctx, 3, text.ABANDON);
+        this.button(ctx, 3, '当前构筑');
+        this.button(ctx, 4, text.ABANDON);
         this.drawSummary(ctx);
+      } else if (state === 'BUILD') {
+        this.drawBuild(ctx); this.button(ctx, 5, text.BACK);
       } else if (state === 'SETTINGS') {
         var rows = [{
           key: 'sound',
@@ -305,12 +382,19 @@ var Panels = {
         }, {
           key: 'alwaysShowJoystick',
           label: text.JOYSTICK_ALWAYS
+        }, {
+          key: 'mirror',
+          label: text.MIRROR
+        }, {
+          key: 'highFps',
+          label: text.HIGH_FPS
         }];
         for (var i = 0; i < rows.length; i++) {
           var rk = rows[i].key;
           this.button(ctx, i, rows[i].label + '：' + (Settings[rk] ? text.ON : text.OFF));
         }
-        this.button(ctx, rows.length, text.BACK);
+        this.button(ctx, rows.length, text.QUALITY + '：' + text.QUALITY_NAMES[Settings.quality]);
+        this.button(ctx, rows.length + 1, text.BACK);
       } else {
         var helpTop = CONFIG.UI.TOP_INSET || 0;
         for (var i = 0; i < text.HELP_LINES.length; i++) {
@@ -334,28 +418,50 @@ var Panels = {
         UI.drawCenteredText(ctx, CONFIG.TEXT.EMPTY_SUMMARY, c.SUMMARY_Y + c.SUMMARY_STEP, 23, false, CONFIG.COLORS.HINT_TEXT);
       }
     },
+    drawBuild: function (ctx) {
+      var s = root.FinalStats.get(), y = 265, lines = [
+        '伤害 ' + s.damage.toFixed(1) + '    射速 ' + s.fireRate.toFixed(2) + '/秒',
+        '弹匣 ' + s.magazine + '    换弹 ' + s.reload.toFixed(2) + '秒',
+        '移速 ' + s.speed.toFixed(0) + '    拾取 ' + s.pickup.toFixed(0),
+        '暴击 ' + Math.round(s.crit * 100) + '%    倍率 ' + s.critMultiplier.toFixed(2),
+        '贯穿 ' + s.penetration + '    弹道 ' + s.projectiles,
+        '生命 ' + s.maxHp + '    护甲 ' + Math.ceil(s.armor),
+        '武器强化 Lv.' + s.weaponLevel + (s.ammo ? '    弹药 ' + s.ammo : ''),
+        '技能：' + (s.skills.length ? s.skills.map(function (id) { for (var i=0;i<CONFIG.ARMORY.PERKS.length;i++) if(CONFIG.ARMORY.PERKS[i].ID===id)return CONFIG.ARMORY.PERKS[i].NAME; return id; }).join('、') : '无')
+      ];
+      for (var i = 0; i < lines.length; i++) UI.drawCenteredText(ctx, lines[i], y + i * 52, 21, i === 0, i === 0 ? CONFIG.COLORS.COIN : CONFIG.COLORS.TEXT);
+      var yy = y + lines.length * 52 + 10, shown = 0;
+      for (var j = 0; j < CONFIG.UPGRADES.DEFINITIONS.length && shown < 5; j++) { var d = CONFIG.UPGRADES.DEFINITIONS[j], lv = ExpLevelUp.levels[d.ID]; if (!lv) continue; shown++; UI.drawCenteredText(ctx, CONFIG.TEXT.UPGRADES[d.TEXT_KEY].NAME + '  Lv.' + lv, yy + shown * 38, 18, false, CONFIG.COLORS.HINT_TEXT); }
+    },
     update: function () {
       if (!Input.consumeTap(UI.tapPoint)) return;
       var c = CONFIG.POLISH;
       var p = UI.tapPoint;
       if (p.x < c.PANEL_X || p.x > c.PANEL_X + c.PANEL_W) return;
-      var row = Math.floor((p.y - c.PANEL_TOP) / c.PANEL_STEP);
-      if (row < 0 || p.y > c.PANEL_TOP + row * c.PANEL_STEP + c.PANEL_H) return;
+      var compact = Game.state === 'SETTINGS', panelTop = compact ? 265 : c.PANEL_TOP, panelStep = compact ? 92 : c.PANEL_STEP, panelHeight = compact ? 66 : c.PANEL_H;
+      var row = Math.floor((p.y - panelTop) / panelStep);
+      if (row < 0 || p.y > panelTop + row * panelStep + panelHeight) return;
       if (Game.state === 'PAUSED') {
         if (row === 0) this.resume();
         if (row === 1) this.open('SETTINGS');
         if (row === 2) this.open('HELP');
         if (row === 3) {
+          this.open('BUILD');
+        }
+        if (row === 4) {
           Game.exitType = 'quit';
           Game.state = CONFIG.GAME.STATE_GAMEOVER;
           Game.commitSettlement(false);
         }
       } else if (Game.state === 'SETTINGS') {
-        var settingKeys = ['sound', 'shake', 'debug', 'alwaysShowJoystick'];
+        var settingKeys = ['sound', 'shake', 'debug', 'alwaysShowJoystick', 'mirror', 'highFps'];
         if (row < settingKeys.length) Settings.toggle(settingKeys[row]);
-        if (row === settingKeys.length) Game.state = this.parent;
+        if (row === settingKeys.length) Settings.cycleQuality();
+        if (row === settingKeys.length + 1) Game.state = this.parent;
       } else if (Game.state === 'HELP' && row === 4) {
         Game.state = this.parent;
+      } else if (Game.state === 'BUILD' && row === 5) {
+        Game.state = 'PAUSED';
       }
       Input.clearTap();
     }

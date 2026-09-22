@@ -1,0 +1,130 @@
+{
+  "states": [
+    "normal",
+    "pressed",
+    "disabled"
+  ],
+  "buttons": {
+    "play": {
+      "normal": {
+        "file": "btn_play_normal.png",
+        "size": [
+          512,
+          180
+        ]
+      },
+      "pressed": {
+        "file": "btn_play_pressed.png",
+        "size": [
+          512,
+          180
+        ]
+      },
+      "disabled": {
+        "file": "btn_play_disabled.png",
+        "size": [
+          512,
+          180
+        ]
+      }
+    },
+    "base": {
+      "normal": {
+        "file": "btn_base_normal.png",
+        "size": [
+          512,
+          180
+        ]
+      },
+      "pressed": {
+        "file": "btn_base_pressed.png",
+        "size": [
+          512,
+          180
+        ]
+      },
+      "disabled": {
+        "file": "btn_base_disabled.png",
+        "size": [
+          512,
+          180
+        ]
+      }
+    },
+    "achievement": {
+      "normal": {
+        "file": "btn_achievement_normal.png",
+        "size": [
+          512,
+          180
+        ]
+      },
+      "pressed": {
+        "file": "btn_achievement_pressed.png",
+        "size": [
+          512,
+          180
+        ]
+      },
+      "disabled": {
+        "file": "btn_achievement_disabled.png",
+        "size": [
+          512,
+          180
+        ]
+      }
+    },
+    "supply": {
+      "normal": {
+        "file": "btn_supply_normal.png",
+        "size": [
+          512,
+          180
+        ]
+      },
+      "pressed": {
+        "file": "btn_supply_pressed.png",
+        "size": [
+          512,
+          180
+        ]
+      },
+      "disabled": {
+        "file": "btn_supply_disabled.png",
+        "size": [
+          512,
+          180
+        ]
+      }
+    },
+    "history": {
+      "normal": {
+        "file": "btn_history_normal.png",
+        "size": [
+          512,
+          180
+        ]
+      },
+      "pressed": {
+        "file": "btn_history_pressed.png",
+        "size": [
+          512,
+          180
+        ]
+      },
+      "disabled": {
+        "file": "btn_history_disabled.png",
+        "size": [
+          512,
+          180
+        ]
+      }
+    }
+  },
+  "background": "background.png",
+  "logicalSize": [
+    750,
+    1334
+  ],
+  "note": "素材交付，未接入运行代码。按钮文字由 Canvas 绘制；透明边缘为沿面板轮廓的裁切，外部光晕不保留。图标复用项目既有资产。"
+}

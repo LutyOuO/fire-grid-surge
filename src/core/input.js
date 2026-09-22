@@ -97,15 +97,32 @@
         offerRevision: root.ExpLevelUp.offerRevision
       };
 
+      // #109：补给商店是模态界面。打开时仍允许产生普通点击供商店处理，
+      // 但绝不能再次启动摇杆、冲刺或命中画面下方的道具按钮。
+      if (root.SupplyPoint && root.SupplyPoint.open) {
+        this.activeTouches.set(touchId, touch);
+        return;
+      }
+
+      // #122：炸弹拖拽占用自己的 touchId，另一根摇杆触点继续工作。
+      if (root.Game.state === CONFIG.GAME.STATE_PLAYING && root.PowerUps && root.UI.ITEM_SLOTS) {
+        var bombSlot = root.UI.ITEM_SLOTS.indexOf(CONFIG.POWERUPS.TYPE_BOMB);
+        var bombRect = bombSlot >= 0 ? root.UI.getSlotRect(bombSlot) : null;
+        if (bombRect && root.PowerUps.inventory[CONFIG.POWERUPS.TYPE_BOMB] > 0 && root.UI.isPointInRect(touch, bombRect.x, bombRect.y, bombRect.w, bombRect.h)) {
+          touch.type = 'bombAim'; this.activeTouches.set(touchId, touch); root.PowerUps.beginBombAim(touchId, x, y); return;
+        }
+      }
+
       // 冲刺是右下角独立按钮：按下即生效，方向在此刻锁定。
-      var ddx = x - CONFIG.UI.DASH_BUTTON_X;
+      var dashX = root.UI.mirrorX(CONFIG.UI.DASH_BUTTON_X);
+      var ddx = x - dashX;
       var ddy = y - root.UI.getDashButtonY();
       if (root.Game.state === CONFIG.GAME.STATE_PLAYING && ddx * ddx + ddy * ddy <= CONFIG.UI.DASH_BUTTON_RADIUS * CONFIG.UI.DASH_BUTTON_RADIUS) {
         touch.type = 'button';
         touch.action = 'dash';
         this.activeTouches.set(touchId, touch);
         root.ButtonUI.pressedTouches.set(touchId, {
-          x: CONFIG.UI.DASH_BUTTON_X - CONFIG.UI.DASH_BUTTON_RADIUS,
+          x: dashX - CONFIG.UI.DASH_BUTTON_RADIUS,
           y: root.UI.getDashButtonY() - CONFIG.UI.DASH_BUTTON_RADIUS,
           w: CONFIG.UI.DASH_BUTTON_RADIUS * 2,
           h: CONFIG.UI.DASH_BUTTON_RADIUS * 2
@@ -147,6 +164,7 @@
       touch.currentX = x;
       touch.currentY = y;
       if (touch.type === 'joystick' && this.joystick.pointerId === touchId) this.updateJoystick(x, y);
+      if (touch.type === 'bombAim') root.PowerUps.moveBombAim(touchId, x, y);
     },
     onTouchEnd: function (x, y, touchId) {
       var touch = this.activeTouches.get(touchId);
@@ -158,6 +176,10 @@
         return;
       }
       if (touch.type === 'joystick' && this.joystick.pointerId === touchId) this.stopJoystick();
+      if (touch.type === 'bombAim') {
+        root.PowerUps.endBombAim(touchId, x, y, Date.now() - touch.startTime, Math.hypot(x - touch.startX, y - touch.startY));
+        this.activeTouches.delete(touchId); return;
+      }
       if (touch.type === 'button') {
         root.ButtonUI.pressedTouches.delete(touchId);
         if (touch.action !== 'dash' && touch.state === root.Game.state && touch.button && root.UI.isPointInRect({
@@ -182,7 +204,8 @@
         var b = root.ButtonUI.pool[i];
         if (root.UI.isPointInRect(point, b.x, b.y, b.w, b.h)) return false;
       }
-      var inLeftZone = point.x <= CONFIG.VIEW.WIDTH * CONFIG.INPUT.JOYSTICK_ZONE_X_RATIO;
+      var ratio = CONFIG.INPUT.JOYSTICK_ZONE_X_RATIO;
+      var inLeftZone = root.Settings && root.Settings.mirror ? point.x >= CONFIG.VIEW.WIDTH * (1 - ratio) : point.x <= CONFIG.VIEW.WIDTH * ratio;
       var inBottomZone = point.y >= CONFIG.VIEW.HEIGHT * CONFIG.INPUT.JOYSTICK_ZONE_Y_RATIO;
       return this.movementEnabled && !this.joystick.active && inLeftZone && inBottomZone;
     },

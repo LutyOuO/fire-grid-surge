@@ -8,14 +8,15 @@ for (const mode of ['h5', 'wx']) {
   g.Game.restart();
   const runs = g.Meta.data.runs;
   g.Game.commitSettlement(false);
-  const coins = g.Meta.data.coins;
+  const coins = g.Meta.data.survivorCoins;
   g.Game.commitSettlement(false);
-  assert.equal(g.Meta.data.coins, coins, '重复结算不重复发金币');
+  assert.equal(g.Meta.data.survivorCoins, coins, '重复结算不重复发幸存者硬币');
   g.RunStats.coinDoubleClaimed = true; g.Game.commitSettlement(false);
   assert.equal(g.Meta.data.runs, runs + 1, '追加奖励不能再次增加局数');
   g.Game.reviveAfterAd(); g.Game.commitSettlement(false);
   assert.equal(g.Meta.data.runs, runs + 1, '复活后仍然属于同一局');
-  g.Game.restart(); assert.equal(g.Field.layoutIndex, (runs + 1) % 3);
+  // v012 #75：开局按玩家所选地图（Meta.data.selectedMap）加载，不再按 runs 自动轮换。
+  g.Game.restart(); assert.equal(g.Field.layoutIndex, g.Meta.data.selectedMap);
 
   // 持续伤害必须按时间结算，暂停不推进，回收后清零。
   g.Enemy.reset();

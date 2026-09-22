@@ -52,6 +52,7 @@
     shield: 0,
     shieldTimer: 0,
     shieldFlash: 0,
+    armorMax: 0,
     upgradeShieldMax: 0,
     upgradeShieldRecharge: 0,
     regenTimer: 0,
@@ -104,6 +105,7 @@
       this.dashTrails.length = 0;
       // 血包升级
       this.shield = 0;
+      this.armorMax = 0;
       this.shieldTimer = 0;
       this.upgradeShieldMax = 0;
       this.upgradeShieldRecharge = 0;
@@ -320,12 +322,14 @@
       }
     },
     takeDamage: function (amount, source, continuous) {
+      if (root.Armory) root.Armory.onPlayerDamaged();
       if (root.DevConsole.god || this.nextGod) return false;
       if (this.invincibleTimer > 0) return false;
       // 护盾优先吸收伤害
       if (this.shield > 0 && amount > 0) {
         var absorbed = Math.min(this.shield, amount);
         this.shield -= absorbed;
+        if (root.Armory) root.Armory.triggerPerk('armor');
         amount -= absorbed;
         if (this.shield <= 0) {
           this.shield = 0;

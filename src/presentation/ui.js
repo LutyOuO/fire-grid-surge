@@ -121,6 +121,8 @@ var UI = {
       s.DASH_CX = s.ITEM_BAR_X - 34 - s.DASH_BUTTON_RADIUS; // 水平间隔 34 > 30
       CONFIG.UI.DASH_BUTTON_X = s.DASH_CX;
     },
+    // 只镜像战斗操作组件，暂停、金币与居中面板不受影响。
+    mirrorX: function (x) { return root.Settings && root.Settings.mirror ? CONFIG.VIEW.WIDTH - x : x; },
     // ---------- 主菜单 ----------
 
     drawMenuGlow: function (ctx) {
@@ -222,6 +224,8 @@ var UI = {
     drawBaseGadget: function (ctx) {
       var groups = CONFIG.META.GADGET_UPGRADES;
       var ids = Object.keys(groups);
+      if (this.baseGadgetFilter === 'turret') ids = ids.filter(function (id) { return id.indexOf('turret_') === 0; });
+      if (this.baseGadgetFilter === 'item') ids = ids.filter(function (id) { return ['laser','bomb','medkit','magnet','freeze'].indexOf(id) >= 0; });
       this.baseGadgetIndex = Math.max(0, Math.min(ids.length - 1, this.baseGadgetIndex));
       var gadgetId = ids[this.baseGadgetIndex];
       var group = groups[gadgetId];
@@ -338,6 +342,8 @@ var UI = {
       } else {
         // 道具页左右切换：1020=上一个，1021=下一个
         var ids = Object.keys(CONFIG.META.GADGET_UPGRADES);
+        if (this.baseGadgetFilter === 'turret') ids = ids.filter(function (id) { return id.indexOf('turret_') === 0; });
+        if (this.baseGadgetFilter === 'item') ids = ids.filter(function (id) { return ['laser','bomb','medkit','magnet','freeze'].indexOf(id) >= 0; });
         var headerY = CONFIG.UI.BASE_CONTENT_Y + (CONFIG.UI.BASE_SECTION_HEIGHT - CONFIG.UI.BASE_NAV_HEIGHT) / 2;
         if (this.isPointInRect(this.tapPoint, CONFIG.UI.BASE_CARD_X + 12, headerY, CONFIG.UI.BASE_NAV_WIDTH, CONFIG.UI.BASE_NAV_HEIGHT) && this.baseGadgetIndex > 0) return 1020;
         if (this.isPointInRect(this.tapPoint, CONFIG.UI.BASE_CARD_X + CONFIG.UI.BASE_CARD_WIDTH - CONFIG.UI.BASE_NAV_WIDTH - 12, headerY, CONFIG.UI.BASE_NAV_WIDTH, CONFIG.UI.BASE_NAV_HEIGHT) && this.baseGadgetIndex < ids.length - 1) return 1021;
@@ -366,6 +372,8 @@ var UI = {
       ctx.strokeStyle = CONFIG.COLORS.POPUP_BORDER;
       ctx.stroke();
       this.drawCenteredText(ctx, CONFIG.TEXT.OFFLINE_TITLE, y + 80, 49, true, CONFIG.COLORS.COIN);
+      var rewardCoin = this.icon('menu_coin_gold') || this.icon('icon_coin_gold');
+      if (rewardCoin) ctx.drawImage(rewardCoin, x + 116, y + 139, 54, 54);
       this.drawCenteredText(ctx, CONFIG.TEXT.OFFLINE_REWARD(Meta.pendingOfflineCoins), y + 170, 29, true, CONFIG.COLORS.TEXT);
       this.drawCenteredText(ctx, CONFIG.TEXT.OFFLINE_DETAIL(Meta.pendingOfflineMinutes, Math.round(Meta.getOfflineRate() * 10) / 10), y + 225, 20, false, CONFIG.COLORS.HINT_TEXT);
       this.drawCenteredText(ctx, CONFIG.TEXT.OFFLINE_CAP, y + 265, 18, false, CONFIG.COLORS.HINT_TEXT);
@@ -383,7 +391,59 @@ var UI = {
       return -1;
     },
     // ---------- 通用按钮 ----------
+    // 九宫格绘制按钮切图，保留金属四角，不因短按钮或窄按钮拉伸变形。
+    drawNineSlice: function (ctx, image, x, y, width, height) {
+      var sw = image.width || image.naturalWidth || 512;
+      var sh = image.height || image.naturalHeight || 180;
+      var sx = Math.min(74, Math.floor(sw * 0.22));
+      var sy = Math.min(48, Math.floor(sh * 0.32));
+      var dx = Math.min(sx, Math.max(12, Math.floor(width * 0.24)));
+      var dy = Math.min(sy, Math.max(10, Math.floor(height * 0.30)));
+      var scw = Math.max(1, sw - sx * 2), sch = Math.max(1, sh - sy * 2);
+      var dcw = Math.max(1, width - dx * 2), dch = Math.max(1, height - dy * 2);
+      ctx.drawImage(image, 0, 0, sx, sy, x, y, dx, dy);
+      ctx.drawImage(image, sx, 0, scw, sy, x + dx, y, dcw, dy);
+      ctx.drawImage(image, sw - sx, 0, sx, sy, x + width - dx, y, dx, dy);
+      ctx.drawImage(image, 0, sy, sx, sch, x, y + dy, dx, dch);
+      ctx.drawImage(image, sx, sy, scw, sch, x + dx, y + dy, dcw, dch);
+      ctx.drawImage(image, sw - sx, sy, sx, sch, x + width - dx, y + dy, dx, dch);
+      ctx.drawImage(image, 0, sh - sy, sx, sy, x, y + height - dy, dx, dy);
+      ctx.drawImage(image, sx, sh - sy, scw, sy, x + dx, y + height - dy, dcw, dy);
+      ctx.drawImage(image, sw - sx, sh - sy, sx, sy, x + width - dx, y + height - dy, dx, dy);
+    },
+    getButtonState: function (x, y, width, height, enabled) {
+      if (!enabled) return 'disabled';
+      var buttons = root.ButtonUI;
+      var pressed = false;
+      if (buttons && buttons.pressedTouches) buttons.pressedTouches.forEach(function (p) {
+        if (p.x === x && p.y === y && p.w === width && p.h === height) pressed = true;
+      });
+      return pressed ? 'pressed' : 'normal';
+    },
+    drawButtonSkin: function (ctx, x, y, width, height, kind, state) {
+      var image = this.icon('btn_' + kind + '_' + state);
+      if (image) {
+        ctx.save();
+        if (state === 'disabled') ctx.globalAlpha = 0.72;
+        this.drawNineSlice(ctx, image, x, y, width, height);
+        ctx.restore();
+        return true;
+      }
+      this.roundedRectPath(ctx, x, y, width, height, Math.min(18, height / 3));
+      ctx.fillStyle = state === 'disabled' ? CONFIG.COLORS.BUTTON_DISABLED : kind === 'play' ? '#e89a24' : kind === 'supply' ? '#a77d20' : '#103a57';
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = state === 'disabled' ? CONFIG.COLORS.META_CARD_BORDER : kind === 'play' || kind === 'supply' ? '#ffd47a' : CONFIG.COLORS.ACCENT;
+      ctx.stroke();
+      return false;
+    },
+    buttonTextColor: function (kind, enabled) {
+      if (!enabled) return CONFIG.COLORS.BUTTON_DISABLED_TEXT;
+      return kind === 'play' || kind === 'supply' ? '#172028' : '#f4fbff';
+    },
     drawActionButton: function (ctx, x, y, width, height, label, enabled, size) {
+      // 通用页面恢复为项目原本的 Canvas 按钮。
+      // 主菜单横向切图只服务主菜单，不能缩放到返回/购买/暂停等任意尺寸。
       this.roundedRectPath(ctx, x, y, width, height, Math.min(22, height / 3));
       ctx.fillStyle = enabled ? CONFIG.COLORS.BUTTON : CONFIG.COLORS.BUTTON_DISABLED;
       ctx.fill();
@@ -397,6 +457,35 @@ var UI = {
       ctx.fillStyle = enabled ? CONFIG.COLORS.BUTTON_TEXT : CONFIG.COLORS.BUTTON_DISABLED_TEXT;
       ctx.fillText(label, x + width / 2, y + height / 2 + 1, width - 24);
       ctx.restore();
+      root.ButtonUI.register(ctx, x, y, width, height, enabled);
+    },
+    // v014 main-menu 切图按钮：kind ∈ play/base/achievement/supply/history，state ∈ normal/pressed/disabled。
+    // 用 UI.icon('btn_'+kind+'_'+state) 取切图；就绪则按目标尺寸 drawImage 拉伸绘制（源 512x180）；
+    // 图未就绪/加载失败走 drawActionButton 矢量圆角兜底，绝不黑屏。文字 Canvas 居中叠加。
+    drawMenuButton: function (ctx, x, y, width, height, label, kind, state, size) {
+      var st = state || 'normal';
+      var enabled = st !== 'disabled';
+      if (st === 'normal') st = this.getButtonState(x, y, width, height, enabled);
+      var img = this.icon('btn_' + kind + '_' + st);
+      if (img) {
+        ctx.save();
+        if (st === 'disabled') ctx.globalAlpha = 0.55;
+        this.drawNineSlice(ctx, img, x, y, width, height);
+        ctx.restore();
+      } else {
+        this.drawButtonSkin(ctx, x, y, width, height, kind, st);
+      }
+      if (label) {
+        ctx.save();
+        ctx.font = 'bold ' + (size || 20) + 'px Arial, "Microsoft YaHei", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // 文字按 kind 映射：橙金/金底(play/supply)用深色近黑，蓝底(base/achievement)用白，history 浅灰；disabled 统一灰化。
+        var KIND_TEXT = { play: '#1a2320', supply: '#1a2320', base: '#ffffff', achievement: '#ffffff', history: '#e8eef0' };
+        ctx.fillStyle = enabled ? (KIND_TEXT[kind] || CONFIG.COLORS.BUTTON_TEXT) : CONFIG.COLORS.BUTTON_DISABLED_TEXT;
+        ctx.fillText(label, x + width / 2, y + height / 2 + 1, width - 24);
+        ctx.restore();
+      }
       root.ButtonUI.register(ctx, x, y, width, height, enabled);
     },
     drawTwoLineButton: function (ctx, x, y, width, height, title, subtitle, enabled) {
@@ -573,6 +662,13 @@ var UI = {
       this.drawBarFill(ctx, x, y, width, height, ratio, CONFIG.UI.HP_BAR_RADIUS, ratio <= 0.3 ? CONFIG.COLORS.HP_LOW : CONFIG.COLORS.HP_FILL);
       this.drawBarBorder(ctx, x, y, width, height, CONFIG.UI.HP_BAR_RADIUS, CONFIG.UI.HP_BAR_BORDER, CONFIG.COLORS.HP_BORDER);
       this.drawBarText(ctx, CONFIG.TEXT.HP + '  ' + Math.ceil(Player.hp) + ' / ' + Math.ceil(Player.maxHp), x + width / 2, y + height / 2, CONFIG.UI.HP_TEXT_SIZE);
+      // v015 #107：护甲覆盖在生命条上沿；为零时保留灰色轨道。
+      var armorMax = Math.max(Player.armorMax || 0, Player.upgradeShieldMax || 0, Player.shield || 0);
+      var armorRatio = armorMax > 0 ? Player.shield / armorMax : 0;
+      ctx.fillStyle = armorMax > 0 ? 'rgba(17,45,54,.92)' : 'rgba(70,76,78,.75)';
+      ctx.fillRect(x, y - 9, width, 6);
+      if (armorRatio > 0) { ctx.fillStyle = '#59d8f3'; ctx.fillRect(x, y - 9, width * Math.min(1, armorRatio), 6); }
+      ctx.strokeStyle = armorMax > 0 ? '#9af2ff' : '#777'; ctx.lineWidth = 1; ctx.strokeRect(x, y - 9, width, 6);
     },
     drawExpBar: function (ctx) {
       var x = CONFIG.UI.EXP_BAR_X,
@@ -638,6 +734,11 @@ var UI = {
       ctx.fillText(CONFIG.TEXT.SURVIVAL_HUD(this.formatTime(Game.survivedSeconds)), CONFIG.UI.HP_BAR_X, CONFIG.UI.HUD_STATS_Y);
       ctx.textAlign = 'right';
       ctx.fillText(CONFIG.TEXT.KILLS_HUD(RunStats.kills), CONFIG.VIEW.WIDTH - CONFIG.UI.HP_BAR_X, CONFIG.UI.HUD_STATS_Y);
+      ctx.fillStyle = CONFIG.COLORS.TEXT;
+      if (root.WeaponProgress.selected === 'pistol') {
+        ctx.textAlign = 'right';
+        ctx.fillText('弹药 ' + Math.max(0, Math.ceil(root.PulseGun.ammo)) + '/' + root.PulseGun.getMagazineSize(), CONFIG.VIEW.WIDTH - CONFIG.UI.HP_BAR_X, CONFIG.UI.HUD_STATS_Y + 34);
+      }
       if (Player.reviveCharges > 0 && !Enemy.getActiveBoss()) {
         ctx.textAlign = 'center';
         ctx.font = 'bold 18px Arial, "Microsoft YaHei", sans-serif';
@@ -646,21 +747,94 @@ var UI = {
       }
       ctx.restore();
     },
+    // v014 #87 局内实时金币 HUD：coin_gold 图标 + 金色数字（RunStats.gold），
+    // 拾取/购买时 0.2s 从旧值滚动到新值，拾取飘 "+N" 浮字；不遮挡波次/时间/小目标/复活。
+    drawGoldHud: function (ctx) {
+      var f = this._goldFx;
+      if (!f) {
+        f = this._goldFx = {
+          shown: -1,
+          from: 0,
+          to: 0,
+          start: 0,
+          floatN: 0,
+          floatStart: 0
+        };
+      }
+      var nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      var target = RunStats.gold;
+      if (f.shown < 0) {
+        f.shown = f.from = f.to = target;
+        f.start = nowMs;
+      }
+      if (target !== f.to) {
+        if (target > f.to) {
+          f.floatN = target - f.to;
+          f.floatStart = nowMs;
+        }
+        f.from = f.shown;
+        f.to = target;
+        f.start = nowMs;
+      }
+      var durMs = CONFIG.SUPPLY.GOLD_ROLL * 1000;
+      var k = Math.max(0, Math.min(1, (nowMs - f.start) / durMs));
+      f.shown = Math.round(f.from + (f.to - f.from) * k);
+      // v015 #100：紧靠暂停键左侧，并避开微信胶囊安全区。
+      var x = CONFIG.UI.PAUSE_X - 16;
+      var y = CONFIG.UI.PAUSE_Y + CONFIG.UI.PAUSE_SIZE / 2;
+      var text = String(f.shown);
+      ctx.save();
+      ctx.font = 'bold 26px Arial, "Microsoft YaHei", sans-serif';
+      var textW = ctx.measureText ? ctx.measureText(text).width : text.length * 12;
+      var img = UI.icon('coin_gold');
+      if (img) {
+        var s = 26;
+        ctx.drawImage(img, x - textW - 8 - s, y - s / 2 - 2, s, s);
+      }
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = CONFIG.COLORS.COIN;
+      ctx.shadowColor = 'rgba(0,0,0,0.6)';
+      ctx.shadowBlur = 4;
+      ctx.fillText(text, x, y);
+      ctx.shadowBlur = 0;
+      var age = (nowMs - f.floatStart) / 1000;
+      if (f.floatN > 0 && age < 0.6) {
+        ctx.globalAlpha = Math.max(0, 1 - age / 0.6);
+        ctx.fillStyle = CONFIG.COLORS.COIN;
+        ctx.font = 'bold 18px Arial, "Microsoft YaHei", sans-serif';
+        ctx.fillText('+' + f.floatN, x, y - 26 - age * 28);
+      }
+      ctx.restore();
+    },    // v014 #95 双 BOSS 血条：≥2 只时屏幕顶部左右分栏、颜色不同（近战红橙/远程紫）、行为提示独立；
+    // 单只 BOSS 保持原居中 0.8 宽红条布局不变。
     drawBossBar: function (ctx, panelY) {
       var activeBoss = Enemy.getActiveBoss();
       if (activeBoss) root.Field.bossMax = Math.max(root.Field.bossMax, activeBoss.maxHp);
       var bosses = Enemy.getActiveBosses();
       if (bosses.length === 0) return;
-      var barW = Math.round(CONFIG.VIEW.WIDTH * 0.8);
       var barH = CONFIG.BOSS.BAR_HEIGHT;
-      var x = (CONFIG.VIEW.WIDTH - barW) / 2;
       var baseY = panelY === undefined ? CONFIG.BOSS.BAR_Y : panelY;
-      var rowH = barH + CONFIG.BOSS.BAR_GAP + 22; // 预留名称行
+      var dual = bosses.length >= 2;
+      var margin = 16;
       for (var i = 0; i < bosses.length; i++) {
         var boss = bosses[i];
-        var y = baseY + i * rowH;
+        // 双 BOSS：左右分栏各 0.44 宽；单 BOSS：居中 0.8 宽。
+        var barW, x;
+        if (dual) {
+          barW = Math.round(CONFIG.VIEW.WIDTH * 0.44);
+          x = i === 0 ? margin : CONFIG.VIEW.WIDTH - margin - barW;
+        } else {
+          barW = Math.round(CONFIG.VIEW.WIDTH * 0.8);
+          x = (CONFIG.VIEW.WIDTH - barW) / 2;
+        }
+        var y = baseY; // 双 BOSS 同一顶行左右并列，不再上下堆叠
         var name = boss.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED ? CONFIG.TEXT.BOSS_RANGED_NAME : CONFIG.TEXT.BOSS_MELEE_NAME;
         var ratio = boss.maxHp > 0 ? Math.max(0, Math.min(1, boss.hp / boss.maxHp)) : 0;
+        // 各自独立行为提示：近战 warn→冲锋预警；远程蓄力→蓄力射击。
+        var hint = '';
+        if (boss.typeIndex === CONFIG.ENEMY.TYPE_BOSS && boss.meleePhase === 'warn') hint = CONFIG.TEXT.BOSS_CHARGE_WARN;
+        else if (boss.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED && !boss.isSummonTurret && boss.bossChargeTimer > 0) hint = CONFIG.TEXT.BOSS_CHARGING;
         // 名称：白色 14px 左对齐血条上方
         ctx.save();
         ctx.font = 'bold 14px Arial, "Microsoft YaHei", sans-serif';
@@ -669,6 +843,16 @@ var UI = {
         ctx.fillStyle = '#ffffff';
         ctx.fillText(name, x, y - 3);
         ctx.restore();
+        // 行为提示（血条右端上方，颜色随 BOSS 类型）
+        if (hint) {
+          ctx.save();
+          ctx.font = 'bold 12px Arial, "Microsoft YaHei", sans-serif';
+          ctx.textAlign = 'right';
+          ctx.textBaseline = 'bottom';
+          ctx.fillStyle = boss.typeIndex === CONFIG.ENEMY.TYPE_BOSS ? CONFIG.COLORS.BOSS_MELEE_BAR_A : CONFIG.COLORS.BOSS_RANGED_BAR_A;
+          ctx.fillText(hint, x + barW, y - 3);
+          ctx.restore();
+        }
         // 背景：深色半透明 #1A1A2E alpha0.8
         ctx.save();
         ctx.globalAlpha = 0.8;
@@ -676,14 +860,16 @@ var UI = {
         ctx.fillStyle = '#1A1A2E';
         ctx.fill();
         ctx.restore();
-        // 血量：红色渐变 #E74C3C→#C0392B（裁剪到背景圆角内）
+        // 血量：按 BOSS 类型配色（近战红橙/远程紫），裁剪到背景圆角内
         if (ratio > 0) {
+          var ca = boss.typeIndex === CONFIG.ENEMY.TYPE_BOSS ? CONFIG.COLORS.BOSS_MELEE_BAR_A : CONFIG.COLORS.BOSS_RANGED_BAR_A;
+          var cb = boss.typeIndex === CONFIG.ENEMY.TYPE_BOSS ? CONFIG.COLORS.BOSS_MELEE_BAR_B : CONFIG.COLORS.BOSS_RANGED_BAR_B;
           ctx.save();
           this.roundedRectPath(ctx, x, y, barW, barH, 6);
           ctx.clip();
           var grad = ctx.createLinearGradient(x, 0, x + barW, 0);
-          root.safeStop(grad, 0, '#E74C3C');
-          root.safeStop(grad, 1, '#C0392B');
+          root.safeStop(grad, 0, ca);
+          root.safeStop(grad, 1, cb);
           ctx.fillStyle = grad;
           ctx.fillRect(x, y, barW * ratio, barH);
           ctx.restore();
@@ -791,22 +977,98 @@ var UI = {
       this.drawCenteredText(ctx, CONFIG.TEXT.SETTLEMENT_TIME(this.formatTime(Game.survivedSeconds)), CONFIG.UI.SETTLEMENT_START_Y + top, CONFIG.UI.SETTLEMENT_TEXT_SIZE, false, CONFIG.COLORS.TEXT);
       this.drawCenteredText(ctx, CONFIG.TEXT.SETTLEMENT_KILLS(RunStats.kills), CONFIG.UI.SETTLEMENT_START_Y + CONFIG.UI.SETTLEMENT_LINE_GAP + top, CONFIG.UI.SETTLEMENT_TEXT_SIZE, false, CONFIG.COLORS.TEXT);
       this.drawCenteredText(ctx, CONFIG.TEXT.SETTLEMENT_LEVEL(ExpLevelUp.level), CONFIG.UI.SETTLEMENT_START_Y + CONFIG.UI.SETTLEMENT_LINE_GAP * 2 + top, CONFIG.UI.SETTLEMENT_TEXT_SIZE, false, CONFIG.COLORS.TEXT);
-      this.drawCenteredText(ctx, CONFIG.TEXT.SETTLEMENT_COINS(RunStats.finalCoins, RunStats.coinDoubleClaimed), CONFIG.UI.SETTLEMENT_START_Y + CONFIG.UI.SETTLEMENT_LINE_GAP * 3 + top, CONFIG.UI.SETTLEMENT_COIN_SIZE, true, CONFIG.COLORS.SETTLEMENT_COIN);
+      // v012 #72：结算大数字展示本局拾取的局内金币（RunStats.gold，局末清零）；幸存者硬币仅撤离时入账。
+      // v014 #88：撤离分支改为蓝银幸存者硬币主数字 + #73 公式分项构成（coin_survivor 图标）。
       if (exitType === 'extract') {
-        var greedMult = 1 + (Meta.getEffectTotal('GREED') || 0);
-        var detail = '基础' + RunStats.baseCoins + ' × 贪婪' + greedMult.toFixed(2) + ' × 撤退×' + CONFIG.EXTRACTION.REWARD_MULTIPLIER;
-        if (RunStats.extractAdClaimed) detail += ' × 广告×' + CONFIG.EXTRACTION.AD_MULTIPLIER;
-        detail += ' = ' + RunStats.finalCoins;
-        this.drawCenteredText(ctx, detail, CONFIG.UI.SETTLEMENT_START_Y + CONFIG.UI.SETTLEMENT_LINE_GAP * 3.5 + top, CONFIG.UI.SETTLEMENT_TEXT_SIZE, false, CONFIG.COLORS.HINT_TEXT);
+        this.drawExtractBreakdown(ctx, top);
+      } else {
+        this.drawCenteredText(ctx, CONFIG.TEXT.SETTLEMENT_COINS(RunStats.gold, false), CONFIG.UI.SETTLEMENT_START_Y + CONFIG.UI.SETTLEMENT_LINE_GAP * 3 + top, CONFIG.UI.SETTLEMENT_COIN_SIZE, true, CONFIG.COLORS.SETTLEMENT_COIN);
+        this.drawCenteredText(ctx, CONFIG.TEXT.TOTAL_COINS(Meta.data.survivorCoins), CONFIG.UI.SETTLEMENT_START_Y + CONFIG.UI.SETTLEMENT_LINE_GAP * 4 + top, 28, false, CONFIG.COLORS.HINT_TEXT);
       }
-      this.drawCenteredText(ctx, CONFIG.TEXT.TOTAL_COINS(Meta.data.coins), CONFIG.UI.SETTLEMENT_START_Y + CONFIG.UI.SETTLEMENT_LINE_GAP * 4 + top, 28, false, CONFIG.COLORS.HINT_TEXT);
       this.drawSettlementAdButtons(ctx, isVictory);
       var reportY = CONFIG.UI.SETTLEMENT_START_Y + CONFIG.UI.SETTLEMENT_LINE_GAP * 5 + top;
-      if (reportY + CONFIG.PRODUCT.REPORT_GAP < CONFIG.UI.SETTLEMENT_AD_Y) {
-        this.drawCenteredText(ctx, CONFIG.TEXT.PRODUCT.CONTRIBUTION + RunStats.contribution(), reportY, CONFIG.PRODUCT.REPORT_SIZE, false, CONFIG.COLORS.COIN);
-        this.drawCenteredText(ctx, CONFIG.TEXT.PRODUCT.NEXT + RunStats.nextGoal(), reportY + CONFIG.PRODUCT.REPORT_GAP, CONFIG.PRODUCT.REPORT_SIZE, false, CONFIG.COLORS.HINT_TEXT);
+      if (exitType !== 'extract' && reportY + CONFIG.PRODUCT.REPORT_GAP * 2 < CONFIG.UI.SETTLEMENT_AD_Y) {
+        // v014 #98 结算突出三项：本局进步点 / 贡献最大武器 / 下局可尝试（其余详细统计不占主界面）。
+        var prog = Game.runProgress;
+        var pWave = prog && prog.wave ? prog.wave : 0;
+        var progressText = CONFIG.TEXT.PRODUCT.REACH_WAVE(pWave);
+        if (prog && prog.newBestWave) progressText = CONFIG.TEXT.PRODUCT.PROGRESS_NEW_WAVE(pWave);
+        else if (prog && prog.firstBoss) progressText = CONFIG.TEXT.PRODUCT.PROGRESS_FIRST_BOSS;
+        this.drawCenteredText(ctx, CONFIG.TEXT.PRODUCT.PROGRESS + progressText, reportY, CONFIG.PRODUCT.REPORT_SIZE, true, CONFIG.COLORS.SURVIVOR_COIN || CONFIG.COLORS.COIN);
+        this.drawCenteredText(ctx, CONFIG.TEXT.PRODUCT.CONTRIBUTION + RunStats.contribution(), reportY + CONFIG.PRODUCT.REPORT_GAP, CONFIG.PRODUCT.REPORT_SIZE, false, CONFIG.COLORS.COIN);
+        this.drawCenteredText(ctx, CONFIG.TEXT.PRODUCT.NEXT + RunStats.nextGoal(), reportY + CONFIG.PRODUCT.REPORT_GAP * 2, CONFIG.PRODUCT.REPORT_SIZE, false, CONFIG.COLORS.HINT_TEXT);
       }
       this.drawRestartButton(ctx);
+    },
+    // v014 #88 撤离结算：蓝银幸存者硬币主数字 + #73 公式分项构成。
+    // 数据全部现算自 RunStats/Spawner/ExpLevelUp（与 RunStats.extractionPreview 同源），不新增数据源。
+    // 返回 { total, rows:[{label,source,amount}] }，分项 amount 之和严格 == total（向下取整后余数按小数大小分配）。
+    extractCoinBreakdown: function () {
+      var E = CONFIG.EXTRACTION;
+      var wave = (root.Spawner && root.Spawner.waveIndex) || 0;
+      var level = root.ExpLevelUp ? root.ExpLevelUp.level : 0;
+      var gold = RunStats.gold || 0;
+      var n = RunStats.killNormal || 0,
+        e = RunStats.killElite || 0,
+        b = RunStats.killBoss || 0,
+        s = RunStats.killSpecial || 0;
+      var rows = [
+        { label: CONFIG.TEXT.EXTRACT_BREAKDOWN.WAVE, source: wave, raw: wave * E.WAVE },
+        { label: CONFIG.TEXT.EXTRACT_BREAKDOWN.NORMAL, source: n, raw: n * E.NORMAL },
+        { label: CONFIG.TEXT.EXTRACT_BREAKDOWN.ELITE, source: e, raw: e * E.ELITE },
+        { label: CONFIG.TEXT.EXTRACT_BREAKDOWN.BOSS, source: b, raw: b * E.BOSS },
+        { label: CONFIG.TEXT.EXTRACT_BREAKDOWN.SPECIAL, source: s, raw: s * E.SPECIAL },
+        { label: CONFIG.TEXT.EXTRACT_BREAKDOWN.LEVEL, source: level, raw: level * E.LEVEL },
+        { label: CONFIG.TEXT.EXTRACT_BREAKDOWN.GOLD, source: gold, raw: gold * E.GOLD }
+      ];
+      var rawSum = 0;
+      for (var i = 0; i < rows.length; i++) rawSum += rows[i].raw;
+      var total = Math.floor(rawSum);
+      var allocated = 0;
+      for (var j = 0; j < rows.length; j++) {
+        rows[j].amount = Math.floor(rows[j].raw);
+        allocated += rows[j].amount;
+      }
+      var remainder = total - allocated; // 0 <= remainder < rows.length
+      var order = rows.map(function (r, idx) { return { idx: idx, frac: r.raw - Math.floor(r.raw) }; })
+        .sort(function (a, b2) { return b2.frac - a.frac; });
+      for (var k = 0; k < remainder; k++) rows[order[k].idx].amount += 1;
+      return { total: total, rows: rows };
+    },
+    drawExtractBreakdown: function (ctx, top) {
+      var data = this.extractCoinBreakdown();
+      var startY = CONFIG.UI.SETTLEMENT_START_Y + CONFIG.UI.SETTLEMENT_LINE_GAP * 3 + top;
+      // 主数字：蓝银色 + coin_survivor 图标（蓝银盾牌闪电，区别于金色局内金币 coin_gold）。
+      var awardText = CONFIG.TEXT.EXTRACT_AWARD(RunStats.finalCoins || data.total);
+      if (RunStats.extractAdClaimed) awardText += '（广告×' + CONFIG.EXTRACTION.AD_MULTIPLIER + '）';
+      this.drawCenteredCoinText(ctx, awardText, startY, 38, CONFIG.COLORS.SURVIVOR_COIN);
+      var rowStart = startY + 44,
+        gap = 22;
+      for (var i = 0; i < data.rows.length; i++) {
+        var r = data.rows[i];
+        this.drawCenteredText(ctx, r.label + ' ' + r.source + ' (+' + r.amount + ')', rowStart + i * gap, 18, false, CONFIG.COLORS.HINT_TEXT);
+      }
+      this.drawCenteredText(ctx, CONFIG.TEXT.EXTRACT_BREAKDOWN.TOTAL + ' ' + data.total, rowStart + data.rows.length * gap, 20, true, CONFIG.COLORS.SURVIVOR_COIN);
+    },
+    // 居中文字左侧配 coin_survivor 图标；图片未就绪时退回纯文字（矢量兜底）。
+    drawCenteredCoinText: function (ctx, text, y, size, color) {
+      ctx.save();
+      ctx.font = 'bold ' + size + 'px Arial, "Microsoft YaHei", sans-serif';
+      ctx.textBaseline = 'middle';
+      var textW = ctx.measureText ? ctx.measureText(text).width : text.length * 12;
+      var cx = CONFIG.VIEW.WIDTH / 2;
+      var icon = UI.icon('coin_survivor');
+      var iconSize = size,
+        gap = 10;
+      var totalW = icon ? textW + gap + iconSize : textW;
+      var startX = cx - totalW / 2;
+      ctx.textAlign = 'left';
+      ctx.fillStyle = color;
+      ctx.shadowColor = CONFIG.COLORS.TEXT_SHADOW;
+      ctx.shadowBlur = 12;
+      if (icon) ctx.drawImage(icon, startX, y - iconSize / 2, iconSize, iconSize);
+      ctx.fillText(text, startX + (icon ? iconSize + gap : 0), y, CONFIG.VIEW.WIDTH - CONFIG.UI.HP_BAR_X * 2);
+      ctx.restore();
     },
     drawSettlementAdButtons: function (ctx, isVictory) {
       var reviveRemaining = RunStats.getReviveRemaining();
@@ -838,18 +1100,7 @@ var UI = {
         y = CONFIG.UI.RESTART_Y;
       var width = CONFIG.UI.RESTART_WIDTH,
         height = CONFIG.UI.RESTART_HEIGHT;
-      this.roundedRectPath(ctx, x, y, width, height, CONFIG.UI.RESTART_RADIUS);
-      ctx.fillStyle = CONFIG.COLORS.BUTTON;
-      ctx.fill();
-      ctx.lineWidth = CONFIG.UI.RESTART_BORDER;
-      ctx.strokeStyle = CONFIG.COLORS.BUTTON_BORDER;
-      ctx.stroke();
-      ctx.font = 'bold ' + CONFIG.UI.RESTART_TEXT_SIZE + 'px Arial, "Microsoft YaHei", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = CONFIG.COLORS.BUTTON_TEXT;
-      ctx.fillText(CONFIG.TEXT.ENTER_FATE, x + width / 2, y + height / 2 + 1);
-      root.ButtonUI.register(ctx, CONFIG.UI.RESTART_X, CONFIG.UI.RESTART_Y, CONFIG.UI.RESTART_WIDTH, CONFIG.UI.RESTART_HEIGHT, true);
+      this.drawActionButton(ctx, x, y, width, height, CONFIG.TEXT.ENTER_FATE, true, CONFIG.UI.RESTART_TEXT_SIZE);
       this.drawActionButton(ctx, 245, CONFIG.UI.RESTART_Y + 112, 260, 40, '跳过抽牌', true, 17);
     },
     consumeSettlementAction: function (isVictory) {
@@ -892,8 +1143,10 @@ var UI = {
       var width = CONFIG.UI.CARD_WIDTH,
         height = CONFIG.UI.CARD_HEIGHT;
       var rarityId = offer.rarity.ID;
+      // #84 五档：白/蓝/紫/金(LEGENDARY)/彩(RAINBOW)。LEGENDARY 纯金，RAINBOW 彩虹炫彩。
+      var isRainbow = rarityId === 'RAINBOW';
       var rarityColor = rarityId === 'COMMON' ? CONFIG.COLORS.CARD_COMMON_BORDER : CONFIG.COLORS[offer.rarity.COLOR_KEY];
-      var cardBackground = rarityId === 'LEGENDARY' ? CONFIG.COLORS.CARD_LEGENDARY_BG : rarityId === 'EPIC' ? CONFIG.COLORS.CARD_EPIC_BG : rarityId === 'RARE' ? CONFIG.COLORS.CARD_RARE_BG : CONFIG.COLORS.CARD_COMMON_BG;
+      var cardBackground = rarityId === 'LEGENDARY' ? CONFIG.COLORS.CARD_GOLD_BG : isRainbow ? CONFIG.COLORS.CARD_RAINBOW_BG : rarityId === 'EPIC' ? CONFIG.COLORS.CARD_EPIC_BG : rarityId === 'RARE' ? CONFIG.COLORS.CARD_RARE_BG : CONFIG.COLORS.CARD_COMMON_BG;
       var textDefinition = CONFIG.TEXT.UPGRADES[offer.definition.TEXT_KEY];
       ctx.save();
       // 先画不带阴影的不透明深色卡底，防止微信真机把浅色阴影铺进卡片内部。
@@ -903,7 +1156,7 @@ var UI = {
       // 稀有度只用于边框与轻量外发光；普通卡完全不发光。
       var phase = Date.now() % 2000 / 2000 * 360;
       var rainbow = null;
-      if (rarityId === 'LEGENDARY') {
+      if (isRainbow) {
         rainbow = ctx.createLinearGradient(x, y, x + width, y + height);
         root.safeStop(rainbow, 0, 'hsl(' + phase + ',95%,62%)');
         root.safeStop(rainbow, 0.5, 'hsl(' + (phase + 120) % 360 + ',95%,62%)');
@@ -917,9 +1170,9 @@ var UI = {
       ctx.strokeStyle = rainbow || rarityColor;
       ctx.stroke();
       ctx.shadowBlur = 0;
-      if (rarityId === 'EPIC' || rarityId === 'LEGENDARY') {
+      if (rarityId === 'EPIC' || rarityId === 'LEGENDARY' || isRainbow) {
         this.roundedRectPath(ctx, x + 7, y + 7, width - 14, height - 14, CONFIG.UI.CARD_RADIUS - 5);
-        ctx.globalAlpha = rarityId === 'LEGENDARY' ? 0.78 : 0.5;
+        ctx.globalAlpha = rarityId === 'EPIC' ? 0.5 : 0.78;
         ctx.lineWidth = 1;
         ctx.strokeStyle = rainbow || rarityColor;
         ctx.stroke();
@@ -931,20 +1184,37 @@ var UI = {
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
       ctx.font = 'bold ' + CONFIG.UI.CARD_NAME_SIZE + 'px Arial, "Microsoft YaHei", sans-serif';
-      ctx.fillStyle = rarityId === 'LEGENDARY' ? rainbow : rarityId === 'EPIC' ? rarityColor : CONFIG.COLORS.CARD_TITLE;
+      ctx.fillStyle = isRainbow ? rainbow : rarityId === 'EPIC' || rarityId === 'LEGENDARY' ? rarityColor : CONFIG.COLORS.CARD_TITLE;
       ctx.fillText(textDefinition.NAME, x + CONFIG.UI.CARD_NAME_X_OFFSET, y + CONFIG.UI.CARD_NAME_Y_OFFSET);
       ctx.font = 'bold ' + CONFIG.UI.CARD_RARITY_SIZE + 'px Arial, "Microsoft YaHei", sans-serif';
-      ctx.fillStyle = rarityColor;
-      ctx.fillText(CONFIG.TEXT.RARITY[offer.rarity.ID], x + CONFIG.UI.CARD_NAME_X_OFFSET, y + CONFIG.UI.CARD_RARITY_Y_OFFSET);
+      ctx.fillStyle = rainbow || rarityColor;
+      // #84 品质名以五档为准（白/蓝/紫/金/彩）：优先 camp.js 注入的 QUALITY 名称，回退 CONFIG.TEXT.RARITY。
+      var qKey = rarityId === 'COMMON' ? 'WHITE' : rarityId === 'RARE' ? 'BLUE' : rarityId === 'EPIC' ? 'PURPLE' : rarityId === 'LEGENDARY' ? 'GOLD' : 'RAINBOW';
+      var qualityLabel = (root.CONFIG.QUALITY && root.CONFIG.QUALITY[qKey] && root.CONFIG.QUALITY[qKey].name) || (CONFIG.TEXT.RARITY && CONFIG.TEXT.RARITY[rarityId]) || '';
+      ctx.fillText(qualityLabel, x + CONFIG.UI.CARD_NAME_X_OFFSET, y + CONFIG.UI.CARD_RARITY_Y_OFFSET);
       ctx.textAlign = 'right';
       ctx.fillText(CONFIG.TEXT.PRODUCT.STACK(offer.level, offer.definition.MAX_LEVEL), x + width - CONFIG.UI.CARD_LEVEL_RIGHT_OFFSET, y + CONFIG.UI.CARD_RARITY_Y_OFFSET);
       ctx.textAlign = 'left';
       ctx.font = CONFIG.UI.CARD_DESC_SIZE + 'px Arial, "Microsoft YaHei", sans-serif';
       ctx.fillStyle = CONFIG.COLORS.CARD_DESC;
       ctx.fillText(offer.description, x + CONFIG.UI.CARD_NAME_X_OFFSET, y + CONFIG.UI.CARD_DESC_Y_OFFSET);
-      ctx.font = CONFIG.PRODUCT.PREVIEW_SIZE + 'px Arial';
-      ctx.fillText(ExpLevelUp.previewOffer(offer), x + CONFIG.UI.CARD_NAME_X_OFFSET, y + height - CONFIG.PRODUCT.PREVIEW_BOTTOM, width - CONFIG.UI.CARD_NAME_X_OFFSET * 2);
-      if (rarityId === 'LEGENDARY') {
+      // #91 关键数值前后对比（如 3 → 4）高亮显示。
+      var previewText = ExpLevelUp.previewOffer(offer);
+      if (previewText) {
+        ctx.font = 'bold ' + CONFIG.PRODUCT.PREVIEW_SIZE + 'px Arial, "Microsoft YaHei", sans-serif';
+        ctx.fillStyle = CONFIG.COLORS.BADGE_GOLD;
+        ctx.textAlign = 'left';
+        ctx.fillText(previewText, x + CONFIG.UI.CARD_NAME_X_OFFSET, y + height - 56, width - CONFIG.UI.CARD_NAME_X_OFFSET * 2);
+      }
+      // #91 搭配提示 + 已拥有关联（灰色小字一行）。
+      var cardHint = this.cardHintLine(offer);
+      if (cardHint) {
+        ctx.font = '17px Arial, "Microsoft YaHei", sans-serif';
+        ctx.fillStyle = CONFIG.COLORS.HINT_TEXT;
+        ctx.textAlign = 'left';
+        ctx.fillText(cardHint, x + CONFIG.UI.CARD_NAME_X_OFFSET, y + height - 18, width - CONFIG.UI.CARD_NAME_X_OFFSET * 2);
+      }
+      if (isRainbow) {
         for (var p = 0; p < 6; p++) {
           var px = x + 16 + (p * 113 + Date.now() / 20) % (width - 32);
           var py = y + (p % 2 ? 18 : height - 18);
@@ -954,6 +1224,49 @@ var UI = {
       }
       ctx.restore();
       root.ButtonUI.register(ctx, CONFIG.UI.CARD_X, CONFIG.UI.CARD_START_Y + index * (CONFIG.UI.CARD_HEIGHT + CONFIG.UI.CARD_GAP), CONFIG.UI.CARD_WIDTH, CONFIG.UI.CARD_HEIGHT, true);
+    },
+    // #91 卡片底部一行：已拥有的关联词条名（灰色）+ 搭配提示/路线。
+    cardHintLine: function (offer) {
+      var def = offer.definition;
+      var owned = [];
+      if (def.related) for (var r = 0; r < def.related.length; r++) {
+        var rid = def.related[r];
+        if (ExpLevelUp.levels[rid] > 0) owned.push(this.perkNameById(rid));
+      }
+      var parts = [];
+      if (owned.length) parts.push('已拥有：' + owned.join('、'));
+      if (def.synergy) parts.push(def.synergy);
+      return parts.join(' · ');
+    },
+    perkNameById: function (id) {
+      for (var i = 0; i < CONFIG.UPGRADES.DEFINITIONS.length; i++) {
+        var d = CONFIG.UPGRADES.DEFINITIONS[i];
+        if (d.ID === id) {
+          var t = CONFIG.TEXT.UPGRADES[d.TEXT_KEY];
+          return t && t.NAME ? t.NAME : id;
+        }
+      }
+      return id;
+    },
+    // #92 核心词条首次横幅：屏幕中上方短横幅，Meta.perkBannerTimer 自动淡出，不暂停。
+    drawPerkBanner: function (ctx) {
+      if (Meta.perkBannerTimer <= 0 || !Meta.perkBannerText) return;
+      var top = CONFIG.UI.TOP_INSET || 0;
+      var bw = 620, bh = 76, bx = (CONFIG.VIEW.WIDTH - bw) / 2, by = 96 + top;
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, Meta.perkBannerTimer * 2);
+      this.roundedRectPath(ctx, bx, by, bw, bh, 22);
+      ctx.fillStyle = CONFIG.COLORS.PANEL_BG;
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = CONFIG.COLORS.BADGE_GOLD;
+      ctx.stroke();
+      ctx.font = 'bold 24px Arial, "Microsoft YaHei", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = CONFIG.COLORS.TEXT;
+      ctx.fillText(Meta.perkBannerText, CONFIG.VIEW.WIDTH / 2, by + bh / 2, bw - 40);
+      ctx.restore();
     },
     consumeLevelUpAction: function (offerCount) {
       if (!Input.consumeTap(this.tapPoint)) return -1;
@@ -1057,7 +1370,7 @@ var UI = {
 
     drawDashButton: function (ctx) {
       if (!root.Player) return;
-      var cx = CONFIG.UI.DASH_BUTTON_X;
+      var cx = this.mirrorX(CONFIG.UI.DASH_BUTTON_X);
       var cy = this.getDashButtonY();
       var r = CONFIG.UI.DASH_BUTTON_RADIUS;
       var ready = Player.canDash();
@@ -1162,7 +1475,7 @@ var UI = {
     },
     consumeDashButton: function () {
       if (!Input.pendingTap.active) return false;
-      var dx = Input.pendingTap.x - CONFIG.UI.DASH_BUTTON_X;
+      var dx = Input.pendingTap.x - this.mirrorX(CONFIG.UI.DASH_BUTTON_X);
       var dy = Input.pendingTap.y - this.getDashButtonY();
       var r = CONFIG.UI.DASH_BUTTON_RADIUS;
       if (dx * dx + dy * dy > r * r) return false;
@@ -1201,8 +1514,20 @@ var UI = {
       } else if (ext.state === 'extractable' && ext.playerInZone) {
         var c = this.getExtractionConfirmRect();
         this.drawActionButton(ctx, c.x, c.y, c.w, c.h, CONFIG.TEXT.EXTRACTION_EXTRACT, true, 30);
-        this.drawCenteredText(ctx, CONFIG.TEXT.PRODUCT.EXTRACT(RunStats.extractionPreview()), c.y - CONFIG.PRODUCT.REPORT_GAP * 2, CONFIG.PRODUCT.REPORT_SIZE, false, CONFIG.COLORS.COIN);
-        this.drawCenteredText(ctx, CONFIG.TEXT.PRODUCT.CONTINUE, c.y - CONFIG.PRODUCT.REPORT_GAP, CONFIG.PRODUCT.PREVIEW_SIZE, false, CONFIG.COLORS.HINT_TEXT);
+        // v014 #97 撤离界面左右对比：左=现在撤离预计，右=继续挑战下一波预计（#73 预览同源）。
+        var nowTxt = CONFIG.TEXT.PRODUCT.EXTRACT_NOW(RunStats.extractionPreview());
+        var nextTxt = CONFIG.TEXT.PRODUCT.CONTINUE_NEXT(RunStats.extractContinueEstimate());
+        var promptY = c.y - CONFIG.PRODUCT.REPORT_GAP * 2;
+        ctx.save();
+        ctx.font = 'bold ' + CONFIG.PRODUCT.REPORT_SIZE + 'px Arial, "Microsoft YaHei", sans-serif';
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = CONFIG.COLORS.COIN;
+        ctx.fillText(nowTxt, 24, promptY);
+        ctx.textAlign = 'right';
+        ctx.fillStyle = CONFIG.COLORS.HINT_TEXT;
+        ctx.fillText(nextTxt, CONFIG.VIEW.WIDTH - 24, promptY);
+        ctx.restore();
       }
     },
     consumeExtractionAction: function () {

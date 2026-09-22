@@ -87,6 +87,6 @@ for (const mode of ['h5', 'wx']) {
 }
 for (const mode of ['h5', 'wx']) {
   const r = createRuntime(mode, { corruptSave: true });
-  assert(Number.isFinite(r.game.Meta.data.coins)); r.draw();
+  assert(Number.isFinite(r.game.Meta.data.survivorCoins)); r.draw();
 }
 console.log('PASS: H5 与微信损坏存档容错');

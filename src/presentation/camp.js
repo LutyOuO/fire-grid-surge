@@ -133,12 +133,20 @@
     function drawBack(ctx, title) {
       var top = CONFIG.UI.TOP_INSET || 0;
       UI.drawActionButton(ctx, 24, 30 + top, 132, 60, '返回', true, 22);
+      var baseIcon = UI.icon('nav_base');
+      if (baseIcon) ctx.drawImage(baseIcon, 176, 42 + top, 48, 48);
       UI.drawCenteredText(ctx, title, 75 + top, 42, true, '#f4d58d');
     }
     function drawMoney(ctx) {
       var top = CONFIG.UI.TOP_INSET || 0;
-      text(ctx, '金币 ' + Meta.data.coins, 535, 125 + top, 20, '#ffd166', 'right', true);
-      text(ctx, '钻石 ' + (Meta.data.diamonds || 0), 715, 125 + top, 20, '#83d7ff', 'right', true);
+      // v014 #88：幸存者硬币配 coin_survivor 图标（蓝银盾牌闪电），数字蓝银色；与右侧钻石左右分开不重叠。
+      var coinTxt = String(Meta.data.survivorCoins);
+      var icon = UI.icon('menu_coin_survivor') || UI.icon('coin_survivor');
+      if (icon) ctx.drawImage(icon, 535 - coinTxt.length * 12 - 10 - 22, 125 + top - 11, 22, 22);
+      text(ctx, coinTxt, 535, 125 + top, 20, (CONFIG.COLORS.SURVIVOR_COIN || '#9fd6ff'), 'right', true);
+      var diamondTxt = String(Meta.data.diamonds || 0), diamond = UI.icon('icon_diamond');
+      if (diamond) ctx.drawImage(diamond, 715 - diamondTxt.length * 12 - 12 - 24, 113 + top, 24, 24);
+      text(ctx, diamondTxt, 715, 125 + top, 20, '#c995ff', 'right', true);
     }
     function drawCampSelect(ctx) {
       var top = CONFIG.UI.TOP_INSET || 0;
@@ -147,10 +155,49 @@
       UI.drawMenuGlow(ctx);
       drawBack(ctx, '幸存者营地');
       drawMoney(ctx);
-      drawEntry(ctx, 75, 245 + top, '强化', '永久属性与道具升级', '↑', '#f1b657');
-      drawEntry(ctx, 75, 565 + top, '外观', '角色服装与武器涂装', '◇', '#65c7ff');
+      drawEntry(ctx, 75, 245 + top, '强化', '永久属性与道具升级', 'tab_enhance', '#65c7ff');
+      drawEntry(ctx, 75, 565 + top, '外观', '角色服装与武器涂装', 'tab_appearance', '#f1a457');
+      drawBaseObjective(ctx);
     }
-    function drawEntry(ctx, x, y, title, desc, icon, col) {
+    // v014 #98 局外引导：基地显示眼下最相关目标（未完成、进度最高的永久成就）+ 进度条。
+    // 成就 def 元组 [id, 名称, 进度键, 目标, 积分]；用持久 achievements.progress[进度键]。
+    function baseObjective() {
+      var defs = (root.Achievements && root.Achievements.defs) || [];
+      var data = Meta.data.achievements || { completed: [], progress: {} };
+      var best = null, ratio = 0;
+      for (var i = 0; i < defs.length; i++) {
+        var d = defs[i];
+        if (data.completed.indexOf(d[0]) >= 0) continue;
+        var cur = data.progress[d[2]] || 0;
+        if (cur > 0 && cur < d[3] && cur / d[3] > ratio) { best = d; ratio = cur / d[3]; }
+      }
+      if (!best) return null;
+      return { name: best[1], cur: Math.min(best[3], data.progress[best[2]] || 0), target: best[3] };
+    }
+    function drawBaseObjective(ctx) {
+      var top = CONFIG.UI.TOP_INSET || 0;
+      var ob = baseObjective();
+      var x = 75, y = 855 + top, w = 600, h = 120;
+      panel(ctx, x, y, w, h, 22, 'rgba(23,35,31,.97)', '#7dd39a');
+      text(ctx, CONFIG.TEXT.PRODUCT.BASE_OBJECTIVE, x + 28, y + 34, 20, '#7dd39a', 'left', true);
+      if (ob) {
+        text(ctx, ob.name, x + 28, y + 68, 24, '#fff', 'left', true);
+        text(ctx, ob.cur + '/' + ob.target, x + w - 28, y + 68, 22, '#ffd166', 'right', true);
+        var bx = x + 28, bw = w - 56, bh = 12, by = y + 94;
+        UI.roundedRectPath(ctx, bx, by, bw, bh, 6);
+        ctx.fillStyle = '#1c2b25';
+        ctx.fill();
+        var frac = Math.max(0, Math.min(1, ob.cur / ob.target));
+        if (frac > 0.02) {
+          UI.roundedRectPath(ctx, bx, by, Math.max(bh, bw * frac), bh, 6);
+          ctx.fillStyle = '#7dd39a';
+          ctx.fill();
+        }
+      } else {
+        text(ctx, CONFIG.TEXT.PRODUCT.TRY_TURRET, x + 28, y + 72, 20, '#b7c7bf', 'left');
+      }
+    }
+    function drawEntry(ctx, x, y, title, desc, iconKey, col) {
       panel(ctx, x, y, 600, 250, 25, 'rgba(23,35,31,.97)', col);
       ctx.save();
       ctx.globalAlpha = .16;
@@ -159,7 +206,8 @@
       ctx.arc(x + 105, y + 125, 72, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
-      text(ctx, icon, x + 105, y + 120, 78, col, 'center', true);
+      var entryIcon = UI.icon(iconKey);
+      if (entryIcon) ctx.drawImage(entryIcon, x + 57, y + 77, 96, 96);
       text(ctx, title, x + 220, y + 95, 40, '#fff', 'left', true);
       text(ctx, desc, x + 220, y + 150, 20, '#b7c7bf', 'left');
       text(ctx, '进入  ›', x + 525, y + 202, 18, col, 'right', true);
@@ -171,10 +219,15 @@
       UI.drawMenuGlow(ctx);
       drawBack(ctx, '强化');
       drawMoney(ctx);
-      var rs = UI.getBaseTabRects(top);
-      UI.drawActionButton(ctx, rs[0].x, rs[0].y, rs[0].w, rs[0].h, '角色强化', UI.baseTab === 'character', 20);
-      UI.drawActionButton(ctx, rs[1].x, rs[1].y, rs[1].w, rs[1].h, '道具强化', UI.baseTab === 'gadget', 20);
-      if (UI.baseTab === 'gadget') UI.drawBaseGadget(ctx, top);else UI.drawBaseCharacter(ctx, top);
+      var tabs = enhanceTabs(top), labels = ['角色/武器', '炮塔强化', '道具强化', '技能强化'], icons = ['', 'tab_turret', 'tab_item', 'tab_skill'];
+      for (var i = 0; i < 4; i++) {
+        var rr = tabs[i], enabled = i !== 3, active = UI.baseTab === ['character','turret','item','skill'][i];
+        UI.drawActionButton(ctx, rr.x, rr.y, rr.w, rr.h, labels[i], enabled && active, 18);
+        var ti = icons[i] && UI.icon(icons[i]); if (ti) ctx.drawImage(ti, rr.x + 8, rr.y + 8, 36, 36);
+      }
+      if (UI.baseTab === 'turret') { UI.baseGadgetFilter = 'turret'; UI.drawBaseGadget(ctx, top); }
+      else if (UI.baseTab === 'item') { UI.baseGadgetFilter = 'item'; UI.drawBaseGadget(ctx, top); }
+      else UI.drawBaseCharacter(ctx, top);
       if (root.DevConsole) root.DevConsole.draw(ctx);
     }
     UI.drawBase = function (ctx) {
@@ -215,6 +268,12 @@
         CampNav.page = 'select';
         return;
       }
+      var tabs = enhanceTabs(top), modes = ['character','turret','item','skill'];
+      for (var ti = 0; ti < tabs.length; ti++) if (hit(p, tabs[ti].x, tabs[ti].y, tabs[ti].w, tabs[ti].h)) {
+        Input.clearTap();
+        if (modes[ti] === 'skill') { Meta.showToast('功能开发中'); return; }
+        UI.baseTab = modes[ti]; UI.baseGadgetIndex = 0; return;
+      }
       var action = UI.consumeBaseAction();
       if (action === 1001) {
         UI.baseTab = 'character';
@@ -226,9 +285,17 @@
         var code = action - 100,
           gi = Math.floor(code / 10),
           ii = code % 10,
-          gid = Object.keys(CONFIG.META.GADGET_UPGRADES)[gi];
+          ids = Object.keys(CONFIG.META.GADGET_UPGRADES), gid;
+        if (UI.baseTab === 'turret') ids = ids.filter(function (id) { return id.indexOf('turret_') === 0; });
+        if (UI.baseTab === 'item') ids = ids.filter(function (id) { return ['laser','bomb','medkit','magnet','freeze'].indexOf(id) >= 0; });
+        gid = ids[gi];
         if (gid && CONFIG.META.GADGET_UPGRADES[gid].items[ii]) Meta.buyGadget(gid, CONFIG.META.GADGET_UPGRADES[gid].items[ii].ID);
       }
+    }
+    function enhanceTabs(top) {
+      var out = [], w = 320, h = 54;
+      for (var i = 0; i < 4; i++) out.push({ x: 45 + (i % 2) * 340, y: CONFIG.UI.BASE_TAB_Y + top + Math.floor(i / 2) * 62, w: w, h: h });
+      return out;
     }
 
     // 外观页返回营地选择页。
@@ -306,7 +373,7 @@
       text(ctx, q.name, x + 18, y + 24, 14, q.main, 'left', true);
       this.drawPreview(ctx, d, x + w / 2, y + 125, 72, q.main);
       text(ctx, d[1], x + w / 2, y + 220, 20, q.rainbow ? edge : q.main, 'center', true);
-      var price = d[3] === 'free' ? '初始拥有' : d[3] === 'achievement' ? '成就解锁' : d[4] + ' ' + (d[3] === 'diamonds' ? '钻石' : '金币');
+      var price = d[3] === 'free' ? '初始拥有' : d[3] === 'achievement' ? '成就解锁' : d[4] + ' ' + (d[3] === 'diamonds' ? '钻石' : '幸存者硬币');
       text(ctx, price, x + w / 2, y + 254, 15, d[3] === 'diamonds' ? '#83d7ff' : '#ffd166', 'center');
       var enabled = !equipped && !locked,
         caption = equipped ? '已装备' : owned ? '装备' : locked ? '尚未解锁' : '购买';

@@ -19,6 +19,8 @@
     offlinePopupActive: false,
     toastText: '',
     toastTimer: 0,
+    perkBannerText: '',
+    perkBannerTimer: 0,
     createDefaultData: function () {
       var upgrades = {};
       for (var i = 0; i < CONFIG.META.UPGRADES.length; i++) {
@@ -27,7 +29,7 @@
       upgrades.gadget = this.createDefaultGadget();
       return {
         version: CONFIG.SAVE.VERSION,
-        coins: 0,
+        survivorCoins: 0,
         upg: upgrades,
         bestWave: 0,
         bestTime: 0,
@@ -39,7 +41,10 @@
           shake: true,
           debug: false,
           dashDoubleTap: false,
-          alwaysShowJoystick: false
+          alwaysShowJoystick: false,
+          quality: CONFIG.RENDER_QUALITY.DEFAULT,
+          highFps: false,
+          mirror: false
         },
         pendingOfflineCoins: 0,
         pendingOfflineMinutes: 0,
@@ -80,7 +85,13 @@
           completed: [],
           progress: {}
         },
-        runs: 0
+        runs: 0,
+        // v012 #75 选图系统：开局只解锁第 1 张；其余按 layout.unlock 条件解锁。
+        // 老存档无这两个字段 → mergeSafeData 回退默认（只解锁 cross_ruin、选它），向后兼容。
+        unlockedMaps: [0],
+        selectedMap: 0,
+        // v014 #92 核心词条首次获得横幅记录：每个核心词条 ID 记一次 true，只弹一次。
+        perkBanners: {}
       };
     },
     createDefaultGadget: function () {
@@ -111,12 +122,26 @@
     mergeSafeData: function (saved) {
       if (!saved || typeof saved !== 'object') return;
       this.mergeRunBuffs(saved);
-      this.data.coins = this.safeInt(saved.coins, 0);
+      // v012 #72 双货币：持久货币由 coins 改名为 survivorCoins；旧存档有 coins 且无 survivorCoins 时迁移过来，损坏数据回默认 0。
+      this.data.survivorCoins = this.safeInt(saved.survivorCoins, this.safeInt(saved.coins, 0));
       this.data.diamonds = this.safeInt(saved.diamonds, 0);
       this.data.bestWave = this.safeInt(saved.bestWave, 0);
       this.data.bestTime = this.safeNumber(saved.bestTime, 0);
       this.data.bestKills = this.safeInt(saved.bestKills, 0);
       this.data.runs = this.safeInt(saved.runs, 0);
+      // v012 #75 地图解锁进度：只信任 LAYOUTS 范围内的整数索引，永远保底解锁第 0 张。
+      var maxMap = (CONFIG.FIELD.LAYOUTS || []).length - 1;
+      var savedUnlocked = Array.isArray(saved.unlockedMaps) ? saved.unlockedMaps : [];
+      var unlocked = [];
+      for (var ui = 0; ui < savedUnlocked.length; ui++) {
+        var mi = this.safeInt(savedUnlocked[ui], -1);
+        if (mi >= 0 && mi <= maxMap && unlocked.indexOf(mi) < 0) unlocked.push(mi);
+      }
+      if (unlocked.indexOf(0) < 0) unlocked.unshift(0);
+      this.data.unlockedMaps = unlocked;
+      this.data.selectedMap = Math.max(0, Math.min(maxMap, this.safeInt(saved.selectedMap, 0)));
+      // 读档即结算一次波次里程碑自动解锁（老玩家立刻补解锁 ring_street）。
+      this.refreshMapUnlocks();
       this.pendingOfflineCoins = this.safeInt(saved.pendingOfflineCoins, 0);
       this.pendingOfflineMinutes = Math.min(CONFIG.META.OFFLINE_MAX_HOURS * 60, this.safeInt(saved.pendingOfflineMinutes, 0));
       this.data.lastOfflineTs = this.safeTimestamp(saved.lastOfflineTs, Date.now());
@@ -143,6 +168,7 @@
             this.data.settings[k] = saved.settings[k];
           }
         }
+        if (/^(auto|high|medium|low)$/.test(saved.settings.quality || '')) this.data.settings.quality = saved.settings.quality;
       }
       if (Array.isArray(saved.ownedOutfits)) this.data.ownedOutfits = saved.ownedOutfits.filter(function (v) {
         return typeof v === 'string';
@@ -167,6 +193,11 @@
         var ap = saved.achievements.progress;
         if (ap && typeof ap === 'object') for (var ak in ap) this.data.achievements.progress[ak] = this.safeNumber(ap[ak], 0);
       }
+      // #92 核心词条横幅记录：只信任真值 ID，损坏数据回空对象（旧存档无此字段自动空）。
+      var savedBanners = saved.perkBanners && typeof saved.perkBanners === 'object' ? saved.perkBanners : {};
+      var banners = {};
+      for (var bid in savedBanners) if (savedBanners[bid]) banners[bid] = true;
+      this.data.perkBanners = banners;
       var savedUpgrades = saved.upg && typeof saved.upg === 'object' ? saved.upg : {};
       for (var i = 0; i < CONFIG.META.UPGRADES.length; i++) {
         var definition = CONFIG.META.UPGRADES[i];
@@ -211,16 +242,18 @@
     },
     getPrice: function (definition) {
       var level = this.getUpgradeLevel(definition.ID);
-      return Math.round(definition.BASE * Math.pow(level + 1, CONFIG.META.PRICE_POWER));
+      // v014 #89 角色属性升级价 ×PRICE_MULT.ATTRIBUTE（默认 3）；升级数值不变，只涨价。
+      var mult = (CONFIG.META.PRICE_MULT && CONFIG.META.PRICE_MULT.ATTRIBUTE) || 1;
+      return Math.round(definition.BASE * Math.pow(level + 1, CONFIG.META.PRICE_POWER) * mult);
     },
     canBuy: function (definition) {
       var level = this.getUpgradeLevel(definition.ID);
-      return level < definition.MAX_LEVEL && this.data.coins >= this.getPrice(definition);
+      return level < definition.MAX_LEVEL && this.data.survivorCoins >= this.getPrice(definition);
     },
     buy: function (definition) {
       if (!this.canBuy(definition)) return false;
       var price = this.getPrice(definition);
-      this.data.coins -= price;
+      this.data.survivorCoins -= price;
       this.data.upg[definition.ID] += 1;
       this.save();
       return true;
@@ -244,35 +277,96 @@
       var def = this.getGadgetDef(gadgetId, itemId);
       if (!def) return 0;
       var level = this.getGadgetLevel(gadgetId, itemId);
-      return Math.round(def.BASE * Math.pow(level + 1, CONFIG.META.PRICE_POWER));
+      // v014 #89 道具解锁升级价 ×PRICE_MULT.GADGET（默认 3）；升级数值不变，只涨价。
+      var mult = (CONFIG.META.PRICE_MULT && CONFIG.META.PRICE_MULT.GADGET) || 1;
+      return Math.round(def.BASE * Math.pow(level + 1, CONFIG.META.PRICE_POWER) * mult);
     },
     canBuyGadget: function (gadgetId, itemId) {
       var def = this.getGadgetDef(gadgetId, itemId);
       if (!def) return false;
       var level = this.getGadgetLevel(gadgetId, itemId);
-      return level < def.MAX_LEVEL && this.data.coins >= this.getGadgetPrice(gadgetId, itemId);
+      return level < def.MAX_LEVEL && this.data.survivorCoins >= this.getGadgetPrice(gadgetId, itemId);
     },
     buyGadget: function (gadgetId, itemId) {
       if (!this.canBuyGadget(gadgetId, itemId)) return false;
       var price = this.getGadgetPrice(gadgetId, itemId);
-      this.data.coins -= price;
+      this.data.survivorCoins -= price;
       this.data.upg.gadget[gadgetId][itemId] += 1;
       this.save();
       return true;
     },
+    // ---------- v012 #75 选图：解锁查询 / 波次里程碑自动解锁 / 幸存者硬币购买解锁 ----------
+    mapDef: function (index) {
+      var layouts = CONFIG.FIELD.LAYOUTS || [];
+      return layouts[index] || null;
+    },
+    isMapUnlocked: function (index) {
+      if (index === 0) return true;
+      if (this.data.unlockedMaps.indexOf(index) >= 0) return true;
+      return this.mapMilestoneMet(index);
+    },
+    mapMilestoneMet: function (index) {
+      var def = this.mapDef(index);
+      if (!def || !def.unlock) return false;
+      if (def.unlock.kind === 'wave') return this.safeInt(this.data.bestWave, 0) >= def.unlock.wave;
+      return false;
+    },
+    mapUnlockHint: function (index) {
+      var def = this.mapDef(index);
+      if (!def || !def.unlock) return '';
+      return def.unlock.kind === 'wave' ? def.unlock.wave : def.unlock.cost;
+    },
+    // 波次里程碑达成后自动写入 unlockedMaps 并落盘（coins 类不自动解锁，只能买）。
+    refreshMapUnlocks: function () {
+      if (!this.data || !Array.isArray(this.data.unlockedMaps)) return;
+      var changed = false;
+      var layouts = CONFIG.FIELD.LAYOUTS || [];
+      for (var i = 1; i < layouts.length; i++) {
+        if (this.data.unlockedMaps.indexOf(i) >= 0) continue;
+        if (this.mapMilestoneMet(i)) {
+          this.data.unlockedMaps.push(i);
+          changed = true;
+        }
+      }
+      if (changed) this.save();
+    },
+    canBuyMap: function (index) {
+      var def = this.mapDef(index);
+      if (!def || !def.unlock || def.unlock.kind !== 'coins') return false;
+      if (this.isMapUnlocked(index)) return false;
+      return this.data.survivorCoins >= def.unlock.cost;
+    },
+    buyMap: function (index) {
+      if (!this.canBuyMap(index)) return false;
+      var def = this.mapDef(index);
+      this.data.survivorCoins -= def.unlock.cost;
+      this.data.unlockedMaps.push(index);
+      this.data.selectedMap = index;
+      this.save();
+      return true;
+    },
+    selectMap: function (index) {
+      if (!this.isMapUnlocked(index)) return false;
+      this.data.selectedMap = index;
+      this.save();
+      return true;
+    },
+    // v012 #72：coins 入参语义为"本次撤离获得的幸存者硬币"。阵亡/未撤离由调用方传 0。
     settleRun: function (seconds, kills, wave, coins, countRun) {
-      this.data.coins += Math.max(0, Math.floor(coins));
+      this.data.survivorCoins += Math.max(0, Math.floor(coins));
       this.data.bestTime = Math.max(this.data.bestTime, seconds);
       this.data.bestKills = Math.max(this.data.bestKills, kills);
       this.data.bestWave = Math.max(this.data.bestWave, wave);
       if (countRun) this.data.runs = (this.data.runs || 0) + 1;
+      // 结算后再检查波次里程碑（如 ring_street 需到达第 10 波）。
+      this.refreshMapUnlocks();
       this.save();
       this.recordRunAchievements(seconds, kills, wave, coins);
     },
+    // v013 #83 挂机奖励削弱：离线产出固定为 CONFIG.META.OFFLINE_BASE_PER_MINUTE（约 0.5/分钟）。
+    // 不再按最佳波次(waveMultiplier)与贪婪倍率(greedMultiplier)放大——挂机只是补充，不随养成膨胀。
     getOfflineRate: function () {
-      var waveMultiplier = 1 + this.data.bestWave / 10;
-      var greedMultiplier = 1 + this.getUpgradeLevel('GREED') * CONFIG.META.GREED_RATE_PER_LEVEL;
-      return CONFIG.META.OFFLINE_BASE_PER_MINUTE * waveMultiplier * greedMultiplier;
+      return CONFIG.META.OFFLINE_BASE_PER_MINUTE;
     },
     calculateOfflineReward: function (now) {
       var elapsedMs = Math.max(0, now - this.data.lastOfflineTs);
@@ -287,11 +381,11 @@
       if (!this.offlinePopupActive) return;
       var multiplier = doubleReward ? 2 : 1;
       var reward = this.pendingOfflineCoins * multiplier;
-      this.data.coins += reward;
+      this.data.survivorCoins += reward;
       this.pendingOfflineCoins = 0;
       this.pendingOfflineMinutes = 0;
       this.offlinePopupActive = false;
-      this.showToast(CONFIG.TEXT.TOTAL_COINS(this.data.coins));
+      this.showToast(CONFIG.TEXT.TOTAL_COINS(this.data.survivorCoins));
       this.save();
     },
     isSpeedupReady: function () {
@@ -303,7 +397,7 @@
     claimSpeedup: function () {
       if (!this.isSpeedupReady()) return false;
       var reward = this.getSpeedupReward();
-      this.data.coins += reward;
+      this.data.survivorCoins += reward;
       this.data.speedupCdTs = Date.now() + CONFIG.META.SPEEDUP_COOLDOWN_MS;
       this.showToast(CONFIG.TEXT.SPEEDUP_REWARD(CONFIG.META.SPEEDUP_MINUTES, reward));
       this.save();
@@ -328,9 +422,17 @@
       this.toastText = text;
       this.toastTimer = 2.5;
     },
+    // #92 核心词条首次横幅：屏幕中上方短横幅，CONFIG.PRODUCT.BANNER_TIME 秒自动消失，不暂停不打断。
+    showPerkBanner: function (text) {
+      this.perkBannerText = text;
+      this.perkBannerTimer = CONFIG.PRODUCT.BANNER_TIME;
+    },
     update: function (dt) {
       if (this.toastTimer > 0) {
         this.toastTimer = Math.max(0, this.toastTimer - dt);
+      }
+      if (this.perkBannerTimer > 0) {
+        this.perkBannerTimer = Math.max(0, this.perkBannerTimer - dt);
       }
     },
     save: function (recordOfflineTime) {
@@ -346,7 +448,10 @@
           shake: root.Settings.shake,
           debug: root.Settings.debug,
           dashDoubleTap: !!root.Settings.dashDoubleTap,
-          alwaysShowJoystick: !!root.Settings.alwaysShowJoystick
+          alwaysShowJoystick: !!root.Settings.alwaysShowJoystick,
+          quality: root.Settings.quality,
+          highFps: !!root.Settings.highFps,
+          mirror: !!root.Settings.mirror
         };
       }
       try {
@@ -410,6 +515,10 @@
     debug: false,
     dashDoubleTap: false,
     alwaysShowJoystick: false,
+    quality: CONFIG.RENDER_QUALITY.DEFAULT,
+    highFps: false,
+    mirror: false,
+    autoLevel: 'high',
     storageFailed: false,
     load: function () {
       try {
@@ -426,12 +535,27 @@
           }) {
             if (typeof value[key] === 'boolean') this[key] = value[key];
           }
+          if (/^(auto|high|medium|low)$/.test(value.quality || '')) this.quality = value.quality;
+          if (typeof value.highFps === 'boolean') this.highFps = value.highFps;
+          if (typeof value.mirror === 'boolean') this.mirror = value.mirror;
         }
       } catch (error) {/* Meta 会负责修复 */}
+      this.applyFrameRate();
+    },
+    getQualityLevel: function () { return this.quality === 'auto' ? this.autoLevel : this.quality; },
+    getQuality: function () { return CONFIG.RENDER_QUALITY.LEVELS[this.getQualityLevel()] || CONFIG.RENDER_QUALITY.LEVELS.high; },
+    cycleQuality: function () {
+      var values = ['auto', 'high', 'medium', 'low'];
+      this.quality = values[(values.indexOf(this.quality) + 1) % values.length];
+      Meta.save();
+    },
+    applyFrameRate: function () {
+      try { if (typeof wx !== 'undefined' && wx.setPreferredFramesPerSecond) wx.setPreferredFramesPerSecond(this.highFps ? 120 : 60); } catch (error) {}
     },
     toggle: function (key) {
       this[key] = !this[key];
       if (key === 'sound' && root.AudioFX) root.AudioFX.setEnabled();
+      if (key === 'highFps') this.applyFrameRate();
       Meta.save();
     }
   };

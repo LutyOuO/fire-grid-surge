@@ -243,10 +243,16 @@
         Input.clearTap();
       },
       rollRarity: function () {
-        var n = Math.random() * 100;
-        for (var i = 0; i < this.rarities.length; i++) {
-          n -= this.rarities[i][1];
-          if (n < 0) return this.rarities[i][0];
+        // #74/#84 权重集中在 CONFIG.UPGRADES.RARITY_WEIGHTS_FATE（顺序：白/蓝/紫/金/彩）。
+        // 五档：COMMON/RARE/EPIC/LEGENDARY(金)/RAINBOW(彩)，第五档不再折叠进 LEGENDARY。
+        var weights = CONFIG.UPGRADES.RARITY_WEIGHTS_FATE;
+        var ids = ['COMMON', 'RARE', 'EPIC', 'LEGENDARY', 'RAINBOW'];
+        var total = 0;
+        for (var i = 0; i < weights.length; i++) total += weights[i];
+        var n = Math.random() * total;
+        for (var i = 0; i < weights.length; i++) {
+          n -= weights[i];
+          if (n < 0) return ids[Math.min(i, ids.length - 1)];
         }
         return 'COMMON';
       },
@@ -254,12 +260,16 @@
         this.cards.length = 0;
         for (var i = 0; i < 9; i++) {
           var r = this.rollRarity(),
+            rainbow = r === 'RAINBOW',
             pool = [];
-          for (var j = 0; j < this.defs.length; j++) if (this.defs[j][3] === r) pool.push(this.defs[j]);
+          // #84 第五档 RAINBOW(彩) 复用 LEGENDARY(金) 牌池：只换渲染光效，不新增牌面。
+          var target = rainbow ? 'LEGENDARY' : r;
+          for (var j = 0; j < this.defs.length; j++) if (this.defs[j][3] === target) pool.push(this.defs[j]);
           this.cards.push({
             def: pool[Math.floor(Math.random() * pool.length)],
             open: false,
-            t: 0
+            t: 0,
+            rainbow: rainbow
           });
         }
       },
@@ -426,12 +436,22 @@
           var d = c.def,
             r = d[3],
             col = r === 'COMMON' ? '#95A5A6' : r === 'RARE' ? '#3498DB' : r === 'EPIC' ? '#E67E22' : '#ffd54a';
-          ctx.fillStyle = r === 'COMMON' ? '#222928' : r === 'RARE' ? '#132b3a' : r === 'EPIC' ? '#332317' : '#251c31';
+          // #84 彩虹牌：彩虹渐变描边/图标；金 LEGENDARY 保持纯金 #ffd54a。
+          var rainbowCard = !!c.rainbow;
+          var rainbowGrad = null;
+          if (rainbowCard) {
+            var ph = Date.now() % 2000 / 2000 * 360;
+            rainbowGrad = ctx.createLinearGradient(0, 0, 160, 220);
+            root.safeStop(rainbowGrad, 0, 'hsl(' + ph + ',95%,62%)');
+            root.safeStop(rainbowGrad, .5, 'hsl(' + (ph + 120) % 360 + ',95%,62%)');
+            root.safeStop(rainbowGrad, 1, 'hsl(' + (ph + 240) % 360 + ',95%,62%)');
+          }
+          ctx.fillStyle = r === 'COMMON' ? '#222928' : r === 'RARE' ? '#132b3a' : r === 'EPIC' ? '#332317' : rainbowCard ? '#251b31' : '#251c31';
           ctx.fill();
           ctx.lineWidth = r === 'EPIC' || r === 'LEGENDARY' ? 3 : 2;
-          ctx.strokeStyle = col;
+          ctx.strokeStyle = rainbowGrad || col;
           ctx.stroke();
-          ctx.fillStyle = col;
+          ctx.fillStyle = rainbowGrad || col;
           ctx.font = 'bold 28px Arial';
           ctx.textAlign = 'center';
           ctx.fillText(this.icon(d[4]), 80, 70);

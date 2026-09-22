@@ -204,7 +204,7 @@
       BOW_CRIT: ['重击', '弩箭暴击率 +10%'],
       NAPALM: ['凝固汽油', '地面留燃烧带 3 秒，每秒 8% 喷火伤害'],
       BACKDRAFT: ['回燃', '扇形末端爆炸，半径 70，伤害 40%'],
-      INFERNO: ['炼狱', '喷火时每 2 秒脉冲清近身并回 4% 生命'],
+      INFERNO: ['炼狱', '喷火时每 2 秒爆发清近身并回 4% 生命'],
       PILEDRIVER: ['贯石', '每穿透 1 个敌人，下一发伤害 +12%，最多 +60%'],
       SCATTER_BOLT: ['裂矢', '命中墙或世界边界后分裂 2 支短弩'],
       MARKSMAN: ['神射', '超过 420px 的第一目标必暴，暴击倍率 +0.5']
@@ -486,7 +486,7 @@
       reward: function (d) {
         var t = d[5],
           v = d[6];
-        if (t === 'coins') Meta.data.coins += v;else if (t === 'diamonds') {
+        if (t === 'coins') Meta.data.survivorCoins += v;else if (t === 'diamonds') {
           Meta.data.diamonds += v;
           Meta.data.achievements.progress.diamondsTotal = (Meta.data.achievements.progress.diamondsTotal || 0) + v;
         } else if (t === 'outfit') Wardrobe.ownOutfit(v);else if (t === 'skin') Wardrobe.ownSkin(v);
@@ -546,8 +546,8 @@
       open: false,
       mode: 'outfit',
       index: 0,
-      outfits: [['default', '默认幸存者', 'COMMON', 'free', 0], ['cowboy', '西部牛仔', 'COMMON', 'coins', 800], ['firefighter', '消防员', 'COMMON', 'coins', 1200], ['special', '特种兵', 'RARE', 'coins', 3000], ['medic', '战地医生', 'RARE', 'coins', 3500], ['ninja', '忍者', 'RARE', 'coins', 4000], ['punk', '朋克', 'RARE', 'coins', 5000], ['hunter', '荒野猎人', 'EPIC', 'diamonds', 80], ['mechanic', '机械师', 'EPIC', 'diamonds', 100], ['necromancer', '亡灵法师', 'EPIC', 'diamonds', 120], ['gold', '黄金幸存者', 'LEGENDARY', 'diamonds', 300], ['shadow', '暗影刺客', 'LEGENDARY', 'diamonds', 500]],
-      skins: [['default', '手枪默认', 'pulse', 'free', 0], ['pulse_silver', '银色杀手', 'pulse', 'coins', 2000], ['pulse_red', '烈焰红', 'pulse', 'coins', 3000], ['pulse_blue', '冰霜蓝', 'pulse', 'diamonds', 80], ['pulse_gold', '黄金沙鹰', 'pulse', 'achievement', 0], ['default', '飞刃默认', 'blade', 'free', 0], ['blade_blood', '血刃', 'blade', 'achievement', 0], ['blade_thunder', '雷霆刃', 'blade', 'achievement', 0], ['blade_void', '虚空刃', 'blade', 'achievement', 0], ['default', '喷火器默认', 'flame', 'free', 0], ['flame_green', '军用绿', 'flame', 'coins', 2500], ['flame_hell', '地狱火', 'flame', 'achievement', 0], ['flame_frost', '极寒喷射', 'flame', 'achievement', 0], ['default', '弩箭默认', 'crossbow', 'free', 0], ['bow_hunter', '猎人棕', 'crossbow', 'achievement', 0], ['bow_machine', '机械弩', 'crossbow', 'diamonds', 80], ['bow_holy', '圣光弩', 'crossbow', 'achievement', 0]],
+      outfits: [['default', '默认幸存者', 'COMMON', 'free', 0], ['cowboy', '西部牛仔', 'COMMON', 'survivorCoins', 800], ['firefighter', '消防员', 'COMMON', 'survivorCoins', 1200], ['special', '特种兵', 'RARE', 'survivorCoins', 3000], ['medic', '战地医生', 'RARE', 'survivorCoins', 3500], ['ninja', '忍者', 'RARE', 'survivorCoins', 4000], ['punk', '朋克', 'RARE', 'survivorCoins', 5000], ['hunter', '荒野猎人', 'EPIC', 'diamonds', 80], ['mechanic', '机械师', 'EPIC', 'diamonds', 100], ['necromancer', '亡灵法师', 'EPIC', 'diamonds', 120], ['gold', '黄金幸存者', 'LEGENDARY', 'diamonds', 300], ['shadow', '暗影刺客', 'LEGENDARY', 'diamonds', 500]],
+      skins: [['default', '手枪默认', 'pulse', 'free', 0], ['pulse_silver', '银色杀手', 'pulse', 'survivorCoins', 2000], ['pulse_red', '烈焰红', 'pulse', 'survivorCoins', 3000], ['pulse_blue', '冰霜蓝', 'pulse', 'diamonds', 80], ['pulse_gold', '黄金沙鹰', 'pulse', 'achievement', 0], ['default', '飞刃默认', 'blade', 'free', 0], ['blade_blood', '血刃', 'blade', 'achievement', 0], ['blade_thunder', '雷霆刃', 'blade', 'achievement', 0], ['blade_void', '虚空刃', 'blade', 'achievement', 0], ['default', '喷火器默认', 'flame', 'free', 0], ['flame_green', '军用绿', 'flame', 'survivorCoins', 2500], ['flame_hell', '地狱火', 'flame', 'achievement', 0], ['flame_frost', '极寒喷射', 'flame', 'achievement', 0], ['default', '弩箭默认', 'crossbow', 'free', 0], ['bow_hunter', '猎人棕', 'crossbow', 'achievement', 0], ['bow_machine', '机械弩', 'crossbow', 'diamonds', 80], ['bow_holy', '圣光弩', 'crossbow', 'achievement', 0]],
       ownOutfit: function (id) {
         if (Meta.data.ownedOutfits.indexOf(id) < 0) Meta.data.ownedOutfits.push(id);
       },
@@ -602,7 +602,7 @@
         var equipped = this.mode === 'outfit' ? Meta.data.currentOutfit === d[0] : Meta.data.equippedSkins[d[2]] === d[0];
         var currency = this.mode === 'outfit' ? d[3] : d[3],
           price = this.mode === 'outfit' ? d[4] : d[4];
-        var label = equipped ? '已装备' : own ? '装备' : currency === 'achievement' ? '成就解锁' : currency === 'free' ? '拥有' : '购买 ' + price + (currency === 'diamonds' ? ' 钻石' : ' 金币');
+        var label = equipped ? '已装备' : own ? '装备' : currency === 'achievement' ? '成就解锁' : currency === 'free' ? '拥有' : '购买 ' + price + (currency === 'diamonds' ? ' 钻石' : ' 幸存者硬币');
         UI.drawActionButton(ctx, 170, 620, 410, 78, label, !equipped && currency !== 'achievement', 24);
         text(ctx, '服装与涂装只改变外观，不提供属性加成', 375, 735, 17, '#aebdb6', 'center');
         ctx.restore();
@@ -690,5 +690,18 @@
     root.FlameWeapon = FlameWeapon;
     root.Crossbow = Crossbow;
     root.Achievements = Achievements;
+    // v014 #89 外观幸存者硬币价 ×CONFIG.META.PRICE_MULT.COSMETIC（默认 2）；钻石/免费/成就价不动。
+    // 集中在此处一次性放大 outfits/skins 数组里的 survivorCoins 价，购买与显示统一读同一份数据。
+    (function scaleCosmeticPrices() {
+      var mult = (CONFIG.META.PRICE_MULT && CONFIG.META.PRICE_MULT.COSMETIC) || 1;
+      if (mult === 1) return;
+      var lists = [Wardrobe.outfits, Wardrobe.skins];
+      for (var i = 0; i < lists.length; i++) {
+        var arr = lists[i];
+        for (var j = 0; j < arr.length; j++) {
+          if (arr[j][3] === 'survivorCoins') arr[j][4] = Math.round(arr[j][4] * mult);
+        }
+      }
+    })();
     root.Wardrobe = Wardrobe;
   })();

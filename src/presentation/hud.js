@@ -76,8 +76,11 @@
       this.bossDefeated = false;
       this.eventBanner = '';
       this.eventBannerTimer = 0;
-      var runs = root.Meta && Meta.data ? Meta.data.runs || 0 : 0;
-      var layout = this.applyLayout(runs);
+      // v012 #75 选图系统：开局按玩家所选地图（Meta.data.selectedMap）加载，不再随 runs 自动轮换。
+      var selMap = root.Meta && Meta.data && Number.isInteger(Meta.data.selectedMap) ? Meta.data.selectedMap : 0;
+      // 兜底：选中图若因存档损坏被锁死，退回第 0 张。
+      if (root.Meta && Meta.isMapUnlocked && !Meta.isMapUnlocked(selMap)) selMap = 0;
+      var layout = this.applyLayout(selMap);
       this.turrets.length = 0;
       for (var i = 0; i < layout.turrets.length; i++) {
         this.turrets.push({
@@ -89,6 +92,7 @@
           cooldown: 0,
           charge: 0,
           cooldownTimer: 0,
+          noGoldCd: 0,
           aimAngle: -Math.PI / 2,
           targetAngle: -Math.PI / 2,
           recoil: 0,
@@ -150,6 +154,7 @@
           if (inRange) {
             t.charge += dt;
             if (t.charge >= CONFIG.FIELD.TURRET_CHARGE_TIME) {
+              // v013 #80：充能满必须立即激活，不再因金币不足而把 charge 清零、反复充能。
               t.active = true;
               t.timer = CONFIG.FIELD.TURRET_DURATION;
               t.cooldown = 0;
@@ -159,10 +164,13 @@
               Meta.showToast(CONFIG.TEXT.PRODUCT.TURRETS[t.kind] + ' · ' + CONFIG.TEXT.PRODUCT.ACTIVE);
               FX.burst(t.x, t.y);
               if (root.Achievements) root.Achievements.add('turretOn', 1);
+              // 金币作为附加消耗：有余钱则扣，余额不足也照常激活，绝不卡激活。
+              root.RunStats.spendGold(CONFIG.TURRETS.ACTIVATE_COST);
             }
           } else {
             if (t.charge > 0) t.charge = Math.max(0, t.charge - dt * 2);
           }
+          if (t.noGoldCd > 0) t.noGoldCd = Math.max(0, t.noGoldCd - dt);
         }
       }
       for (var i = 0; i < this.shells.length; i++) {
@@ -646,64 +654,72 @@
         ctx.fillStyle = CONFIG.COLORS.COIN;
         ctx.save(); ctx.translate(px, py); ctx.rotate(Math.atan2(y - py, x - px));
         ctx.beginPath(); ctx.moveTo(16, 0); ctx.lineTo(-9, -9); ctx.lineTo(-9, 9); ctx.closePath(); ctx.fill(); ctx.restore();
-        ctx.fillText(CONFIG.TEXT.PRODUCT.TURRETS[t.kind], Math.max(100, Math.min(CONFIG.VIEW.WIDTH - 100, px)), py + 30);
+        var guideIcon = UI.icon(t.kind === 'tesla' ? 'tower_arc' : t.kind === 'frost' ? 'tower_freeze' : 'mortar_base');
+        var labelX = Math.max(100, Math.min(CONFIG.VIEW.WIDTH - 100, px));
+        if (guideIcon) ctx.drawImage(guideIcon, labelX - 18, py + 10, 36, 36);
+        ctx.fillText(CONFIG.TEXT.PRODUCT.TURRETS[t.kind], labelX, py + (guideIcon ? 60 : 30));
         shown++;
       }
       ctx.restore();
     },
     drawTeslaTurret: function (ctx, t, x, y) {
+      var base = UI.icon('tower_arc_base');
+      var tube = UI.icon('tower_arc_tube');
+      var zap = UI.icon('tower_arc_zap');
+      var full = UI.icon('tower_arc');
       ctx.save();
       ctx.translate(x, y);
-      ctx.fillStyle = t.active ? '#1b3a40' : '#2a3233';
-      ctx.strokeStyle = t.active ? CONFIG.COLORS.TESLA : '#6d716e';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.rect(-28, -28, 56, 56);
-      ctx.fill();
-      ctx.stroke();
-      ctx.rotate(Number.isFinite(t.aimAngle) ? t.aimAngle : -Math.PI / 2);
-      ctx.strokeStyle = CONFIG.COLORS.TESLA;
-      ctx.lineWidth = 3;
-      for (var k = 0; k < 3; k++) {
-        var a = (k - 1) * 0.55;
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(Math.cos(a) * 34, Math.sin(a) * 34);
-        ctx.stroke();
-      }
-      if ((t.muzzleFlash || 0) > 0) {
-        ctx.globalAlpha = t.muzzleFlash / .12;
-        ctx.fillStyle = '#c8fbff';
-        ctx.beginPath();
-        ctx.arc(28, 0, 10, 0, Math.PI * 2);
-        ctx.fill();
+      if (!t.active) ctx.globalAlpha = 0.72;
+      if (base && tube) {
+        ctx.drawImage(base, -46, -46, 92, 92);
+        ctx.rotate((Number.isFinite(t.aimAngle) ? t.aimAngle : -Math.PI / 2) + Math.PI / 2);
+        ctx.drawImage(tube, -43, -43, 86, 86);
+        if (zap && (t.active || (t.muzzleFlash || 0) > 0)) {
+          ctx.save();
+          ctx.globalAlpha = Math.min(1, 0.42 + (t.muzzleFlash || 0) / .12 * 0.58);
+          ctx.drawImage(zap, -48, -48, 96, 96);
+          ctx.restore();
+        }
+      } else if (full) {
+        ctx.drawImage(full, -48, -48, 96, 96);
+      } else {
+        ctx.fillStyle = t.active ? '#493078' : '#2a3233';
+        ctx.strokeStyle = t.active ? CONFIG.COLORS.TESLA : '#6d716e';
+        ctx.lineWidth = 4;
+        ctx.fillRect(-28, -28, 56, 56);
+        ctx.strokeRect(-28, -28, 56, 56);
       }
       ctx.restore();
     },
     drawFrostTurret: function (ctx, t, x, y) {
+      var base = UI.icon('tower_freeze_base');
+      var tube = UI.icon('tower_freeze_tube');
+      var ice = UI.icon('tower_freeze_ice');
+      var full = UI.icon('tower_freeze');
       ctx.save();
       ctx.translate(x, y);
-      ctx.fillStyle = t.active ? '#1c2a38' : '#243038';
-      ctx.strokeStyle = t.active ? CONFIG.COLORS.FROST : '#6d716e';
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      for (var k = 0; k < 6; k++) {
-        var a = k * Math.PI / 3 - Math.PI / 6;
-        var px = Math.cos(a) * 32, py = Math.sin(a) * 32;
-        if (k === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      if (!t.active) ctx.globalAlpha = 0.72;
+      if (base && tube) {
+        ctx.drawImage(base, -46, -46, 92, 92);
+        ctx.rotate((Number.isFinite(t.aimAngle) ? t.aimAngle : -Math.PI / 2) + Math.PI / 2);
+        ctx.drawImage(tube, -43, -43, 86, 86);
+        if (ice && (t.active || (t.muzzleFlash || 0) > 0)) {
+          ctx.save();
+          ctx.globalAlpha = Math.min(0.9, 0.34 + (t.muzzleFlash || 0) / .12 * 0.5);
+          ctx.drawImage(ice, -47, -47, 94, 94);
+          ctx.restore();
+        }
+      } else if (full) {
+        ctx.drawImage(full, -48, -48, 96, 96);
+      } else {
+        ctx.fillStyle = t.active ? '#22617a' : '#243038';
+        ctx.strokeStyle = t.active ? CONFIG.COLORS.FROST : '#6d716e';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(0, 0, 32, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
       }
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.rotate(Number.isFinite(t.aimAngle) ? t.aimAngle : -Math.PI / 2);
-      ctx.fillStyle = '#cfe8f6';
-      ctx.fillRect(4, -6, 26, 12);
-      ctx.beginPath();
-      ctx.moveTo(30, 0);
-      ctx.lineTo(42, -8);
-      ctx.lineTo(42, 8);
-      ctx.closePath();
-      ctx.fill();
       ctx.restore();
     },
     drawFrostPatches: function (ctx) {
@@ -837,7 +853,7 @@
         ctx.textAlign = 'center';
         ctx.fillStyle = CONFIG.COLORS.COIN;
         ctx.fillText(CONFIG.TEXT.PRODUCT.TURRETS[t.kind], sx, sy - 70);
-        ctx.fillText(t.active ? (t.timer <= CONFIG.PRODUCT.TURRET_WARNING ? CONFIG.TEXT.PRODUCT.ENDING : CONFIG.TEXT.PRODUCT.ACTIVE) + ' ' + Math.ceil(t.timer) + 's' : t.cooldownTimer > 0 ? '冷却 ' + Math.ceil(t.cooldownTimer) + 's' : t.charge > 0 ? '充能 ' + Math.ceil(t.charge / CONFIG.FIELD.TURRET_CHARGE_TIME * 100) + '%' : CONFIG.TEXT.PRODUCT.READY, sx, sy + 65);
+        ctx.fillText(t.active ? (t.timer <= CONFIG.PRODUCT.TURRET_WARNING ? CONFIG.TEXT.PRODUCT.ENDING : CONFIG.TEXT.PRODUCT.ACTIVE) + ' ' + Math.ceil(t.timer) + 's' : t.cooldownTimer > 0 ? '冷却 ' + Math.ceil(t.cooldownTimer) + 's' : t.charge > 0 ? '充能 ' + Math.ceil(t.charge / CONFIG.FIELD.TURRET_CHARGE_TIME * 100) + '%' : CONFIG.TEXT.PRODUCT.READY + ' · ' + CONFIG.TURRETS.ACTIVATE_COST + ' 金币', sx, sy + 65);
         ctx.restore();
       }
     }
@@ -883,22 +899,28 @@
   // 撤离点状态与绘制；战斗实体仍由各自 gameplay 模块维护。
 
   var Extraction = {
-    state: 'inactive',
-    // inactive/activating/activated/extractable/extracting/done
+    // v012 #73 状态机：hidden(未出现) → inactive(每 WAVE_EVERY 波出现可激活) → activating → activated(难度惩罚) → extractable(下一波可撤离) → extracting → done
+    state: 'hidden',
     activateTimer: 0,
     extractHoldTimer: 0,
     animTimer: 0,
     noticeTimer: 0,
     playerInZone: false,
     _lastWave: 0,
+    activatedWave: 0,
+    _difficultyApplied: false,
+    blockedNoticeTimer: 0,
     reset: function () {
-      this.state = 'inactive';
+      this.state = 'hidden';
       this.activateTimer = 0;
       this.extractHoldTimer = 0;
       this.animTimer = 0;
       this.noticeTimer = 0;
       this.playerInZone = false;
       this._lastWave = 0;
+      this.activatedWave = 0;
+      this._difficultyApplied = false;
+      this.blockedNoticeTimer = 0;
     },
     isInZone: function () {
       var dx = root.Player.x - CONFIG.EXTRACTION.X,
@@ -906,14 +928,24 @@
       var r = CONFIG.EXTRACTION.RADIUS;
       return dx * dx + dy * dy <= r * r;
     },
-    // 波次推进 → activated 变 extractable
+    // v012 #73：每 WAVE_EVERY 波出现撤离点(可激活)；激活后下一波推进才变 extractable。
     notifyWave: function (waveIndex) {
-      if (waveIndex > this._lastWave) {
-        this._lastWave = waveIndex;
-        this.setExtractable();
+      if (waveIndex <= this._lastWave) return;
+      this._lastWave = waveIndex;
+      var every = CONFIG.EXTRACTION.WAVE_EVERY;
+      // 到点才出现；若已进入激活/撤离窗口则不打断。
+      if (waveIndex % every === 0 && waveIndex > 0 && this.state === 'hidden') {
+        this.state = 'inactive';
+        this.activateTimer = 0;
+      }
+      // 激活后下一波即可撤离。
+      if (this.state === 'activated' && waveIndex > this.activatedWave) {
+        this.state = 'extractable';
+        this.extractHoldTimer = 0;
       }
     },
     update: function (dt) {
+      this.blockedNoticeTimer = Math.max(0, this.blockedNoticeTimer - dt);
       if (this.state === 'extracting') {
         this.animTimer += dt;
         var total = CONFIG.EXTRACTION.FADE_DURATION + CONFIG.EXTRACTION.TEXT_DURATION;
@@ -927,6 +959,9 @@
           if (this.activateTimer >= CONFIG.EXTRACTION.ACTIVATE_TIME) {
             this.state = 'activated';
             this.noticeTimer = 2;
+            // v012 #73：记录激活波次（下一波才 extractable），并施加难度惩罚（移速×1.5 / 刷怪配额×2）。
+            this.activatedWave = root.Spawner.waveIndex;
+            this._applyDifficulty();
           }
         }
         return;
@@ -937,6 +972,12 @@
       }
       if (this.state === 'extractable') {
         if (this.playerInZone) {
+          var waveClear = root.Enemy.activeCount === 0 && root.Spawner.waveQuota <= 0 && root.Spawner.eliteQuota <= 0;
+          if (!waveClear) {
+            this.extractHoldTimer = 0;
+            if (this.blockedNoticeTimer <= 0) { root.Meta.showToast(CONFIG.TEXT.EXTRACTION_CLEAR_FIRST); this.blockedNoticeTimer = 1.5; }
+            return;
+          }
           this.extractHoldTimer += dt;
           if (this.extractHoldTimer >= CONFIG.EXTRACTION.EXTRACT_HOLD_TIME) this.startExtraction();
         } else {
@@ -950,6 +991,14 @@
         this.activateTimer = 0;
       }
     },
+    // v012 #73 激活后难度惩罚：敌人移速 ×SPEED_PENALTY（叠在 enemySpeedMultiplier 上，与减速词缀乘法兼容），刷怪配额 ×SPAWN_QUOTA_MULT。
+    // 只施加一次；本局结束随重置清除（Player.reset 置 1、Spawner.extractionSurge 置 false）。
+    _applyDifficulty: function () {
+      if (this._difficultyApplied) return;
+      this._difficultyApplied = true;
+      root.Player.enemySpeedMultiplier *= CONFIG.EXTRACTION.SPEED_PENALTY;
+      root.Spawner.extractionSurge = true;
+    },
     setExtractable: function () {
       if (this.state === 'activated') {
         this.state = 'extractable';
@@ -958,6 +1007,10 @@
     },
     startExtraction: function () {
       if (this.state !== 'extractable') return;
+      if (root.Enemy.activeCount > 0 || root.Spawner.waveQuota > 0 || root.Spawner.eliteQuota > 0) {
+        root.Meta.showToast(CONFIG.TEXT.EXTRACTION_CLEAR_FIRST);
+        return;
+      }
       this.state = 'extracting';
       this.animTimer = 0;
       root.Input.setMovementEnabled(false);
@@ -971,6 +1024,8 @@
       root.Game.commitSettlement(false);
     },
     draw: function (ctx) {
+      // v012 #73：未到点（hidden）不绘制撤离点。
+      if (this.state === 'hidden') return;
       var sx = CONFIG.EXTRACTION.X - root.Camera.x;
       var sy = CONFIG.EXTRACTION.Y - root.Camera.y;
       var r = CONFIG.EXTRACTION.RADIUS;
@@ -1053,6 +1108,462 @@
   root.Field = Field;
   root.Extraction = Extraction;
 
+  // v012 #78 补给点：每 3~4 波在随机位置出现，玩家进入 NEAR_RADIUS 弹购买面板；
+  // 购买走 RunStats.buySupplyItem（扣局内金币 RunStats.gold，道具+1，#72 已实装）；
+  // 持有上限 #77 自然限制（满了按钮置灰）；DURATION 后消失，倒计时可见。
+  // 触发方式与空投同款：update 里轮询 Spawner.waveIndex。
+  // v012 #78 补给点：每 3~4 波在随机位置出现，玩家进入 NEAR_RADIUS 弹购买面板；
+  // 购买走 RunStats.buySupplyItem（扣局内金币 RunStats.gold，道具+1，#72 已实装）；
+  // 持有上限 #77 自然限制（满了按钮置灰）；DURATION 后消失，倒计时可见。
+  // v014 #85/#86：进入半径自动开面板并暂停战斗（core.js updatePlaying 拦截）；
+  // entered 锁定做到"进一次只弹一次"，关闭按钮/点遮罩关闭即恢复；面板重做为图标+金币栏。
+  var SupplyPoint = {
+    active: false,
+    x: 0,
+    y: 0,
+    t: 0,
+    open: false,
+    // #85 进入一次只弹一次：本次在范围内开过后不重复弹，走出半径才清除。
+    entered: false,
+    lastWave: -1,
+    nextGap: 3,
+    // #86 面板内金币滚动动画状态（秒）。
+    goldShown: 0,
+    goldFrom: 0,
+    goldTo: 0,
+    goldT: 0,
+    pressIndex: -1,
+    pressT: 0,
+    // 行序：血包 / 激光 / 磁铁 / 冰冻 / 炸弹（type 对齐 TYPE_*）。
+    ITEMS: [{
+      key: 'MEDKIT',
+      colorKey: 'ITEM_MEDKIT'
+    }, {
+      key: 'LASER',
+      colorKey: 'ITEM_LASER_EMITTER'
+    }, {
+      key: 'MAGNET',
+      colorKey: 'ITEM_MAGNET'
+    }, {
+      key: 'FREEZE',
+      colorKey: 'ITEM_FREEZE'
+    }, {
+      key: 'BOMB',
+      colorKey: 'ITEM_BOMB'
+    }],
+    iconKey: {
+      MEDKIT: 'icon_medkit',
+      LASER: 'icon_laser',
+      MAGNET: 'icon_magnet',
+      FREEZE: 'icon_freeze',
+      BOMB: 'icon_bomb'
+    },
+    reset: function () {
+      this.active = false;
+      this.open = false;
+      this.entered = false;
+      this.t = 0;
+      this.lastWave = -1;
+      this.nextGap = this.rollGap();
+      this.goldShown = this.goldFrom = this.goldTo = 0;
+      this.goldT = 0;
+      this.pressIndex = -1;
+      this.pressT = 0;
+      this.category = 0;
+    },
+    rollGap: function () {
+      var c = CONFIG.SUPPLY;
+      return c.WAVE_EVERY_MIN + Math.floor(Math.random() * (c.WAVE_EVERY_MAX - c.WAVE_EVERY_MIN + 1));
+    },
+    typeOf: function (item) {
+      switch (item.key) {
+        case 'MEDKIT':
+          return CONFIG.POWERUPS.TYPE_MEDKIT;
+        case 'LASER':
+          return CONFIG.POWERUPS.TYPE_LASER_EMITTER;
+        case 'MAGNET':
+          return CONFIG.POWERUPS.TYPE_MAGNET;
+        case 'FREEZE':
+          return CONFIG.POWERUPS.TYPE_FREEZE;
+        default:
+          return CONFIG.POWERUPS.TYPE_BOMB;
+      }
+    },
+    priceOf: function (item) {
+      return CONFIG.SUPPLY.PRICES[item.key] || 0;
+    },
+    spawn: function () {
+      var c = CONFIG.SUPPLY;
+      var pos = this.randomPos();
+      this.active = true;
+      this.x = pos.x;
+      this.y = pos.y;
+      this.t = c.DURATION;
+      this.open = false;
+      this.entered = false;
+    },
+    randomPos: function () {
+      // 在玩家周围 380~700 范围内找不穿墙的点。
+      for (var tries = 0; tries < 12; tries++) {
+        var ang = Math.random() * Math.PI * 2;
+        var dist = 380 + Math.random() * 320;
+        var x = Math.max(160, Math.min(CONFIG.WORLD.WIDTH - 160, root.Player.x + Math.cos(ang) * dist));
+        var y = Math.max(160, Math.min(CONFIG.WORLD.HEIGHT - 160, root.Player.y + Math.sin(ang) * dist));
+        if (!root.WallCollision.inside(x, y, 60)) return {
+          x: x,
+          y: y
+        };
+      }
+      return {
+        x: root.Player.x,
+        y: root.Player.y
+      };
+    },
+    // #85 打开商店：游戏由 core.js 拦截暂停；禁用摇杆/冲刺/道具按键。
+    enterShop: function () {
+      this.entered = true;
+      this.open = true;
+      this.goldShown = this.goldFrom = this.goldTo = root.RunStats.gold;
+      this.goldT = CONFIG.SUPPLY.GOLD_ROLL;
+      // #109：弹窗出现的同一帧清空摇杆、键盘、冲刺/道具触点和遗留点击，
+      // 防止“按住摇杆进入范围”产生的 touchend 被误判为商店点击。
+      root.Input.reset();
+      root.Input.setMovementEnabled(false);
+    },
+    // #85 关闭商店：entered 保持 true（仍在范围内不重复弹）；立即恢复操作。
+    exitShop: function () {
+      if (!this.open) return;
+      this.open = false;
+      this.pressIndex = -1;
+      this.pressT = 0;
+      root.Input.setMovementEnabled(true);
+    },
+    // #86 面板几何：屏幕居中。
+    panelRect: function () {
+      var w = CONFIG.SUPPLY.PANEL_W;
+      var h = CONFIG.SUPPLY.PANEL_H;
+      var x = Math.round((CONFIG.VIEW.WIDTH - w) / 2);
+      var y = Math.round((CONFIG.VIEW.HEIGHT - h) / 2);
+      return {
+        x: x,
+        y: y,
+        w: w,
+        h: h
+      };
+    },
+    rowRect: function (i) {
+      var p = this.panelRect();
+      return {
+        x: p.x,
+        y: p.y + 164 + i * CONFIG.SUPPLY.PANEL_ROW_H,
+        w: p.w,
+        h: CONFIG.SUPPLY.PANEL_ROW_H
+      };
+    },
+    tabRect: function (i) {
+      var p = this.panelRect(), gap = 6, w = (p.w - 48 - gap * 3) / 4;
+      return { x: p.x + 24 + i * (w + gap), y: p.y + 120, w: w, h: 36 };
+    },
+    currentEntries: function () {
+      if (this.category === 1) return [1, 2, 3];
+      if (this.category === 2) return CONFIG.ARMORY.AMMO;
+      if (this.category === 3) return CONFIG.ARMORY.PERKS;
+      return this.ITEMS;
+    },
+    buyRect: function (i) {
+      var r = this.rowRect(i);
+      return {
+        x: r.x + r.w - 170,
+        y: r.y + 12,
+        w: 150,
+        h: 60
+      };
+    },
+    closeRect: function () {
+      var p = this.panelRect();
+      return {
+        x: p.x + p.w - CONFIG.SUPPLY.CLOSE_SIZE - 14,
+        y: p.y + 14,
+        w: CONFIG.SUPPLY.CLOSE_SIZE,
+        h: CONFIG.SUPPLY.CLOSE_SIZE
+      };
+    },
+    update: function (dt) {
+      var c = CONFIG.SUPPLY;
+      var wave = root.Spawner.waveIndex;
+      if (!this.active) {
+        if (wave >= c.MIN_WAVE && wave - this.lastWave >= this.nextGap) {
+          this.spawn();
+          this.lastWave = wave;
+          this.nextGap = this.rollGap();
+        }
+        return;
+      }
+      // #85 商店打开（战斗暂停中）：只推进金币滚动/按钮按下动画；
+      // 存在时限倒计时仍照常走（沿用旧行为，超时面板随补给点关闭）。
+      if (this.open) {
+        this.tickFx(dt);
+        this.t -= dt;
+        if (this.t <= 0) {
+          this.active = false;
+          this.entered = false;
+          this.exitShop();
+        }
+        return;
+      }
+      this.t -= dt;
+      if (this.t <= 0) {
+        this.active = false;
+        this.entered = false;
+        return;
+      }
+      var dx = root.Player.x - this.x,
+        dy = root.Player.y - this.y;
+      var near = dx * dx + dy * dy <= c.NEAR_RADIUS * c.NEAR_RADIUS;
+      if (near) {
+        // 进入一次只弹一次：本次范围内已开过就不再自动弹。
+        if (!this.entered) this.enterShop();
+      } else {
+        // 走出半径才解除锁定，下次进入重新开面板。
+        this.entered = false;
+      }
+    },
+    // #86 面板内金币 0.2s 滚动（购买扣钱/进面板对齐当前值）+ 按钮按下动画。
+    tickFx: function (dt) {
+      var now = root.RunStats.gold;
+      if (now !== this.goldTo) {
+        this.goldFrom = this.goldShown;
+        this.goldTo = now;
+        this.goldT = 0;
+      }
+      this.goldT = Math.min(CONFIG.SUPPLY.GOLD_ROLL, this.goldT + dt);
+      var k = this.goldTo === this.goldFrom ? 1 : this.goldT / CONFIG.SUPPLY.GOLD_ROLL;
+      this.goldShown = Math.round(this.goldFrom + (this.goldTo - this.goldFrom) * k);
+      if (this.pressT > 0) {
+        this.pressT = Math.max(0, this.pressT - dt);
+        if (this.pressT === 0) this.pressIndex = -1;
+      }
+    },
+    handleInput: function () {
+      if (!this.active || !this.open) return;
+      if (!root.Input.pendingTap.active) return;
+      var tap = root.Input.pendingTap;
+      var i, r;
+      for (i = 0; i < 4; i++) {
+        r = this.tabRect(i);
+        if (UI.isPointInRect(tap, r.x, r.y, r.w, r.h)) {
+          this.category = i; this.pressIndex = -1; root.Input.clearTap(); return;
+        }
+      }
+      // #86 购买按钮（金币不足/已满自然不可点）。
+      for (i = 0; i < this.currentEntries().length; i++) {
+        r = this.buyRect(i);
+        if (UI.isPointInRect(tap, r.x, r.y, r.w, r.h)) {
+          this.tryBuy(i);
+          root.Input.clearTap();
+          return;
+        }
+      }
+      // #85 关闭按钮。
+      r = this.closeRect();
+      if (UI.isPointInRect(tap, r.x, r.y, r.w, r.h)) {
+        this.exitShop();
+        root.Input.clearTap();
+        return;
+      }
+      // #109：遮罩与面板空白处不再关闭商店；消费点击，避免透传到底层战斗按钮。
+      root.Input.clearTap();
+    },
+    tryBuy: function (i) {
+      if (this.category === 1) {
+        var level = i + 1, wp = CONFIG.SUPPLY.WEAPON_UPGRADE_PRICES[i];
+        if (level !== root.Armory.weaponLevel + 1) { Meta.showToast(CONFIG.TEXT.SUPPLY_LOCKED); return; }
+        if (root.RunStats.gold < wp) { Meta.showToast(CONFIG.TEXT.SUPPLY_NO_GOLD); return; }
+        root.RunStats.gold -= wp; root.Armory.buyWeaponLevel(level); this.pressIndex = i; this.pressT = .15; return;
+      }
+      if (this.category === 2) {
+        var ammo = CONFIG.ARMORY.AMMO[i];
+        if (!ammo || root.RunStats.gold < ammo.PRICE) { Meta.showToast(CONFIG.TEXT.SUPPLY_NO_GOLD); return; }
+        root.RunStats.gold -= ammo.PRICE; root.Armory.buyAmmo(ammo.ID); this.pressIndex = i; this.pressT = .15; return;
+      }
+      if (this.category === 3) {
+        var perk = CONFIG.ARMORY.PERKS[i];
+        if (!perk || root.Armory.hasPerk(perk.ID)) { Meta.showToast(CONFIG.TEXT.SUPPLY_OWNED); return; }
+        var perkPrice = root.Armory.perkPrice();
+        if (root.RunStats.gold < perkPrice) { Meta.showToast(CONFIG.TEXT.SUPPLY_NO_GOLD); return; }
+        root.RunStats.gold -= perkPrice; root.Armory.buyPerk(perk.ID, false); this.pressIndex = i; this.pressT = .15; return;
+      }
+      var item = this.ITEMS[i];
+      var type = this.typeOf(item);
+      var price = this.priceOf(item);
+      // #77 持有上限自然限制：满了再买无效。
+      if (root.PowerUps.inventory[type] >= root.PowerUps.maxFor(type)) {
+        Meta.showToast(CONFIG.TEXT.SUPPLY_SOLD_MAX);
+        return;
+      }
+      // #72 已实装：扣局内金币、道具+1；金币不足返回 false。
+      if (!root.RunStats.buySupplyItem(type, price)) {
+        Meta.showToast(CONFIG.TEXT.SUPPLY_NO_GOLD);
+        return;
+      }
+      // #86 按钮按下动画 + 世界反馈。
+      this.pressIndex = i;
+      this.pressT = 0.15;
+      FX.burst(this.x, this.y, CONFIG.COLORS.AIRDROP);
+    },
+    drawWorld: function (ctx) {
+      if (!this.active) return;
+      var sx = this.x - root.Camera.x,
+        sy = this.y - root.Camera.y;
+      ctx.save();
+      // 可购买范围圈
+      ctx.strokeStyle = 'rgba(233,173,88,0.25)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([10, 10]);
+      ctx.beginPath();
+      ctx.arc(sx, sy, CONFIG.SUPPLY.NEAR_RADIUS, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // 补给箱
+      ctx.fillStyle = '#3a2f1d';
+      ctx.strokeStyle = CONFIG.COLORS.AIRDROP;
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.rect(sx - 26, sy - 26, 52, 52);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = CONFIG.COLORS.AIRDROP;
+      ctx.fillRect(sx - 16, sy - 4, 32, 8);
+      ctx.fillRect(sx - 4, sy - 16, 8, 32);
+      // 倒计时
+      ctx.font = 'bold 20px Arial, "Microsoft YaHei", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = CONFIG.COLORS.TEXT;
+      ctx.fillText(CONFIG.TEXT.SUPPLY_TIME(this.t), sx, sy - 46);
+      ctx.restore();
+    },
+    drawPanel: function (ctx) {
+      if (!this.active || !this.open) return;
+      var p = this.panelRect();
+      ctx.save();
+      // 半透明遮罩 + 居中面板
+      ctx.fillStyle = 'rgba(5,8,7,0.55)';
+      ctx.fillRect(0, 0, CONFIG.VIEW.WIDTH, CONFIG.VIEW.HEIGHT);
+      UI.roundedRectPath(ctx, p.x, p.y, p.w, p.h, 24);
+      ctx.fillStyle = CONFIG.COLORS.PANEL_BG;
+      ctx.fill();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = CONFIG.COLORS.MENU_ACCENT;
+      ctx.stroke();
+      // 标题 / 副标题
+      var supplyIcon = UI.icon('nav_supply');
+      if (supplyIcon) ctx.drawImage(supplyIcon, p.x + 34, p.y + 18, 44, 44);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = CONFIG.COLORS.TEXT;
+      ctx.font = 'bold 30px Arial, "Microsoft YaHei", sans-serif';
+      ctx.fillText(CONFIG.TEXT.SUPPLY_TITLE, p.x + p.w / 2, p.y + 40);
+      ctx.fillStyle = CONFIG.COLORS.HINT_TEXT;
+      ctx.font = '16px Arial, "Microsoft YaHei", sans-serif';
+      ctx.fillText(CONFIG.TEXT.SUPPLY_SUBTITLE, p.x + p.w / 2, p.y + 68);
+      // 顶部金币栏：左"当前金币"，右 coin_gold 图标 + 金色滚动数字
+      var barY = p.y + 84,
+        barH = 32;
+      UI.roundedRectPath(ctx, p.x + 24, barY, p.w - 48, barH, 12);
+      ctx.fillStyle = 'rgba(255,212,71,0.12)';
+      ctx.fill();
+      ctx.textAlign = 'left';
+      ctx.fillStyle = CONFIG.COLORS.HINT_TEXT;
+      ctx.font = 'bold 17px Arial, "Microsoft YaHei", sans-serif';
+      ctx.fillText(CONFIG.TEXT.SUPPLY_GOLD_LABEL, p.x + 38, barY + barH / 2);
+      var numText = String(this.goldShown);
+      ctx.font = 'bold 28px Arial, "Microsoft YaHei", sans-serif';
+      var numW = ctx.measureText ? ctx.measureText(numText).width : numText.length * 12;
+      var numX = p.x + p.w - 38;
+      ctx.textAlign = 'right';
+      ctx.fillStyle = CONFIG.COLORS.COIN;
+      ctx.fillText(numText, numX, barY + barH / 2 + 1);
+      var coinImg = UI.icon('coin_gold');
+      var iconS = 24;
+      var iconX = numX - numW - 12 - iconS,
+        iconY = barY + (barH - iconS) / 2;
+      if (coinImg) {
+        ctx.drawImage(coinImg, iconX, iconY, iconS, iconS);
+      } else {
+        ctx.beginPath();
+        ctx.arc(iconX + iconS / 2, iconY + iconS / 2, iconS / 2, 0, Math.PI * 2);
+        ctx.fillStyle = CONFIG.COLORS.COIN;
+        ctx.fill();
+      }
+      // 四类页签：道具 / 逐级武器强化 / 单一弹药改装 / 被动技能。
+      for (var ti = 0; ti < 4; ti++) {
+        var tr = this.tabRect(ti), selected = ti === this.category;
+        UI.roundedRectPath(ctx, tr.x, tr.y, tr.w, tr.h, 8);
+        ctx.fillStyle = selected ? 'rgba(255,190,70,.28)' : 'rgba(255,255,255,.06)'; ctx.fill();
+        ctx.strokeStyle = selected ? CONFIG.COLORS.COIN : CONFIG.COLORS.ITEM_BORDER; ctx.lineWidth = selected ? 2 : 1; ctx.stroke();
+        ctx.textAlign = 'center'; ctx.fillStyle = selected ? CONFIG.COLORS.COIN : CONFIG.COLORS.HINT_TEXT;
+        ctx.font = 'bold 15px Arial, "Microsoft YaHei", sans-serif'; ctx.fillText(CONFIG.TEXT.SUPPLY_TABS[ti], tr.x + tr.w / 2, tr.y + tr.h / 2);
+      }
+      var entries = this.currentEntries();
+      for (var i = 0; i < entries.length; i++) {
+        var item = entries[i], row = this.rowRect(i), type = -1, price = 0, maxed = false, locked = false;
+        var name = '', desc = '', iconName = '', iconColor = CONFIG.COLORS.ITEM_BORDER;
+        if (this.category === 0) {
+          type = this.typeOf(item); price = this.priceOf(item); maxed = root.PowerUps.inventory[type] >= root.PowerUps.maxFor(type);
+          name = CONFIG.TEXT.POWERUPS[type].SHORT; desc = '持有 ' + root.PowerUps.inventory[type] + '/' + root.PowerUps.maxFor(type);
+          iconName = this.iconKey[item.key]; iconColor = CONFIG.COLORS[item.colorKey] || iconColor;
+        } else if (this.category === 1) {
+          var level = item; price = CONFIG.SUPPLY.WEAPON_UPGRADE_PRICES[i];
+          name = CONFIG.TEXT.SUPPLY_WEAPON_LEVEL(level); desc = CONFIG.TEXT.SUPPLY_WEAPON_DESC;
+          maxed = root.Armory.weaponLevel >= level; locked = level > root.Armory.weaponLevel + 1; iconName = 'ammo_normal'; iconColor = '#ffd166';
+        } else if (this.category === 2) {
+          price = item.PRICE; name = item.NAME; desc = '每30发中随机1发触发'; iconName = item.ICON; iconColor = item.COLOR;
+          maxed = root.Armory.ammoType === item.ID;
+        } else {
+          price = root.Armory.perkPrice(); name = item.NAME; desc = item.DESC; iconName = item.ICON; iconColor = item.COLOR; maxed = root.Armory.hasPerk(item.ID);
+        }
+        var affordable = !maxed && !locked && root.RunStats.gold >= price;
+        var slotX = row.x + 20,
+          slotY = row.y + 14,
+          slotS = 56;
+        UI.roundedRectPath(ctx, slotX, slotY, slotS, slotS, 10);
+        ctx.fillStyle = 'rgba(255,255,255,0.08)';
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = CONFIG.COLORS.ITEM_BORDER;
+        ctx.stroke();
+        var img = iconName ? UI.icon(iconName) : null;
+        if (img) {
+          ctx.save();
+          if (!affordable) ctx.globalAlpha = 0.45;
+          ctx.drawImage(img, slotX + 5, slotY + 5, slotS - 10, slotS - 10);
+          ctx.restore();
+        } else {
+          ctx.fillStyle = iconColor;
+          ctx.fillRect(slotX + 12, slotY + 12, slotS - 24, slotS - 24);
+        }
+        // 名称（灰）+ 价格（金）
+        ctx.textAlign = 'left';
+        ctx.fillStyle = affordable ? CONFIG.COLORS.TEXT : CONFIG.COLORS.HINT_TEXT;
+        ctx.font = 'bold 22px Arial, "Microsoft YaHei", sans-serif';
+        ctx.fillText(name, row.x + 92, row.y + 31);
+        ctx.fillStyle = CONFIG.COLORS.HINT_TEXT; ctx.font = '15px Arial, "Microsoft YaHei", sans-serif';
+        ctx.fillText(desc, row.x + 92, row.y + 56);
+        // 购买按钮：已满置灰显示"已满"，不足置灰；按下动画下沉 3px
+        var br = this.buyRect(i);
+        var label = maxed ? (this.category === 2 ? CONFIG.TEXT.SUPPLY_EQUIPPED : CONFIG.TEXT.SUPPLY_OWNED) : locked ? CONFIG.TEXT.SUPPLY_LOCKED : CONFIG.TEXT.BUY(price);
+        var press = this.pressIndex === i && this.pressT > 0;
+        UI.drawActionButton(ctx, br.x, br.y + (press ? 3 : 0), br.w, br.h, label, affordable, 20);
+      }
+      // 唯一关闭入口固定在右上角，避免摇杆松手误关。
+      var cr = this.closeRect();
+      UI.drawActionButton(ctx, cr.x, cr.y, cr.w, cr.h, '×', true, 34);
+      ctx.restore();
+    }
+  };
+  root.SupplyPoint = SupplyPoint;
+
   // 由 Game.draw 在同一逻辑画布变换内调用，HUD 不接管整帧。
   root.BattleView = {
     draw: function () {
@@ -1061,18 +1572,23 @@
       ctx.save();
       try {
         UI.applyWorldShake(ctx);
+        ctx.translate(CONFIG.VIEW.WIDTH / 2, CONFIG.VIEW.HEIGHT / 2);
+        ctx.scale(Camera.zoom, Camera.zoom);
+        ctx.translate(-CONFIG.VIEW.WIDTH / 2, -CONFIG.VIEW.HEIGHT / 2);
         UI.drawGround(ctx);
         Experience.draw(ctx);
         CoinDrops.draw(ctx);
         PowerUps.drawWorldItems(ctx);
         Field.draw(ctx);
         if (root.BattleEvents) root.BattleEvents.draw(ctx);
+        if (root.SupplyPoint) root.SupplyPoint.drawWorld(ctx);
         Extraction.draw(ctx);
         Enemy.draw(ctx);
         LaserEmitter.draw(ctx);
         MortarStrike.draw(ctx);
         Weapons.draw(ctx);
         Player.draw(ctx);
+        UI.drawPlayerStatus(ctx);
         DamageText.draw(ctx);
         FX.draw(ctx);
         Enemy.drawThreats(ctx);
@@ -1080,7 +1596,10 @@
         ctx.restore();
       }
       UI.drawHud(ctx);
+      UI.drawGoldHud(ctx);
       if (Game.state === CONFIG.GAME.STATE_PLAYING) Field.drawDirections(ctx);
+      // v012 #76 空投方向箭头（屏幕边缘）。
+      if (root.BattleEvents && root.BattleEvents.drawEdgeArrow) root.BattleEvents.drawEdgeArrow(ctx);
       if (root.BattleEvents) root.BattleEvents.drawBanner(ctx);
       if (Game.state === CONFIG.GAME.STATE_PLAYING) {
         UI.drawJoystick(ctx);
@@ -1090,6 +1609,8 @@
         UI.drawDashSpeedLines(ctx);
         UI.drawDashDirectionArrow(ctx);
         UI.drawExtractionButtons(ctx);
+        // v012 #78 补给点购买面板（屏幕空间，最后绘制在上层）。
+        if (root.SupplyPoint) root.SupplyPoint.drawPanel(ctx);
       } else if (Game.state === CONFIG.GAME.STATE_LEVELUP) {
         UI.drawLevelUp(ctx);
       } else if (Game.state === CONFIG.GAME.STATE_GAMEOVER) {

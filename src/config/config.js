@@ -99,7 +99,7 @@
         RADIUS: 24,
         DAMAGE: 10,
         EXP: 1,
-        COINS: 0,
+        COINS: 2,
         FILL_KEY: 'WALKER',
         OUTLINE_KEY: 'WALKER_OUTLINE',
         GLOW_KEY: 'WALKER_GLOW'
@@ -110,7 +110,7 @@
         RADIUS: 18,
         DAMAGE: 8,
         EXP: 1,
-        COINS: 0,
+        COINS: 2,
         FILL_KEY: 'RUNNER',
         OUTLINE_KEY: 'RUNNER_OUTLINE',
         GLOW_KEY: 'RUNNER_GLOW'
@@ -121,7 +121,7 @@
         RADIUS: 36,
         DAMAGE: 18,
         EXP: 3,
-        COINS: 0,
+        COINS: 50,
         FILL_KEY: 'TANK',
         OUTLINE_KEY: 'TANK_OUTLINE',
         GLOW_KEY: 'TANK_GLOW'
@@ -143,7 +143,7 @@
         RADIUS: 78,
         DAMAGE: 30,
         EXP: 0,
-        COINS: 0,
+        COINS: 150,
         FILL_KEY: 'BOSS',
         OUTLINE_KEY: 'BOSS_OUTLINE',
         GLOW_KEY: 'BOSS_GLOW'
@@ -220,6 +220,9 @@
         MAX_PROJECTILES: 7,
         BASE_PENETRATION: 0,
         MAX_PENETRATION: 6,
+        // v015 #103：手枪弹匣与换弹。
+        MAGAZINE: 7,
+        RELOAD_TIME: 1.5,
         POOL_SIZE: 180
       },
       BLADE: {
@@ -259,12 +262,32 @@
       SHADOW_BLUR: 7
     },
     COIN: {
-      POOL_SIZE: 40,
+      // #81 BOSS 一击掉 100 枚金币，池子需能容纳同帧生成。
+      POOL_SIZE: 120,
       PICKUP_RADIUS: 90,
       COLLECT_DISTANCE: 24,
       FLY_SPEED: 620,
       RADIUS: 15,
       OUTLINE_WIDTH: 4
+    },
+    // v013 #81 击杀掉落：金币(金圆)与经验(蓝菱)完全分离。
+    // 金币只进 RunStats.gold（局内消费），经验只进 ExpLevelUp（局内升级词条），互不干扰。
+    // 普通敌人：金币 20% 掉 1 枚；经验必掉 1 个蓝经验。
+    // 精英/特殊敌人：金币 100% 掉 5 枚；经验掉 5 个。
+    // BOSS：金币 100% 掉 100 枚；经验掉 20 个。
+    KILL_DROPS: {
+      GOLD_NORMAL_CHANCE: 0.20,
+      GOLD_NORMAL_COUNT: 1,
+      GOLD_ELITE_COUNT: 5,
+      GOLD_SPECIAL_COUNT: 5,
+      GOLD_BOSS_COUNT: 100,
+      EXP_NORMAL_COUNT: 1,
+      EXP_ELITE_COUNT: 5,
+      EXP_SPECIAL_COUNT: 20,
+      EXP_BOSS_COUNT: 20,
+      GEM_VALUE: 1,
+      COIN_VALUE: 1,
+      SPREAD: 28
     },
     POWERUPS: {
       POOL_SIZE: 48,
@@ -336,7 +359,20 @@
       FADE_DURATION: 0.8,
       TEXT_DURATION: 1.5,
       REWARD_MULTIPLIER: 2,
-      AD_MULTIPLIER: 2
+      AD_MULTIPLIER: 2,
+      // v012 #73 撤离机制重做：每 WAVE_EVERY 波出现/可激活，下一波可撤离。
+      WAVE_EVERY: 5,
+      // 激活后难度惩罚：敌人移速 ×SPEED_PENALTY、刷怪配额 ×SPAWN_QUOTA_MULT。
+      SPEED_PENALTY: 1.5,
+      SPAWN_QUOTA_MULT: 2,
+      // 幸存者硬币换算系数（向下取整）。
+      WAVE: 5,
+      NORMAL: 0.1,
+      ELITE: 5,
+      BOSS: 20,
+      SPECIAL: 10,
+      LEVEL: 3,
+      GOLD: 0.5
     },
     BOUNDARY: {
       BORDER_WIDTH: 8,
@@ -356,7 +392,22 @@
     },
     META: {
       PRICE_POWER: 1.4,
-      OFFLINE_BASE_PER_MINUTE: 10,
+      // v014 #89 价格抬升倍率层：所有局外养成价统一在 save.js 的 getPrice/getGadgetPrice 上事后乘倍率，
+      // 升级数值（EFFECT/AMOUNT）不变，只涨价。集中在此一处可调，避免手改一堆 BASE 数字。
+      //   ATTRIBUTE = CONFIG.META.UPGRADES（血量/移速/拾取/暴击等角色属性）
+      //   WEAPON    = 预留：武器等级（手枪/喷火器/弩箭）相关价；当前武器等级按局内击杀点数成长、无硬币购买入口，先与 GADGET 同值
+      //   GADGET    = CONFIG.META.GADGET_UPGRADES（激光/血包/炮台等道具解锁升级）
+      //   COSMETIC  = progression.js 服装/武器涂装中 survivorCoins 价（钻石价不动）
+      // 验收量级：原 100→300、200→600、服装 500→1000，需要多次撤离才升 1 级。
+      PRICE_MULT: {
+        ATTRIBUTE: 3,
+        WEAPON: 3,
+        GADGET: 3,
+        COSMETIC: 2
+      },
+      // v013 #83 挂机奖励削弱：离线幸存者硬币固定约 0.5/分钟（挂机 1 小时 ≈ 30 硬币），
+      // 不再随最佳波次/贪婪倍率膨胀；幸存者硬币主要靠撤离结算，挂机仅作补充。
+      OFFLINE_BASE_PER_MINUTE: 0.5,
       OFFLINE_MAX_HOURS: 12,
       GREED_RATE_PER_LEVEL: 0.08,
       SPEEDUP_MINUTES: 120,
@@ -422,7 +473,7 @@
       }, {
         ID: 'ADVANCED',
         NAME: '进阶军械',
-        DESC: '每级开局脉冲子弹 +1',
+        DESC: '每级开局手枪子弹 +1',
         BASE: 300,
         MAX_LEVEL: 3,
         EFFECT: 'START_PROJECTILE',
@@ -662,6 +713,12 @@
     },
     UPGRADES: {
       OFFER_COUNT: 3,
+      // #74 局内三选一升级品质抽取权重（顺序：白/蓝/紫/金/彩，合计必须为100）。
+      // #84 引擎拆成 5 档：白=COMMON 蓝=RARE 紫=EPIC 金=LEGENDARY 彩=RAINBOW。
+      RARITY_WEIGHTS_INRUN: [55, 30, 10, 4, 1],
+      // #74 结算命运抽牌品质抽取权重（顺序：白/蓝/紫/金/彩，合计必须为100）。
+      // #84 同步拆成 5 档，第五档“彩”=RAINBOW（彩虹炫彩）。
+      RARITY_WEIGHTS_FATE: [50, 30, 12, 6, 2],
       RARITIES: [{
         ID: 'COMMON',
         WEIGHT: 55,
@@ -681,7 +738,12 @@
         ID: 'LEGENDARY',
         WEIGHT: 8,
         MULTIPLIER: 1,
-        COLOR_KEY: 'RARITY_LEGENDARY'
+        COLOR_KEY: 'RARITY_GOLD'
+      }, {
+        ID: 'RAINBOW',
+        WEIGHT: 1,
+        MULTIPLIER: 1,
+        COLOR_KEY: 'RARITY_RAINBOW'
       }],
       // #58 weapon 字段：all=通用词条，blade=副武器飞刃词条，pistol/flamer/crossbow=对应主武器专属词条。
       // 抽卡器按本局主武器 WeaponProgress.selected 过滤：保留 all + blade + 当前主武器。
@@ -855,6 +917,61 @@
         EFFECT: 'LASER_CANNON',
         MAX_LEVEL: 1,
         weapon: 'pistol'
+        // v014 #90 三把主武器各两条 build 路线的标志性词条（带 weapon 标记，走 #58 过滤）。
+        // core:true = 改变打法的核心机制，首次获得弹横幅（#92，只提示一次）。
+        // related/synergy = 三选一卡片的搭配提示与已拥有关联展示（#91）。
+      }, {
+        ID: 'FAN_SPRAY',
+        TEXT_KEY: 'FAN_SPRAY',
+        RARITY: 'EPIC',
+        EFFECT: 'FAN_SPRAY',
+        AMOUNT: 0.08,
+        MAX_LEVEL: 3,
+        weapon: 'pistol',
+        core: true,
+        related: ['MULTI'],
+        synergy: '路线：扇形弹幕 · 配合多重射击扫周围清小怪'
+      }, {
+        ID: 'PIERCE_INFINITE',
+        TEXT_KEY: 'PIERCE_INFINITE',
+        RARITY: 'LEGENDARY',
+        EFFECT: 'PIERCE_INFINITE',
+        MAX_LEVEL: 1,
+        weapon: 'pistol',
+        core: true,
+        related: ['PIERCE'],
+        synergy: '路线：贯穿精英 · 引怪成线连续穿透'
+      }, {
+        ID: 'CLOSE_BURST',
+        TEXT_KEY: 'CLOSE_BURST',
+        RARITY: 'EPIC',
+        EFFECT: 'CLOSE_BURST',
+        AMOUNT: 0.25,
+        MAX_LEVEL: 3,
+        weapon: 'flamer',
+        core: true,
+        synergy: '路线：近身爆发 · 贴脸短强攻，射程缩短'
+      }, {
+        ID: 'LONG_SHOT',
+        TEXT_KEY: 'LONG_SHOT',
+        RARITY: 'EPIC',
+        EFFECT: 'LONG_SHOT',
+        AMOUNT: 0.5,
+        MAX_LEVEL: 3,
+        weapon: 'crossbow',
+        core: true,
+        related: ['BOW_DAMAGE'],
+        synergy: '路线：远程点杀 · 超远射程一箭高伤'
+      }, {
+        ID: 'WALL_PIERCE',
+        TEXT_KEY: 'WALL_PIERCE',
+        RARITY: 'LEGENDARY',
+        EFFECT: 'WALL_PIERCE',
+        MAX_LEVEL: 1,
+        weapon: 'crossbow',
+        core: true,
+        related: ['SCATTER_BOLT'],
+        synergy: '路线：分裂穿墙 · 箭穿墙继续飞行'
       }]
     },
     UI: {
@@ -1048,6 +1165,13 @@
       BOSS_RANGED_PROJECTILE_GLOW: '#3ddc84',
       AIM_LINE: '#ff4d4d',
       WARNING_CIRCLE: 'rgba(255, 77, 77, 0.40)',
+      // v014 #95 BOSS 冲锋红色预警线（20px 半透明红，画在 overlay 层，不被我方特效盖住）。
+      BOSS_WARN_LINE: 'rgba(255, 77, 77, 0.45)',
+      // v014 #95 双 BOSS 血条配色：近战巨兽红橙 / 远程炮台者紫。
+      BOSS_MELEE_BAR_A: '#ff5252',
+      BOSS_MELEE_BAR_B: '#c62828',
+      BOSS_RANGED_BAR_A: '#ab47bc',
+      BOSS_RANGED_BAR_B: '#6a1b9a',
       DASH_BUTTON: '#4aa3e0',
       DASH_BUTTON_BORDER: '#cfeaff',
       DASH_ICON: '#eaf6ff',
@@ -1152,6 +1276,8 @@
       BUTTON_BORDER: '#ddffe7',
       BUTTON_TEXT: '#07140b',
       SETTLEMENT_COIN: '#ffd447',
+      // v014 #88 幸存者硬币主色：蓝银（区别于金色局内金币 coin_gold）。
+      SURVIVOR_COIN: '#9fd6ff',
       CARD_BACKGROUND: 'rgba(15, 28, 34, 0.96)',
       CARD_INNER: 'rgba(255, 255, 255, 0.035)',
       CARD_DESCRIPTION: '#dce9e2',
@@ -1159,11 +1285,18 @@
       RARITY_RARE: '#3498DB',
       RARITY_EPIC: '#E67E22',
       RARITY_LEGENDARY: '#ffd54a',
+      // #84 第五档：金=LEGENDARY（纯金），彩=RAINBOW（彩虹炫彩）。
+      // camp.js 运行时会把 RARITY_LEGENDARY 重映射成彩虹色，故金色单独走 RARITY_GOLD 键，渲染以 ui.js/fate.js 为准。
+      RARITY_GOLD: '#ffd54a',
+      RARITY_RAINBOW: '#ff6bcb',
       // 升级卡使用不透明深色底，避免微信真机把浅色阴影扩散成白色卡面
       CARD_COMMON_BG: '#222928',
       CARD_RARE_BG: '#132b3a',
       CARD_EPIC_BG: '#332317',
       CARD_LEGENDARY_BG: '#251c31',
+      // #84 金/彩卡面底色（不被 camp.js 运行时重映射）。
+      CARD_GOLD_BG: '#2a2110',
+      CARD_RAINBOW_BG: '#251b31',
       CARD_COMMON_BORDER: '#95A5A6',
       CARD_TITLE: '#fff1dd',
       CARD_DESC: '#d2cbc1',
@@ -1222,7 +1355,27 @@
         return '本局金币：' + coins + (doubled ? '（已翻倍）' : '');
       },
       TOTAL_COINS: function (coins) {
-        return '持有金币：' + coins;
+        return '持有幸存者硬币：' + coins;
+      },
+      // v012 #72 双货币：局内金币（RunStats.gold，局末清零）与幸存者硬币（Meta.data.survivorCoins，跨局持久）。
+      SURVIVOR_COIN: '幸存者硬币',
+      // v014 #88 撤离结算幸存者硬币分项构成（对应 #73 公式：波次/普通/精英/BOSS/特殊/等级/剩余金币）。
+      EXTRACT_AWARD: function (n) { return '获得幸存者硬币：' + n; },
+      EXTRACT_BREAKDOWN: {
+        WAVE: '波次',
+        NORMAL: '普通怪',
+        ELITE: '精英',
+        BOSS: 'BOSS',
+        SPECIAL: '特殊怪',
+        LEVEL: '局内等级',
+        GOLD: '剩余金币',
+        TOTAL: '合计'
+      },
+      GOLD_HUD: function (gold) {
+        return '金币 ' + gold;
+      },
+      TURRET_NO_GOLD: function (cost) {
+        return '金币不足 · 激活炮台需 ' + cost;
       },
       RESTART: '返回主菜单',
       GAME_TITLE: '狂潮火力网',
@@ -1232,7 +1385,7 @@
       SPEEDUP: '加速补给',
       SPEEDUP_TODO: '主动观看广告，可领取 120 分钟挂机产出',
       SPEEDUP_REWARD: function (minutes, coins) {
-        return '领取 ' + coins + ' 金币（' + minutes + ' 分钟产出）';
+        return '领取 ' + coins + ' 幸存者硬币（' + minutes + ' 分钟产出）';
       },
       SPEEDUP_READY: '可领取',
       SPEEDUP_COOLDOWN: function (timeText) {
@@ -1253,10 +1406,10 @@
       },
       OFFLINE_TITLE: '离线收益',
       OFFLINE_REWARD: function (coins) {
-        return '基地为你积攒了 ' + coins + ' 金币';
+        return '基地为你积攒了 ' + coins + ' 幸存者硬币';
       },
       OFFLINE_DETAIL: function (minutes, rate) {
-        return '有效离线 ' + minutes + ' 分钟 · 每分钟 ' + rate + ' 金币';
+        return '有效离线 ' + minutes + ' 分钟 · 每分钟 ' + rate + ' 幸存者硬币';
       },
       OFFLINE_CAP: '最多累计 12 小时',
       CLAIM: '直接领取',
@@ -1292,7 +1445,8 @@
         COMMON: '普通',
         RARE: '稀有',
         EPIC: '史诗',
-        LEGENDARY: '传说'
+        LEGENDARY: '传说',
+        RAINBOW: '炫彩'
       },
       POWERUPS: [{
         NAME: '炸弹',
@@ -1317,13 +1471,13 @@
         POWER: {
           NAME: '强力射击',
           DESC: function (p) {
-            return '脉冲子弹伤害 +' + p + '%';
+            return '手枪子弹伤害 +' + p + '%';
           }
         },
         RAPID: {
           NAME: '急速火力',
           DESC: function (p) {
-            return '脉冲手枪射速 +' + p + '%';
+            return '手枪射速 +' + p + '%';
           }
         },
         SPRINT: {
@@ -1363,9 +1517,9 @@
           }
         },
         PULSE_TUNE: {
-          NAME: '脉冲校准',
+          NAME: '手枪校准',
           DESC: function (d, s) {
-            return '脉冲伤害 +' + d + '，弹速 +' + s;
+            return '手枪伤害 +' + d + '，弹速 +' + s;
           }
         },
         BLADE_TUNE: {
@@ -1377,7 +1531,7 @@
         BARRAGE: {
           NAME: '弹幕风暴',
           DESC: function () {
-            return '脉冲射速 +20%，子弹数量 +1';
+            return '手枪射速 +20%，子弹数量 +1';
           }
         },
         DEADLY: {
@@ -1419,7 +1573,7 @@
         DUAL_WIELD: {
           NAME: '双持射击',
           DESC: function () {
-            return '脉冲弹量翻倍，但每发伤害变为85%';
+            return '手枪弹量翻倍，但每发伤害变为85%';
           }
         },
         PHOENIX: {
@@ -1457,6 +1611,36 @@
           DESC: function () {
             return '子弹化为穿透激光，伤害+80%，弹速+50%';
           }
+        },
+        FAN_SPRAY: {
+          NAME: '疾风弹幕',
+          DESC: function (deg) {
+            return '路线：扇形弹幕 · 弹道扩散角 +' + deg + '°，扫周围清小怪';
+          }
+        },
+        PIERCE_INFINITE: {
+          NAME: '虚空穿甲',
+          DESC: function () {
+            return '路线：贯穿精英 · 子弹无限穿透，撞到敌人不再消失';
+          }
+        },
+        CLOSE_BURST: {
+          NAME: '贴脸爆燃',
+          DESC: function (p) {
+            return '路线：近身爆发 · 贴脸爆炸伤害 +' + p + '%，射程缩短';
+          }
+        },
+        LONG_SHOT: {
+          NAME: '远距狙杀',
+          DESC: function (p) {
+            return '路线：远程点杀 · 射程大增，单发伤害 +' + p + '%';
+          }
+        },
+        WALL_PIERCE: {
+          NAME: '裂墙穿矢',
+          DESC: function () {
+            return '路线：分裂穿墙 · 弩箭命中墙体不销毁，可穿墙继续飞';
+          }
         }
       },
       // M6 新增文本
@@ -1481,8 +1665,8 @@
         return '第 ' + n + ' 波 · 敌群来袭';
       },
       BOSS_SUMMON_BANNER: '分身炮台已展开',
-      DEBUG_LINE: function (fps, e, b, p, d) {
-        return 'FPS ' + fps + ' | 敌 ' + e + ' | 弹 ' + b + ' | 粒 ' + p + ' | 字 ' + d;
+      DEBUG_LINE: function (fps, e, b, p, d, ve, vd) {
+        return 'FPS ' + fps + ' | 敌 ' + e + '/' + ve + '可见 | 弹 ' + b + ' | 掉 ' + vd + '可见 | 粒 ' + p + ' | 字 ' + d;
       },
       TURRET_ACTIVATE: '站立激活炮台 · 支援 60 秒',
       TURRET_READY: '站立 3 秒激活',
@@ -1521,17 +1705,54 @@
       // Boss 名称
       BOSS_RANGED_NAME: '畸变炮台者',
       BOSS_MELEE_NAME: '畸变巨兽',
+      // v014 #95 双 BOSS 行为提示（各自独立）：近战冲锋预警 / 远程蓄力射击。
+      BOSS_CHARGE_WARN: '冲锋预警',
+      BOSS_CHARGING: '蓄力射击',
+      // v014 #94 战斗阶段起伏横幅（仅精英/BOSS/整理阶段播报，普通/占优不刷屏）。
+      PHASE_ELITE: '精英阶段：注意迂回',
+      PHASE_BOSS: '大波次来袭：找好掩体',
+      PHASE_LULL: '短暂喘息：拾取经验',
       BOSS_HP: function (name, hp, max) {
         return name + '  ' + Math.ceil(hp) + ' / ' + max;
-      }
+      },
+      // v012 #75 选图界面文案（顺序对齐 CONFIG.FIELD.LAYOUTS）
+      MAP_TITLE: '选择战场',
+      MAP_HINT: '开局前选定一张地图，解锁进度会永久保存',
+      MAP_NAMES: ['废弃十字', '环廊街', '斜构场'],
+      MAP_DESCS: [
+        '开阔战场：空间大、墙体稀疏，适合跑位拉扯',
+        '走廊迷宫：高墙环绕通道狭窄，适合炮台控场',
+        '特殊地形：斜向障碍群交错，走位要求高'
+      ],
+      MAP_SELECTED: '当前选择',
+      MAP_LOCKED: '未解锁',
+      MAP_LOCK_WAVE: function (n) { return '到达第 ' + n + ' 波解锁'; },
+      MAP_LOCK_COINS: function (n) { return '花 ' + n + ' 幸存者硬币解锁'; },
+      MAP_BUY_UNLOCK: function (n) { return '解锁 · ' + n + ' 硬币'; },
+      MAP_LOCK_TOAST: '该地图尚未解锁',
+      // v012 #78 补给点文案；v014 #85/#86 商店面板文案
+      SUPPLY_TITLE: '补给点',
+      SUPPLY_SUBTITLE: '消耗金币购买道具',
+      SUPPLY_HINT: '使用局内金币购买道具',
+      SUPPLY_NEAR: '补给点已开启',
+      SUPPLY_SOLD_MAX: '已持上限',
+      SUPPLY_NO_GOLD: '金币不足',
+      SUPPLY_TIME: function (t) { return '剩余 ' + Math.ceil(t) + ' 秒'; },
+      SUPPLY_TAP: '点击按钮购买',
+      SUPPLY_CLOSE: '关闭',
+      SUPPLY_FULL: '已满',
+      SUPPLY_GOLD_LABEL: '当前金币',
+      SUPPLY_REOPEN_HINT: '关闭后需再次进入补给范围才能打开'
     },
     GAME: {
       STATE_MENU: 'MENU',
+      STATE_MAP_SELECT: 'MAP_SELECT',
       STATE_BASE: 'BASE',
       STATE_PLAYING: 'PLAYING',
       STATE_LEVELUP: 'LEVELUP',
       STATE_GAMEOVER: 'GAMEOVER',
-      STATE_VICTORY: 'VICTORY'
+      STATE_VICTORY: 'VICTORY',
+      STATE_HISTORY: 'HISTORY'
     },
     // M6 表现层参数
     POLISH: {
@@ -1556,7 +1777,11 @@
         shot: [620, 170, 0.07],
         hit: [190, 70, 0.06],
         level: [480, 960, 0.3],
-        button: [440, 600, 0.06]
+        button: [440, 600, 0.06],
+        // v014 #96 反馈分级音：暴击/精英击杀/BOSS 击杀逐级加重。
+        crit: [320, 90, 0.12],
+        elite: [220, 55, 0.28],
+        boss: [130, 38, 0.55]
       },
       TOOL_X: 590,
       TOOL_Y: 215,
@@ -1572,6 +1797,24 @@
       SUMMARY_STEP: 32,
       WAVE_NOTICE_TIME: 2.2
     },
+    // v014 #96 视觉反馈分级：普通命中轻量，精英/BOSS/稀有词条加重；最强特效只给 BOSS/精英/稀有词条。
+    FEEDBACK: {
+      NORMAL_HIT_PARTICLES: 3,
+      CRIT_PARTICLES: 9,
+      CRIT_SHAKE_SIZE: 2.5,
+      CRIT_SHAKE_TIME: 0.15,
+      ELITE_KILL_PARTICLES: 26,
+      ELITE_SHAKE_SIZE: 5,
+      ELITE_SHAKE_TIME: 0.3,
+      BOSS_KILL_PARTICLES: 52,
+      BOSS_SHAKE_SIZE: 8,
+      BOSS_SHAKE_TIME: 0.5,
+      BOSS_SLOMO_SCALE: 0.35,
+      BOSS_SLOMO_TIME: 0.5,
+      RARITY_GOLD_FLASH: 0.6
+    },
+    // v014 #98 失败保护：非撤离退出也保留小额基础幸存者硬币 = floor(wave*WAVE + kills*KILL)。
+    FAIL_REWARD: { WAVE: 2, KILL: 0.05 },
     // 战场元素配置
     FIELD: {
       WALLS: [{
@@ -1722,12 +1965,15 @@
   };
   CONFIG.ENEMY.TYPES[CONFIG.ENEMY.TYPE_BOSS].HP = CONFIG.BALANCE.BOSS_HP;
   CONFIG.ENEMY.TYPES[CONFIG.ENEMY.TYPE_BOSS].DAMAGE = CONFIG.BALANCE.BOSS_DAMAGE;
-  CONFIG.POWERUPS.NORMAL_DROP_CHANCE = 0.055 * CONFIG.BALANCE.DROP_SCALE;
-  CONFIG.POWERUPS.TANK_DROP_CHANCE = 0.09 * CONFIG.BALANCE.DROP_SCALE;
-  CONFIG.POWERUPS.ELITE_DROP_CHANCE = .55;
+  // #79 击杀掉落主动道具概率二次下调：普通怪/坦克约降到原来一半，精英保留较高价值。
+  CONFIG.POWERUPS.NORMAL_DROP_CHANCE = 0.012 * CONFIG.BALANCE.DROP_SCALE;
+  CONFIG.POWERUPS.TANK_DROP_CHANCE = 0.022 * CONFIG.BALANCE.DROP_SCALE;
+  CONFIG.POWERUPS.ELITE_DROP_CHANCE = .25;
   CONFIG.POWERUPS.FREEZE_DURATION = CONFIG.BALANCE.FREEZE_DURATION;
   CONFIG.POWERUPS.DROP_WEIGHTS = [1.2, .45, 1.6, .42, .4, 0];
   CONFIG.POWERUPS.BAR_SLOTS = [0, 4, 1, 2, 3];
+  // #77 各主动道具持有上限（键名对齐 TYPE_*：激光/炸弹/血包/磁铁/冰冻）。
+  CONFIG.POWERUPS.MAX = { LASER: 3, BOMB: 5, MEDKIT: 5, MAGNET: 3, FREEZE: 3 };
   CONFIG.FIELD.SHELL_RADIUS = CONFIG.TURRET_VISUAL.EXPLOSION_RADIUS;
   CONFIG.CONTENT = {
     OBJECTIVE_COUNT: 3,
@@ -1738,14 +1984,20 @@
       RANGE: 150,
       ANGLE: Math.PI / 3,
       BURN_TIME: 2,
-      BURN_DPS: 3
+      BURN_DPS: 3,
+      // v014 #90 喷火A 烧地封路：凝固汽油落地留燃烧 DoT 区域，持续 PATCH_LIFE 秒。
+      PATCH_LIFE: 5,
+      PATCH_R: 80
     },
     CROSSBOW: {
       COOLDOWN: 1.5,
       DAMAGE: 40,
       SPEED: 700,
       DECAY: 0.1,
-      POOL: 48
+      POOL: 48,
+      // v014 #90 弩箭A 超远射程：箭寿命；弩箭B 分裂：单支出墙后分裂 SCATTER_SPLITS 支短弩。
+      ARROW_LIFE: 2,
+      SCATTER_SPLITS: 4
     },
     ACHIEVEMENT_COUNT: 35,
     OUTFIT_COUNT: 12,
@@ -1753,21 +2005,33 @@
   };
   CONFIG.SCREEN_LAYOUT = {
     MENU: {
-      CURRENCY_X: 430,
+      // v015 主菜单严格按 preview.png：5 按钮 + 右上齿轮 + 底部历史。
+      CURRENCY_X: 40,
       CURRENCY_Y: 40,
       CURRENCY_W: 300,
       CURRENCY_H: 50,
+      GEAR_X: 678,
+      GEAR_Y: 42,
+      GEAR_SIZE: 48,
       LOGO_X: 105,
-      LOGO_Y: 70,
+      LOGO_Y: 225,
       LOGO_W: 540,
-      LOGO_H: 340,
-      HISTORY_Y: 408,
-      BUFF_Y: 438,
-      BUTTON_Y: 470,
-      BUTTON_W: 560,
-      BUTTON_H: 96,
-      SPEEDUP_H: 112,
-      GAP: 20
+      LOGO_H: 270,
+      HISTORY_Y: 616,
+      BUFF_Y: 660,
+      BIG_X: 75,
+      BIG_W: 600,
+      PLAY_Y: 724,
+      PLAY_H: 156,
+      BASE_Y: 928,
+      BASE_H: 108,
+      SIDE_Y: 1076,
+      SIDE_H: 102,
+      SIDE_W: 290,
+      SIDE_GAP: 50,
+      HIST_BTN_Y: 1216,
+      HIST_BTN_W: 320,
+      HIST_BTN_H: 60
     },
     HUD: {
       TOP_H: 190,
@@ -1806,7 +2070,71 @@
     btn_dash: 'assets/icons/btn_dash.png',
     mortar_base: 'assets/icons/mortar_base.png',
     mortar_tube: 'assets/icons/mortar_tube.png',
-    mortar_shell: 'assets/icons/mortar_shell.png'
+    mortar_shell: 'assets/icons/mortar_shell.png',
+    ammo_normal: 'assets/icons/ammo_normal.png',
+    ammo_firework: 'assets/icons/ammo_firework.png',
+    ammo_corrupt: 'assets/icons/ammo_corrupt.png',
+    ammo_napalm: 'assets/icons/ammo_napalm.png',
+    ammo_void: 'assets/icons/ammo_void.png',
+    ammo_shock: 'assets/icons/ammo_shock.png',
+    ammo_frost: 'assets/icons/ammo_frost.png',
+    icon_diamond: 'assets/icons/icon_diamond.png',
+    tab_enhance: 'assets/icons/tab_enhance.png',
+    tab_appearance: 'assets/icons/tab_appearance.png',
+    tab_turret: 'assets/icons/tab_turret.png',
+    tab_item: 'assets/icons/tab_item.png',
+    tab_skill: 'assets/icons/tab_skill.png',
+    status_hp: 'assets/icons/status_hp.png',
+    status_armor: 'assets/icons/status_armor.png',
+    status_xp: 'assets/icons/status_xp.png',
+    skill_reload: 'assets/icons/skill_reload.png',
+    skill_vitality: 'assets/icons/skill_vitality.png',
+    skill_firerate: 'assets/icons/skill_firerate.png',
+    skill_speed: 'assets/icons/skill_speed.png',
+    skill_damage: 'assets/icons/skill_damage.png',
+    skill_magnet: 'assets/icons/skill_magnet.png',
+    skill_critical: 'assets/icons/skill_critical.png',
+    skill_revive: 'assets/icons/skill_revive.png',
+    tower_arc: 'assets/icons/tower_arc.png',
+    tower_arc_base: 'assets/icons/tower_arc_base.png',
+    tower_arc_tube: 'assets/icons/tower_arc_tube.png',
+    tower_arc_zap: 'assets/icons/tower_arc_zap.png',
+    tower_freeze: 'assets/icons/tower_freeze.png',
+    tower_freeze_base: 'assets/icons/tower_freeze_base.png',
+    tower_freeze_tube: 'assets/icons/tower_freeze_tube.png',
+    tower_freeze_ice: 'assets/icons/tower_freeze_ice.png',
+    coin_gold: 'assets/icons/coin_gold.png',
+    coin_survivor: 'assets/icons/coin_survivor.png',
+    nav_base: 'assets/icons/menu_base.png',
+    nav_achievement: 'assets/icons/menu_achievement.png',
+    nav_supply: 'assets/icons/menu_supply.png',
+    nav_history: 'assets/icons/menu_history.png',
+    nav_settings: 'assets/icons/menu_settings.png',
+    // v014 main-menu 切图：开始/基地/成就/加速补给/历史 三态按钮 + 背景 + Logo
+    btn_play_normal: 'assets/ui/main-menu/btn_play_normal.png',
+    btn_play_pressed: 'assets/ui/main-menu/btn_play_pressed.png',
+    btn_play_disabled: 'assets/ui/main-menu/btn_play_disabled.png',
+    btn_base_normal: 'assets/ui/main-menu/btn_base_normal.png',
+    btn_base_pressed: 'assets/ui/main-menu/btn_base_pressed.png',
+    btn_base_disabled: 'assets/ui/main-menu/btn_base_disabled.png',
+    btn_achievement_normal: 'assets/ui/main-menu/btn_achievement_normal.png',
+    btn_achievement_pressed: 'assets/ui/main-menu/btn_achievement_pressed.png',
+    btn_achievement_disabled: 'assets/ui/main-menu/btn_achievement_disabled.png',
+    btn_supply_normal: 'assets/ui/main-menu/btn_supply_normal.png',
+    btn_supply_pressed: 'assets/ui/main-menu/btn_supply_pressed.png',
+    btn_supply_disabled: 'assets/ui/main-menu/btn_supply_disabled.png',
+    btn_history_normal: 'assets/ui/main-menu/btn_history_normal.png',
+    btn_history_pressed: 'assets/ui/main-menu/btn_history_pressed.png',
+    btn_history_disabled: 'assets/ui/main-menu/btn_history_disabled.png',
+    menu_background: 'assets/ui/main-menu/background.png',
+    menu_logo: 'assets/logo/game_logo.png',
+    menu_coin_gold: 'assets/ui/main-menu/icon_coin_gold.png',
+    menu_coin_survivor: 'assets/ui/main-menu/icon_coin_survivor.png',
+    icon_menu_base: 'assets/ui/main-menu/icon_menu_base.png',
+    icon_menu_achievement: 'assets/ui/main-menu/icon_menu_achievement.png',
+    icon_menu_supply: 'assets/ui/main-menu/icon_menu_supply.png',
+    icon_menu_history: 'assets/ui/main-menu/icon_menu_history.png',
+    icon_menu_settings: 'assets/ui/main-menu/icon_menu_settings.png'
   };
   CONFIG.BOUNDARY.CORNER_RUIN_RADIUS = 0;
   CONFIG.FIELD.WALLS = [{
@@ -1900,6 +2228,8 @@
   CONFIG.TEXT.ENTER_FATE = '进入命运抽取';
 
   CONFIG.TURRETS = {
+    // v012 #72 双货币：站立激活炮台需消耗局内金币（RunStats.gold），金币不足无法激活。
+    ACTIVATE_COST: 50,
     SHARED: {
       ACTIVATE_RADIUS: 140,
       CHARGE_TIME: 3,
@@ -1944,8 +2274,12 @@
       }
     }
   };
+  // v012 #75 选图系统：开局只解锁第 1 张；其余按 layout.unlock 条件解锁（波次里程碑或幸存者硬币购买）。
+  // unlock.kind = 'wave'  → 到达过该波次自动解锁（Meta.data.bestWave >= wave）；
+  // unlock.kind = 'coins' → 花 survivorCoins 购买（Meta.buyMap）。
   CONFIG.FIELD.LAYOUTS = [{
     id: 'cross_ruin',
+    unlock: null,
     extract: { x: 1200, y: 1200, r: 120 },
     walls: [
       { x: 480, y: 500, w: 270, h: 90, kind: 'concrete' },
@@ -1962,6 +2296,7 @@
     ]
   }, {
     id: 'ring_street',
+    unlock: { kind: 'wave', wave: 10 },
     extract: { x: 1200, y: 1200, r: 120 },
     walls: [
       { x: 360, y: 340, w: 1680, h: 70, kind: 'concrete' },
@@ -1978,6 +2313,7 @@
     ]
   }, {
     id: 'slash_yard',
+    unlock: { kind: 'coins', cost: 120 },
     extract: { x: 1180, y: 1260, r: 120 },
     walls: [
       { x: 180, y: 720, w: 920, h: 80, kind: 'concrete' },
@@ -1993,6 +2329,8 @@
       { x: 1480, y: 1980, kind: 'frost' }
     ]
   }];
+  // 运行时由 Field.reset() 按玩家所选地图（Meta.data.selectedMap）重写 WALLS/TURRETS/EXTRACTION，
+  // 这里只保证加载期与未选图状态下有一份可用默认地图（cross_ruin）。
   CONFIG.FIELD.WALLS = CONFIG.FIELD.LAYOUTS[0].walls;
   CONFIG.FIELD.TURRETS = CONFIG.FIELD.LAYOUTS[0].turrets;
   CONFIG.EVENTS = {
@@ -2001,12 +2339,101 @@
     INTERVAL_MAX: 70,
     CONCURRENT: 1,
     KINDS: {
-      airdrop: { MIN_WAVE: 2, DURATION: 16, LAND: 6, GEMS: 8, MAX_PER_RUN: 3, BANNER: '空投坐标已标记', WEIGHT: 3 },
+      // v012 #76 空投实装：改为按波次触发（每 WAVE_EVERY_MIN~MAX 波一个，走 BattleEvents 既有调度链），
+      // 落点刷新 GUARD_COUNT 个守护敌人；玩家在 ACTIVATE_RADIUS 内站立 CHARGE_TIME 秒激活；
+      // 激活掉 GOLD_MIN~MAX 金币（走 CoinDrops）+ ITEM_MIN~MAX 个随机道具（走 PowerUps.drop）；
+      // DURATION 为存在时限，超时自动消失。
+      airdrop: { MIN_WAVE: 2, DURATION: 16, LAND: 1.2, GEMS: 8, MAX_PER_RUN: 3, BANNER: '空投坐标已标记', WEIGHT: 0, GOLD_MIN: 100, GOLD_MAX: 300,
+        WAVE_EVERY_MIN: 2, WAVE_EVERY_MAX: 3, GUARD_COUNT: 3, ACTIVATE_RADIUS: 95, CHARGE_TIME: 2, COIN_SPLIT: 5, ITEM_MIN: 1, ITEM_MAX: 2,
+        GUIDE_MARGIN: 56, BEAM_WIDTH: 70, BEAM_HEIGHT: 720, LAND_SHAKE: 3, LAND_SHAKE_TIME: 0.16 },
       elite_rush: { MIN_WAVE: 3, DURATION: 20, EXTRA_ELITES: 2, BANNER: '精英坐标已暴露', WEIGHT: 3 },
       grid_surge: { MIN_WAVE: 3, DURATION: 14, STRIPS: 2, WIDTH: 40, DPS: 8, BANNER: '网格过载 避开电带', WEIGHT: 2 },
       sanctuary: { MIN_WAVE: 4, DURATION: 12, HEAL: 2, BANNER: '撤离点灯柱启动', WEIGHT: 2 }
     }
   };
+  // v012 #78 补给点：每 WAVE_EVERY_MIN~MAX 波在随机位置出现，玩家进入 NEAR_RADIUS 弹出购买面板；
+  // 局内金币购买（RunStats.buySupplyItem 已在 #72 实装：扣金币、道具+1）；DURATION 后消失，倒计时可见。
+  CONFIG.SUPPLY = {
+    MIN_WAVE: 3,
+    WAVE_EVERY_MIN: 3,
+    WAVE_EVERY_MAX: 4,
+    // #85 存在约 120 秒后消失；商店打开期间计时冻结。
+    DURATION: 120,
+    // #85 进入半径：走到补给箱 80px 内触发一次购买面板；走出半径后才允许再次触发。
+    NEAR_RADIUS: 80,
+    ACTIVATE_HINT_RADIUS: 320,
+    // #86/#87 金币数字滚动动画时长（秒）。
+    GOLD_ROLL: 0.2,
+    // #86 商店面板几何（屏幕居中绘制）。
+    PANEL_W: 620,
+    PANEL_H: 980,
+    CLOSE_SIZE: 64,
+    PANEL_ROW_H: 84,
+    // 行序即面板行序；type 对齐 CONFIG.POWERUPS.TYPE_*，价格单位 = 局内金币。
+    PRICES: { MEDKIT: 35, LASER: 80, MAGNET: 30, FREEZE: 50, BOMB: 60 },
+    WEAPON_UPGRADE_PRICES: [100, 200, 400]
+  };
+  // v015 #104~#106：局内军械强化、特殊弹药和被动技能。
+  CONFIG.ARMORY = {
+    SPECIAL_BLOCK: 30,
+    WEAPON_MAX_LEVEL: 3,
+    AMMO: [
+      { ID: 'firework', NAME: '爆裂焰火', ICON: 'ammo_firework', PRICE: 90, COLOR: '#ffb13b', RADIUS: 115, DAMAGE_RATIO: .7 },
+      { ID: 'corrupt', NAME: '大脑腐化', ICON: 'ammo_corrupt', PRICE: 100, COLOR: '#8be05a', DURATION: 6 },
+      { ID: 'napalm', NAME: '凝固汽油', ICON: 'ammo_napalm', PRICE: 80, COLOR: '#ff713d', DURATION: 4, DPS_RATIO: .35 },
+      { ID: 'void', NAME: '暗影裂缝', ICON: 'ammo_void', PRICE: 100, COLOR: '#a25cff', DURATION: 3, RADIUS: 105, DPS_RATIO: .45 },
+      { ID: 'shock', NAME: '致命电流', ICON: 'ammo_shock', PRICE: 85, COLOR: '#62e8ff', STUN: 1.5, RADIUS: 95, DAMAGE_RATIO: .5 },
+      { ID: 'frost', NAME: '急速冰冻', ICON: 'ammo_frost', PRICE: 75, COLOR: '#9fe8ff', DURATION: 4, SLOW: .55, VULNERABLE: 1.25 }
+    ],
+    PERKS: [
+      { ID: 'reload', NAME: '极速装填', ICON: 'skill_reload', COLOR: '#67df75', DESC: '换弹时间 ×0.7' },
+      { ID: 'vitality', NAME: '钢筋铁骨', ICON: 'skill_vitality', COLOR: '#ef5c56', DESC: '最大生命 +50' },
+      { ID: 'firerate', NAME: '火力全开', ICON: 'skill_firerate', COLOR: '#ff9a3d', DESC: '射速 ×1.2' },
+      { ID: 'speed', NAME: '风驰电掣', ICON: 'skill_speed', COLOR: '#ffe05c', DESC: '移动速度 ×1.12' },
+      { ID: 'damage', NAME: '毁灭打击', ICON: 'skill_damage', COLOR: '#bd6cff', DESC: '武器伤害 ×1.15' },
+      { ID: 'magnet', NAME: '磁力牵引', ICON: 'skill_magnet', COLOR: '#62e8e0', DESC: '拾取半径 ×1.5' },
+      { ID: 'critical', NAME: '致命一击', ICON: 'skill_critical', COLOR: '#5d91ff', DESC: '暴击率 +5%，倍率 +0.5' },
+      { ID: 'revive', NAME: '快速愈合', ICON: 'skill_revive', COLOR: '#ff82bd', DESC: '脱战后每秒回复 3' }
+    ],
+    PERK_PRICES: [100, 150, 220, 300, 400, 500],
+    HEAL_COMBAT_WAIT: 5,
+    HEAL_READY_TIME: 3,
+    HEAL_PER_TICK: 3,
+    PERK_FLASH_TIME: 2.5,
+    ZONE_POOL: 8,
+    ZONE_TICK: .2,
+    ALLY_ATTACK_INTERVAL: .45,
+    ALLY_DAMAGE_RATIO: .75
+  };
+  CONFIG.POLISH.PAUSE_OVERLAY_ALPHA = .6;
+  CONFIG.TEXT.SUPPLY_TABS = ['道具', '强化武器', '弹药改装', '被动技能'];
+  CONFIG.TEXT.SUPPLY_WEAPON_LEVEL = function (lv) { return '武器强化 ' + lv + '级'; };
+  CONFIG.TEXT.SUPPLY_WEAPON_DESC = '伤害与弹匣容量均翻倍';
+  CONFIG.TEXT.SUPPLY_EQUIPPED = '已装备';
+  CONFIG.TEXT.SUPPLY_OWNED = '已购买';
+  CONFIG.TEXT.SUPPLY_LOCKED = '需先购买前一级';
+  CONFIG.TEXT.EXTRACTION_CLEAR_FIRST = '请先清空本波敌人';
+  CONFIG.BALANCE.BOSS_COUNT_DIVISOR = 4;
+  CONFIG.BALANCE.BOSS_MAX_COUNT = 6;
+  CONFIG.BOMB_THROW = { RANGE: 200, FLIGHT: .3, FUSE: 3, RADIUS: 120, HP_RATIO: .25, BOSS_RATIO: .12, BOSS_STUN: 2, QUICK_MS: 200, QUICK_MOVE: 15 };
+  CONFIG.CAMERA = { ZOOM: 1.15, MIN: 1.10, MAX: 1.20, SPAWN_BUFFER: 150 };
+  CONFIG.ENEMY.MAX_RADIUS = 78;
+  CONFIG.COIN.DROWN_CAP = 150;
+  CONFIG.EXPERIENCE.DROWN_CAP = 120;
+  // 渲染画质：与升级卡稀有度 CONFIG.QUALITY 分开，避免旧存档与界面取色冲突。
+  CONFIG.RENDER_QUALITY = {
+    DEFAULT: 'auto', FPS_SAMPLE: 0.5, LOW_FPS: 50, HIGH_FPS: 58,
+    LOW_SAMPLES: 6, HIGH_SAMPLES: 6, CHANGE_COOLDOWN: 5,
+    LEVELS: {
+      high: { PARTICLES: 1, SHAKE: 1, TRAILS: true, DECOR: 1 },
+      medium: { PARTICLES: 0.5, SHAKE: 0.6, TRAILS: true, DECOR: 0.5 },
+      low: { PARTICLES: 0.25, SHAKE: 0.3, TRAILS: false, DECOR: 0 }
+    }
+  };
+  CONFIG.TEXT.QUALITY = '画质';
+  CONFIG.TEXT.HIGH_FPS = '高帧率';
+  CONFIG.TEXT.MIRROR = '左右手镜像';
+  CONFIG.TEXT.QUALITY_NAMES = { auto: '自动', high: '高', medium: '中', low: '低' };
   CONFIG.AFFIXES = {
     ROLL_DOUBLE_WAVE: 8,
     DEFS: {
@@ -2032,7 +2459,25 @@
     CHARGE_RANGE_MIN: 160,
     CHARGE_RANGE_MAX: 780,
     CHARGE_DAMAGE_MUL: 1.5,
-    AIM_LINE_WIDTH: 4
+    AIM_LINE_WIDTH: 4,
+    // v014 #95 冲锋前 1s 红色预警线：线宽 20px、半透明红；最后 WARN_FLASH_WINDOW 秒明显前摇闪烁。
+    WARN_LINE_WIDTH: 20,
+    WARN_LINE_ALPHA: 0.45,
+    WARN_FLASH_WINDOW: 0.5
+  };
+  // v014 #94 战斗阶段起伏：刷怪按阶段循环，节奏有起伏（时长/配额倍率）。
+  // normal 普通怪群 ~20s 清怪成长；elite 精英/事件 ~10s 改路线；dominant 占优 ~15s 炮台清场；
+  // boss BOSS/大波次 ~30s 考验躲避；lull 整理 ~10s 拾取经验升级。
+  // quota 作用于刷怪间隔（间隔 / quota），与 extractionSurge ×2 相乘兼容。
+  CONFIG.WAVE = {
+    PHASES: {
+      normal:   { dur: 20, quota: 1.0 },
+      elite:    { dur: 10, quota: 1.2 },
+      dominant: { dur: 15, quota: 0.7 },
+      boss:     { dur: 30, quota: 1.5 },
+      lull:     { dur: 10, quota: 0.3 }
+    },
+    PHASE_ORDER: ['normal', 'elite', 'dominant', 'boss', 'lull']
   };
   CONFIG.BOSS_SUMMON = {
     HP_RATIO: 0.5,
@@ -2045,12 +2490,25 @@
     CONTACT: 12
   };
   // 产品打磨参数：持续伤害、首局引导和免费刷新集中管理。
-  CONFIG.PRODUCT = { FREE_REFRESH: 1, EARLY_CHOICES: 3, BURN_TICK: 0.5,
+  CONFIG.PRODUCT = { FREE_REFRESH: 1, EARLY_CHOICES: 3, BURN_TICK: 0.5, BANNER_TIME: 2.5,
     TURRET_WARNING: 5, GUIDE_RANGE: 1100, GUIDE_LIMIT: 2, GUIDE_MARGIN: 64,
     GUIDE_TOP: 320, GUIDE_BOTTOM: 310, FIRST_EVENT: 95, GRID_WARNING: 2,
     WAVE_REST: 4, WAVE_MAX_WAIT: 12, WAVE_REMAINING: 12,
     PREVIEW_SIZE: 19, PREVIEW_BOTTOM: 22, REPORT_SIZE: 21, REPORT_GAP: 32,
-    ONBOARD_TIME: 30, ONBOARD_END: 90 };
+    ONBOARD_TIME: 30, ONBOARD_END: 90,
+    // v014 #90 喷火B 贴脸爆炸半径（相对基础射程的比例）。
+    CLOSE_BURST_RADIUS: 0.6 };
+  // v014 #90 三把主武器各两条 build 路线：路线名 + 词条构成（供卡片搭配提示与测试断言）。
+  CONFIG.UPGRADES.BUILD_ROUTES = {
+    pistol_spray: { weapon: 'pistol', name: '多弹道清怪', perks: ['MULTI', 'RAPID', 'FAN_SPRAY'] },
+    pistol_pierce: { weapon: 'pistol', name: '穿透打精英', perks: ['PIERCE', 'POWER', 'PIERCE_INFINITE'] },
+    flamer_fire: { weapon: 'flamer', name: '烧地封路', perks: ['FLAME_RANGE', 'FLAME_ANGLE', 'NAPALM'] },
+    flamer_burst: { weapon: 'flamer', name: '近身短强攻', perks: ['FLAME_DAMAGE', 'CLOSE_BURST'] },
+    bow_longshot: { weapon: 'crossbow', name: '长距离重击', perks: ['BOW_DAMAGE', 'LONG_SHOT'] },
+    bow_split: { weapon: 'crossbow', name: '分裂穿墙', perks: ['BOW_COUNT', 'SCATTER_BOLT', 'WALL_PIERCE'] }
+  };
+  // v012 #70 索敌射线检测：按距离取前 N 候选，逐人射线检测墙遮挡，每 RESCAN_INTERVAL 秒重算。
+  CONFIG.AI_TARGETING = { CANDIDATE_LIMIT: 8, RESCAN_INTERVAL: 0.1, WALL_RADIUS: 2 };
   CONFIG.TEXT.PRODUCT = {
     FREE_REFRESH: '免费刷新', REFRESH_HINT: '免费优先 · 广告刷新另计',
     PENDING: function(n) { return '战斗已暂停 · 待选 ' + n + ' 次强化'; },
@@ -2062,18 +2520,38 @@
     SOURCES: { mortar: '迫击炮', tesla: '电弧塔', frost: '霜冻塔', flame: '喷火器', bow: '弩箭', pulse: '手枪', blade: '飞刃' },
     TRY_TURRET: '主动启动一座炮台，利用火力清场',
     TRY_WEAPON: '尝试另一把主武器的专属路线',
-    EXTRACT: function(n) { return '现在撤离预计带走 ' + n + ' 金币'; },
-    CONTINUE: '继续：击杀与升级增加结算金币，撤离加成需成功撤离',
+    EXTRACT: function(n) { return '现在撤离预计带走 ' + n + ' 幸存者硬币'; },
+    CONTINUE: '继续挑战：更晚撤离可换更多幸存者硬币，但敌人更强',
+    // v012 #73 继续挑战对比：粗估再撑 WAVE_EVERY 波后大概多拿多少硬币。
+    CONTINUE_GAIN: function(more) { return '再撑 ' + CONFIG.EXTRACTION.WAVE_EVERY + ' 波 · 预计多 +' + more + ' 硬币'; },
     SOURCE_COUNT: function(name, n) { return name + '击杀 ' + n; },
     GRID_WARN: '电网预警：2秒后通电，每秒8伤害',
     AIRDROP: '空投：道具与经验补给，靠近领取',
     SANCTUARY: '撤离圈回复生命，注意剩余时间',
+    // v014 #97 事件靠近提示 + #98 结算进步/基地目标文案
+    AIRDROP_NEAR: '空投：金币+道具，附近有敌人',
+    AIRDROP_MARKED: '空投已标记，前往领取',
+    ELITE_RUSH_START: '精英狂潮：额外精英掉落更好',
+    SANCTUARY_NEAR: '净化区：可回血，但离开炮台保护',
+    EXTRACT_NOW: function(n) { return '现在撤离：预计 ' + n + ' 硬币'; },
+    CONTINUE_NEXT: function(n) { return '继续挑战：下一波预计 ' + n + ' 硬币'; },
+    PROGRESS: '本局进步：',
+    PROGRESS_NEW_WAVE: function(n) { return '最高波次创新高：第' + n + '波'; },
+    PROGRESS_FIRST_BOSS: '首次击杀BOSS',
+    REACH_WAVE: function(n) { return '本局到达第' + n + '波'; },
+    BASE_OBJECTIVE: '眼下目标：',
     MECHANICS: { NAPALM: '边退边烧：火焰会留下燃烧区域', BACKDRAFT: '利用火焰末端爆炸处理聚集敌群',
-      INFERNO: '近身脉冲恢复生命，留意触发间隔', PILEDRIVER: '引怪成线，连续穿透积累伤害',
-      SCATTER_BOLT: '向墙角引怪，利用裂矢追加攻击', MARKSMAN: '拉开距离，让远射首击暴击' }
+      INFERNO: '近身爆发恢复生命，留意触发间隔', PILEDRIVER: '引怪成线，连续穿透积累伤害',
+      SCATTER_BOLT: '向墙角引怪，利用裂矢追加攻击', MARKSMAN: '拉开距离，让远射首击暴击',
+      // v014 #92 核心词条首次获得横幅文案（与 #90 路线词条 EFFECT 对齐）。
+      FAN_SPRAY: '弹道扇形铺开了，边退边扫周围小怪', PIERCE_INFINITE: '子弹现在无限穿透，把怪引成一条线',
+      CLOSE_BURST: '喷火器转成贴脸爆发了，靠近再开', LONG_SHOT: '弩箭射程大增，拉开距离一箭点杀',
+      WALL_PIERCE: '弩箭现在能穿墙，墙角后面也能打' }
   };
   CONFIG.POLISH.TONES.turret = [180, 650, 0.25];
   CONFIG.POLISH.TONES.warning = [520, 220, 0.18];
+  CONFIG.POLISH.TONES.airdrop_warn = [260, 780, 0.32];
+  CONFIG.POLISH.TONES.airdrop_land = [150, 55, 0.28];
   CONFIG.META.GADGET_UPGRADES.turret_frost.items.forEach(function(item) {
     if (item.ID === 'shatter') item.DESC = '霜塔冰球命中已冻结敌人伤害 +25%';
   });

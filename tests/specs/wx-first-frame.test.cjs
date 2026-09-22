@@ -99,12 +99,12 @@ if (global.Input.activeTouches.size !== 0 || global.Input.joystick.active) {
   throw new Error('微信 touchcancel 后仍有触点残留');
 }
 
-// 四档稀有度概率做大样本检查，并验证固定史诗/传说词条只出现在对应档。
-var rarityCounts = { COMMON: 0, RARE: 0, EPIC: 0, LEGENDARY: 0 };
+// 五档稀有度概率做大样本检查，并验证固定史诗/传说词条只出现在对应档（彩虹档复用传说池）。
+var rarityCounts = { COMMON: 0, RARE: 0, EPIC: 0, LEGENDARY: 0, RAINBOW: 0 };
 for (var rarityRoll = 0; rarityRoll < 100000; rarityRoll++) {
   rarityCounts[global.ExpLevelUp.rollRarity().ID] += 1;
 }
-var rarityExpected = { COMMON: 0.55, RARE: 0.25, EPIC: 0.12, LEGENDARY: 0.08 };
+var rarityExpected = { COMMON: 0.55, RARE: 0.30, EPIC: 0.10, LEGENDARY: 0.04, RAINBOW: 0.01 };
 Object.keys(rarityExpected).forEach(function (id) {
   var actual = rarityCounts[id] / 100000;
   if (Math.abs(actual - rarityExpected[id]) > 0.01) throw new Error(id + ' 稀有度概率偏差过大: ' + actual);
@@ -116,7 +116,7 @@ for (var offerRound = 0; offerRound < 200; offerRound++) {
     var offer = global.ExpLevelUp.offers[oi];
     if (ids[offer.definition.ID]) throw new Error('同次三选一出现重复词条');
     ids[offer.definition.ID] = true;
-    if (offer.definition.RARITY && offer.definition.RARITY !== offer.rarity.ID) {
+    if (offer.definition.RARITY && offer.definition.RARITY !== offer.rarity.ID && !(offer.rarity.ID === 'RAINBOW' && offer.definition.RARITY === 'LEGENDARY')) {
       throw new Error('固定高稀有词条进入错误档位');
     }
   }
@@ -127,6 +127,14 @@ global.ExpLevelUp.offers[0].rarity = global.CONFIG.UPGRADES.RARITIES[3];
 global.ExpLevelUp.offers[0].description = global.CONFIG.TEXT.UPGRADES.DUAL_WIELD.DESC();
 global.ExpLevelUp.offers[0].level = 0; global.ExpLevelUp.offerCount = 1;
 global.Game.state = global.CONFIG.GAME.STATE_LEVELUP;
+global.Game.draw();
+
+// #84 第五档 RAINBOW：存在、通过 validateOffers、可绘制（彩虹光效）。
+var rainbowRarity = global.CONFIG.UPGRADES.RARITIES.filter(function (r) { return r.ID === 'RAINBOW'; })[0];
+if (!rainbowRarity) throw new Error('CONFIG.UPGRADES.RARITIES 缺少 RAINBOW 第五档');
+if (typeof global.CONFIG.COLORS[rainbowRarity.COLOR_KEY] !== 'string') throw new Error('RAINBOW 缺少稀有度颜色');
+global.ExpLevelUp.offers[0].rarity = rainbowRarity;
+if (!global.ExpLevelUp.validateOffers(global.ExpLevelUp.offers)) throw new Error('RAINBOW 第五档未通过 validateOffers');
 global.Game.draw();
 
 // 基地新版 UI：角色页、第二页、三个道具分页都必须能完成绘制。
@@ -177,7 +185,7 @@ global.Game.updateBase(0.016);
 if (global.UI.baseGadgetIndex !== 1) throw new Error('道具强化下一装备按钮无效');
 
 // 购买热区必须仍然对应当前分页中的正确强化项。
-global.Meta.data.coins = 999999;
+global.Meta.data.survivorCoins = 999999;
 global.UI.baseTab = 'character';
 global.UI.baseCharacterPage = 0;
 var robustBefore = global.Meta.getUpgradeLevel('ROBUST');

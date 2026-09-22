@@ -2,7 +2,7 @@
 // ============================================================
 // #59 激光修订验证脚本
 // 1) 激活 5 秒，每 0.5 秒打印实测转速（圈/秒），验证 0.8 -> 5 ease-out 加速
-// 2) 穿透：墙后敌人应被秒杀；WallCollision.rayDistance(内部墙版)仍被截断作对照
+// 2) 光束止于墙面：墙后敌人不被命中；WallCollision.rayDistance 在墙面截断
 // 3) 扫掠：dt=0.1s（180°/帧）大跨步，敌人落在两帧角度之间必命中；负对照不命中
 // 运行：node test-laser-v009.cjs
 // ============================================================
@@ -70,36 +70,36 @@ assert(firstRps < 1.1, '起始转速过快: ' + firstRps.toFixed(3) + ' rps');
 assert(steadyRps > 4.7 && steadyRps < 5.3, '稳态转速异常: ' + steadyRps.toFixed(3) + ' rps');
 console.log(' -> 起始 ' + firstRps.toFixed(2) + ' rps, 稳态 ' + steadyRps.toFixed(2) + ' rps OK\n');
 
-// ---------- 2) 穿透内部墙 ----------
-console.log('=== 2) 穿透内部墙 ===');
+// ---------- 2) 光束止于墙面（v012 #71） ----------
+console.log('=== 2) 光束止于墙面 ===');
 // 内部墙 (970,780,230,80) 横亘在玩家(1200,1200)与墙后点(1085,700)之间
 Player.x = 1200; Player.y = 1200;
 var ex = 1085, ey = 700;
 var lineBlocked = WallCollision.segment(Player.x, Player.y, ex, ey, 0);
 assert(lineBlocked, '预设失败：玩家到墙后敌人的直线未穿过内部墙');
 var aEnemy = Math.atan2(ey - Player.y, ex - Player.x);
-// 对照：保留内部墙检测的 rayDistance 应在墙面被截断
+// 对照：内部墙检测的 rayDistance 应在墙面被截断
 var dInternal = WallCollision.rayDistance(Player.x, Player.y, aEnemy);
 assert(dInternal < Math.hypot(ex - Player.x, ey - Player.y),
   '对照失败：内部墙版本未截断，d=' + dInternal.toFixed(1));
-// 激光：只算世界边界，应越过墙到达边界
+// v012 #71：激光改用 WallCollision.rayDistance，应止于墙面（不再穿墙）
 LaserEmitter.reset(); LaserEmitter.activate();
 LaserEmitter.angle = aEnemy;
 var ends = LaserEmitter.ends();
 var dLaser = Math.hypot(ends[0].x - Player.x, ends[0].y - Player.y);
-assert(dLaser > Math.hypot(ex - Player.x, ey - Player.y),
-  '激光未穿透墙：长度 ' + dLaser.toFixed(1) + ' < 墙后距离 ' + Math.hypot(ex - Player.x, ey - Player.y).toFixed(1));
-console.log(' 内部墙版rayDistance截断于 ' + dInternal.toFixed(1) + 'px；激光延伸至 ' + dLaser.toFixed(1) + 'px（世界边界）OK');
+assert(Math.abs(dLaser - dInternal) < 2 && dLaser < Math.hypot(ex - Player.x, ey - Player.y),
+  'v012 #71：激光未在墙面截断，长度 ' + dLaser.toFixed(1) + ' ≠ ' + dInternal.toFixed(1));
+console.log(' 光束止于墙面 ' + dLaser.toFixed(1) + 'px（内部墙版rayDistance=' + dInternal.toFixed(1) + 'px）OK');
 
-// 墙后普通怪被扫掠秒杀
+// 墙后普通怪不应被旋转光束命中（v012 #71）
 LaserEmitter.reset(); LaserEmitter.activate();
 var walled = Enemy.spawn(ex, ey, CONFIG.ENEMY.TYPE_WALKER, 30);
 assert(walled && walled.active, '墙后敌人生成失败');
 LaserEmitter.lastSweepA = aEnemy - 0.2;
 LaserEmitter.angle = aEnemy + 0.2;
 LaserEmitter.dealDamage();
-assert(!walled.active, '墙后普通怪未被激光穿透秒杀');
-console.log(' 墙后普通怪被穿透秒杀 OK\n');
+assert(walled.active, 'v012 #71：墙后普通怪被穿墙光束命中');
+console.log(' 墙后普通怪被墙面阻挡、未命中 OK\n');
 
 // ---------- 3) 低帧率扫掠 ----------
 console.log('=== 3) 扫掠判定（dt=0.1s，5圈/秒≈180°/帧）===');
@@ -127,4 +127,4 @@ assert(boss.hp < hpBefore, '精英/Boss 每 tick 未结算伤害');
 assert(!boss.active || boss.hp > 0, 'Boss 应存活承受多 tick');
 console.log(' 精英/Boss 走直接扣血通道，本 tick 伤害 ' + (hpBefore - boss.hp).toFixed(1) + ' OK\n');
 
-console.log('PASS: #59 速度曲线/穿透/扫掠/无视无敌帧 验证全部通过');
+console.log('PASS: #59 速度曲线/墙面截断/扫掠/无视无敌帧 验证全部通过');

@@ -19,6 +19,13 @@
   var RunStats = {
     kills: 0,
     pickedCoins: 0,
+    // v012 #73 按类型击杀计数：普通/精英/BOSS/特殊（远程Boss），用于幸存者硬币换算。
+    killNormal: 0,
+    killElite: 0,
+    killBoss: 0,
+    killSpecial: 0,
+    // v012 #72 局内金币：击杀掉落拾取累加，花在炮塔激活/补给点，局末清零，绝不进 Meta 持久货币。
+    gold: 0,
     finalCoins: 0,
     baseCoins: 0,
     greedBonus: 0,
@@ -33,6 +40,11 @@
     reset: function () {
       this.kills = 0;
       this.pickedCoins = 0;
+      this.gold = 0;
+      this.killNormal = 0;
+      this.killElite = 0;
+      this.killBoss = 0;
+      this.killSpecial = 0;
       this.finalCoins = 0;
       this.baseCoins = 0;
       this.greedBonus = 0;
@@ -50,9 +62,40 @@
       this.extractAdClaimed = false;
     },
     // 收益预览不修改结算状态，不触发存档发奖。
+    // v012 #73 幸存者硬币换算：存活波次 + 按类型击杀 + 局内等级 + 剩余局内金币，向下取整。
+    extractRawCoins: function (wave, level, gold, nKills, eKills, bKills, sKills) {
+      var E = CONFIG.EXTRACTION;
+      var v = wave * E.WAVE +
+        nKills * E.NORMAL +
+        eKills * E.ELITE +
+        bKills * E.BOSS +
+        sKills * E.SPECIAL +
+        level * E.LEVEL +
+        gold * E.GOLD;
+      return Math.floor(v);
+    },
+    // 实时预览：用当前进度算现在撤离能拿多少幸存者硬币。
     extractionPreview: function () {
-      var base = Math.floor(Game.survivedSeconds / CONFIG.REWARDS.SECONDS_PER_COIN) + this.kills * CONFIG.REWARDS.COINS_PER_KILL + ExpLevelUp.level * CONFIG.REWARDS.COINS_PER_LEVEL + this.pickedCoins;
-      return Math.floor(base * (1 + Meta.getEffectTotal('GREED'))) * CONFIG.EXTRACTION.REWARD_MULTIPLIER;
+      return this.extractRawCoins(
+        root.Spawner.waveIndex, ExpLevelUp.level, this.gold,
+        this.killNormal, this.killElite, this.killBoss, this.killSpecial);
+    },
+    // 粗估继续挑战：再撑 WAVE_EVERY 波到下一个撤离点大概能拿多少（同公式按预估增量）。
+    extractContinueEstimate: function () {
+      var cur = root.Spawner.waveIndex;
+      var every = CONFIG.EXTRACTION.WAVE_EVERY;
+      var perWaveNormal = 8 + Math.max(1, cur) * 4; // 当前每波普通怪配额量级（粗估）
+      var estNormal = this.killNormal + perWaveNormal * every;
+      var estElite = this.killElite + 2;            // 粗估再撑 5 波多 2 精英
+      var estLevel = ExpLevelUp.level + 1;          // 粗估再升 1 级
+      var estGold = this.gold * 1.5;                 // 粗估剩余金币增长
+      return this.extractRawCoins(
+        cur + every, estLevel, estGold,
+        estNormal, estElite, this.killBoss, this.killSpecial);
+    },
+    // 继续挑战相对现在撤离大概多拿的硬币（≥0）。
+    extractGainIfContinue: function () {
+      return Math.max(0, this.extractContinueEstimate() - this.extractionPreview());
     },
     contribution: function () {
       var best = '', count = 0;
@@ -78,9 +121,12 @@
       var afterGreed = Math.floor(this.baseCoins * (1 + greedRate));
       this.greedBonus = afterGreed - this.baseCoins;
       if (this.extractBonus) {
-        // 撤退：无胜利奖励，贪婪后 ×2 撤退倍率
-        var extractCoins = afterGreed * CONFIG.EXTRACTION.REWARD_MULTIPLIER;
-        if (this.extractAdClaimed) extractCoins = extractCoins * CONFIG.EXTRACTION.AD_MULTIPLIER;
+        // v012 #73 幸存者硬币：按新公式（存活波次/按类型击杀/等级/剩余金币）向下取整；广告四倍另乘。
+        var extractCoins = this.extractRawCoins(
+          root.Spawner.waveIndex, level, this.gold,
+          this.killNormal, this.killElite, this.killBoss, this.killSpecial);
+        if (this.extractAdClaimed) extractCoins = Math.floor(extractCoins * CONFIG.EXTRACTION.AD_MULTIPLIER);
+        this.baseCoins = extractCoins;
         this.undoubledCoins = extractCoins;
         this.finalCoins = extractCoins;
         return this.finalCoins;
@@ -106,6 +152,18 @@
     // 撤退广告四倍：与死亡翻倍互斥（同局只能用一个），每局限1次
     canExtractAdQuad: function () {
       return !this.coinDoubleClaimed && !this.extractAdClaimed;
+    },
+    // v012 #72 局内金币扣费：余额足够才扣并返回 true。炮塔激活走这里。
+    spendGold: function (amount) {
+      if (this.gold < amount) return false;
+      this.gold -= amount;
+      return true;
+    },
+    // #78 补给点预留入口：从局内金币扣费并把指定道具 +1（补给点本体在 #78 批次实现，此处仅留接口）。
+    buySupplyItem: function (itemTypeIndex, cost) {
+      if (!this.spendGold(cost)) return false;
+      root.PowerUps.inventory[itemTypeIndex] = (root.PowerUps.inventory[itemTypeIndex] || 0) + 1;
+      return true;
     }
   };
   var Experience = {
@@ -133,6 +191,16 @@
       }
     },
     dropGem: function (x, y, value) {
+      if (this.activeCount >= CONFIG.EXPERIENCE.DROWN_CAP) {
+        var nearest = null, nearestSq = Infinity;
+        for (var m = 0; m < this.pool.length; m++) {
+          var existing = this.pool[m];
+          if (!existing.active || existing.flying) continue;
+          var mdx = existing.x - x, mdy = existing.y - y, md2 = mdx * mdx + mdy * mdy;
+          if (md2 < nearestSq) { nearestSq = md2; nearest = existing; }
+        }
+        if (nearest) { nearest.value += value; return; }
+      }
       for (var i = 0; i < this.pool.length; i++) {
         var gem = this.pool[i];
         if (!gem.active) {
@@ -153,17 +221,18 @@
         if (!gem.active) continue;
         var dx = Player.x - gem.x,
           dy = Player.y - gem.y;
-        var distance = Math.hypot(dx, dy);
-        if (!gem.flying && (magnet || distance <= Player.pickupRadius)) gem.flying = true;
-        if (gem.flying) this.moveGem(gem, dx, dy, distance, dt, magnet);
+        var distanceSq = dx * dx + dy * dy;
+        if (!gem.flying && (magnet || distanceSq <= Player.pickupRadius * Player.pickupRadius)) gem.flying = true;
+        if (gem.flying) this.moveGem(gem, dx, dy, distanceSq, dt, magnet);
       }
     },
-    moveGem: function (gem, dx, dy, distance, dt, magnet) {
-      if (distance <= CONFIG.EXPERIENCE.COLLECT_DISTANCE) {
+    moveGem: function (gem, dx, dy, distanceSq, dt, magnet) {
+      if (distanceSq <= CONFIG.EXPERIENCE.COLLECT_DISTANCE * CONFIG.EXPERIENCE.COLLECT_DISTANCE) {
         this.collectGem(gem);
         return;
       }
-      if (distance > 0) {
+      if (distanceSq > 0) {
+        var distance = Math.sqrt(distanceSq);
         var speed = magnet ? CONFIG.POWERUPS.MAGNET_PULL_SPEED : CONFIG.EXPERIENCE.FLY_SPEED;
         var moveDistance = Math.min(distance, speed * dt);
         gem.x += dx / distance * moveDistance;
@@ -183,6 +252,7 @@
       }
     },
     drawOne: function (ctx, gem) {
+      if (!Camera.isVisible(gem.x, gem.y, CONFIG.EXPERIENCE.GEM_LENGTH)) return;
       var x = gem.x - Camera.x,
         y = gem.y - Camera.y;
       var halfWidth = CONFIG.EXPERIENCE.GEM_WIDTH / 2;
@@ -219,6 +289,7 @@
     offers: [],
     offerCount: 0,
     candidateIndices: [],
+    rainbowOwned: Object.create(null),
     init: function () {
       this.offers.length = 0;
       for (var i = 0; i < CONFIG.UPGRADES.OFFER_COUNT; i++) {
@@ -237,6 +308,7 @@
       this.need = this.getNeed(this.level);
       this.pendingChoices = 0;
       this.offerCount = 0;
+      this.rainbowOwned = Object.create(null);
       for (var i = 0; i < CONFIG.UPGRADES.DEFINITIONS.length; i++) {
         this.levels[CONFIG.UPGRADES.DEFINITIONS[i].ID] = 0;
       }
@@ -261,12 +333,14 @@
       this.collectEligibleDefinitions();
       this.offerCount = Math.min(CONFIG.UPGRADES.OFFER_COUNT, this.candidateIndices.length);
       var legendarySeen = false;
+      var goldSeen = false;
       for (var i = 0; i < this.offerCount; i++) {
         var rarity = this.rollRarity();
         var matching = [];
         for (var c = 0; c < this.candidateIndices.length; c++) {
           var candidate = CONFIG.UPGRADES.DEFINITIONS[this.candidateIndices[c]];
-          if (candidate.RARITY && candidate.RARITY === rarity.ID || !candidate.RARITY && (rarity.ID === 'COMMON' || rarity.ID === 'RARE')) matching.push(c);
+          // #84 第五档 RAINBOW(彩) 复用 LEGENDARY(金) 词条池：彩虹只换视觉光效，不新增词条。
+          if (candidate.RARITY && (candidate.RARITY === rarity.ID || (rarity.ID === 'RAINBOW' && candidate.RARITY === 'LEGENDARY')) || !candidate.RARITY && (rarity.ID === 'COMMON' || rarity.ID === 'RARE')) matching.push(c);
         }
         // 某档固定池已满时降级抽取，保证三张卡仍可正常生成。
         if (!matching.length) {
@@ -279,14 +353,20 @@
           this.offerCount = i;
           break;
         }
+        var curWeapon = root.WeaponProgress.selected || 'pistol';
+        var early = RunStats.choicesTaken < CONFIG.PRODUCT.EARLY_CHOICES;
         var preferred = [];
         for (var m = 0; m < matching.length; m++) {
           var def = CONFIG.UPGRADES.DEFINITIONS[this.candidateIndices[matching[m]]];
-          var wanted = i === 0 ? def.weapon === root.WeaponProgress.selected :
-            i === 1 ? ['MAX_HP', 'MOVE_SPEED', 'PICKUP_RADIUS'].indexOf(def.EFFECT) >= 0 : false;
+          var isWeapon = def.weapon === curWeapon;
+          var survival = ['MAX_HP', 'MOVE_SPEED', 'PICKUP_RADIUS'].indexOf(def.EFFECT) >= 0;
+          // #93 新手保护：前 EARLY_CHOICES 次升级，前两张都优先当前主武器专属词条（保底 ≥2 张主武器相关），
+          // 第三张偏生存/功能，保证三卡方向不全是纯数值。#58 已过滤掉他武器专属，这里只是提高主武器保底。
+          var wanted = early ? (i < 2 ? isWeapon : survival) :
+            i === 0 ? isWeapon : i === 1 ? survival : false;
           if (wanted) preferred.push(matching[m]);
         }
-        var choices = preferred.length && (i > 0 || RunStats.choicesTaken < CONFIG.PRODUCT.EARLY_CHOICES) ? preferred : matching;
+        var choices = preferred.length ? preferred : matching;
         var pick = choices[Math.floor(Math.random() * choices.length)];
         var definitionIndex = this.candidateIndices[pick];
         var definition = CONFIG.UPGRADES.DEFINITIONS[definitionIndex];
@@ -297,9 +377,12 @@
         offer.description = this.buildDescription(definition, rarity);
         this.candidateIndices[pick] = this.candidateIndices[this.candidateIndices.length - 1];
         this.candidateIndices.length -= 1;
-        if (rarity.ID === 'LEGENDARY') legendarySeen = true;
+        if (rarity.ID === 'LEGENDARY' || rarity.ID === 'RAINBOW') legendarySeen = true;
+        if (rarity.ID === 'LEGENDARY') goldSeen = true;
       }
       if (legendarySeen && root.FX) root.FX.legendaryFlash = 0.15;
+      // v014 #96 稀有词条获得光效：金=金光(goldFlash)，彩=彩虹光(legendaryFlash 渐变，见 hud.js)。
+      if (goldSeen && root.FX) root.FX.goldFlash = CONFIG.FEEDBACK.RARITY_GOLD_FLASH;
       return this.validateOffers();
     },
     collectEligibleDefinitions: function () {
@@ -309,6 +392,8 @@
       }
     },
     isEligible: function (definition) {
+      // #113：同一唯一 ID 获得炫彩后永久退出本局候选池。
+      if (this.rainbowOwned[definition.ID]) return false;
       if (this.levels[definition.ID] >= definition.MAX_LEVEL) return false;
       // #58 按本局主武器过滤词条：保留通用(all) + 副武器飞刃(blade) + 当前主武器专属；
       // 排除其他主武器的专属词条。WeaponProgress.selected 在 restart 时已同步本局主武器。
@@ -325,14 +410,18 @@
       return true;
     },
     rollRarity: function () {
+      // #74/#84 权重集中在 CONFIG.UPGRADES.RARITY_WEIGHTS_INRUN（顺序：白/蓝/紫/金/彩，合计100）。
+      // 引擎拆成 5 档：COMMON/RARE/EPIC/LEGENDARY(金)/RAINBOW(彩)，第五档不再折叠进 LEGENDARY。
+      var weights = CONFIG.UPGRADES.RARITY_WEIGHTS_INRUN;
+      var tiers = CONFIG.UPGRADES.RARITIES;
       var totalWeight = 0;
-      for (var i = 0; i < CONFIG.UPGRADES.RARITIES.length; i++) totalWeight += CONFIG.UPGRADES.RARITIES[i].WEIGHT;
+      for (var i = 0; i < weights.length; i++) totalWeight += weights[i];
       var roll = Math.random() * totalWeight;
-      for (var i = 0; i < CONFIG.UPGRADES.RARITIES.length; i++) {
-        roll -= CONFIG.UPGRADES.RARITIES[i].WEIGHT;
-        if (roll < 0) return CONFIG.UPGRADES.RARITIES[i];
+      for (var i = 0; i < weights.length; i++) {
+        roll -= weights[i];
+        if (roll < 0) return tiers[Math.min(i, tiers.length - 1)];
       }
-      return CONFIG.UPGRADES.RARITIES[0];
+      return tiers[0];
     },
     buildDescription: function (definition, rarity) {
       var text = CONFIG.TEXT.UPGRADES[definition.TEXT_KEY];
@@ -352,6 +441,13 @@
       if (definition.EFFECT === 'BLADE_TUNE') {
         return text.DESC(this.getDiscreteAmount(definition.COUNT, quality), this.toCleanNumber(definition.DAMAGE * quality));
       }
+      // #90 新路线词条：FAN_SPRAY 用角度度数，CLOSE_BURST/LONG_SHOT 用百分比。
+      if (definition.EFFECT === 'FAN_SPRAY') {
+        return text.DESC(this.toCleanNumber(definition.AMOUNT * quality * 180 / Math.PI));
+      }
+      if (definition.EFFECT === 'CLOSE_BURST' || definition.EFFECT === 'LONG_SHOT') {
+        return text.DESC(this.toCleanNumber(definition.AMOUNT * quality * 100));
+      }
       return text.DESC();
     },
     getDiscreteAmount: function (amount, quality) {
@@ -366,6 +462,13 @@
       if (d.EFFECT === 'MULTISHOT') { before = PulseGun.projectileCount; after = Math.min(CONFIG.WEAPONS.PULSE.MAX_PROJECTILES, before + this.getDiscreteAmount(d.AMOUNT, offer.rarity.MULTIPLIER)); }
       if (d.EFFECT === 'PENETRATION') { before = PulseGun.penetration; after = Math.min(CONFIG.WEAPONS.PULSE.MAX_PENETRATION, before + this.getDiscreteAmount(d.AMOUNT, offer.rarity.MULTIPLIER)); }
       if (d.EFFECT === 'CRIT_CHANCE') { before = Player.critChance * 100; after = Math.min(CONFIG.PLAYER.MAX_CRIT_CHANCE, Player.critChance + amount) * 100; }
+      // #91 卡片数值前后对比：新路线词条同样给出 旧值 → 新值。
+      if (d.EFFECT === 'FAN_SPRAY') {
+        before = (CONFIG.WEAPONS.PULSE.SPREAD_ANGLE + PulseGun.spreadBonus) * 180 / Math.PI;
+        after = before + amount * 180 / Math.PI;
+      }
+      if (d.EFFECT === 'LONG_SHOT') { before = root.Crossbow.longShotBonus * 100; after = before + amount * 100; }
+      if (d.EFFECT === 'CLOSE_BURST') { before = root.FlameWeapon.closeBurst * 100; after = before + amount * 100; }
       if (before !== undefined) return this.toCleanNumber(before) + ' → ' + this.toCleanNumber(after);
       return CONFIG.TEXT.PRODUCT.MECHANICS[d.EFFECT] || '';
     },
@@ -401,14 +504,25 @@
       if (Game.state !== CONFIG.GAME.STATE_LEVELUP || this.pendingChoices <= 0) return;
       if (index < 0 || index >= this.offerCount) return;
       var offer = this.offers[index];
-      if (offer.rarity.ID === 'LEGENDARY' && root.FX && root.FX.legendaryBurst) {
+      if (offer.rarity.ID === 'RAINBOW') this.rainbowOwned[offer.definition.ID] = true;
+      if ((offer.rarity.ID === 'LEGENDARY' || offer.rarity.ID === 'RAINBOW') && root.FX && root.FX.legendaryBurst) {
         root.FX.legendaryBurst(Player.x, Player.y);
       }
       this.applyUpgrade(offer.definition, offer.rarity);
       this.levels[offer.definition.ID] += 1;
       RunStats.choicesTaken += 1;
-      var hint = CONFIG.TEXT.PRODUCT.MECHANICS[offer.definition.EFFECT];
-      if (hint) Meta.showToast(hint);
+      // #92 核心词条首次获得横幅：只有标了 core 的机制词条才提示，且每个只提示一次。
+      // 已见过的词条不再弹；普通数值词条不提示。记录在 Meta.data.perkBanners（新增可选字段，向后兼容）。
+      var perkDef = offer.definition;
+      if (perkDef.core) {
+        if (!Meta.data.perkBanners) Meta.data.perkBanners = {};
+        if (!Meta.data.perkBanners[perkDef.ID]) {
+          var bannerText = CONFIG.TEXT.PRODUCT.MECHANICS[perkDef.EFFECT];
+          if (bannerText) Meta.showPerkBanner(bannerText);
+          Meta.data.perkBanners[perkDef.ID] = true;
+          Meta.save(false);
+        }
+      }
       this.pendingChoices = Math.max(0, this.pendingChoices - 1);
       Input.clearTap();
       Game.onLevelChoiceResolved();
@@ -476,11 +590,28 @@
       } else if (definition.EFFECT === 'LASER_CANNON') {
         PulseGun.laserCannon = true;
         PulseGun.damageMultiplier *= 1.8;
+      } else if (definition.EFFECT === 'FAN_SPRAY') {
+        // #90 手枪A 多弹道：弹道扩散角扩大（射速/多发由 RAPID/MULTI 路线词条承担）。
+        PulseGun.spreadBonus += amount * quality;
+      } else if (definition.EFFECT === 'PIERCE_INFINITE') {
+        // #90 手枪B 穿透：子弹无限穿透，撞到敌人不再消失。
+        PulseGun.infinitePierce = true;
+      } else if (definition.EFFECT === 'CLOSE_BURST') {
+        // #90 喷火B 近身爆发：贴脸爆炸伤害提升，射程缩短。
+        root.FlameWeapon.closeBurst += amount * quality;
+        root.FlameWeapon.rangeShortMul *= (1 - 0.12 * quality);
+      } else if (definition.EFFECT === 'LONG_SHOT') {
+        // #90 弩箭A 远程点杀：箭寿命 ×（超远射程），单发伤害提升。
+        root.Crossbow.arrowLifeMul += 0.8 * amount * quality;
+        root.Crossbow.longShotBonus += amount * quality;
+      } else if (definition.EFFECT === 'WALL_PIERCE') {
+        // #90 弩箭B 穿墙：箭命中墙不销毁，可穿墙继续飞。
+        root.Crossbow.wallPierce = true;
       }
       var e = definition.EFFECT;
       if (e === 'UNLOCK_FLAME') root.FlameWeapon.unlocked = true;else if (e === 'FLAME_DAMAGE') root.FlameWeapon.damageMul *= 1.2;else if (e === 'FLAME_RATE') root.FlameWeapon.rate *= 1.15;else if (e === 'FLAME_ANGLE') root.FlameWeapon.angle += Math.PI / 12;else if (e === 'FLAME_RANGE') root.FlameWeapon.range += 30;else if (e === 'FLAME_BURN') root.FlameWeapon.burnLife += 1;else if (e === 'NAPALM') root.FlameWeapon.napalm = true;else if (e === 'BACKDRAFT') root.FlameWeapon.backdraft = true;else if (e === 'INFERNO') root.FlameWeapon.inferno = true;else if (e === 'UNLOCK_CROSSBOW') root.Crossbow.unlocked = true;else if (e === 'BOW_DAMAGE') root.Crossbow.damage *= 1.25;else if (e === 'BOW_RATE') root.Crossbow.rate *= 1.15;else if (e === 'BOW_COUNT') root.Crossbow.count += 1;else if (e === 'BOW_DECAY') root.Crossbow.decay = Math.max(0, root.Crossbow.decay - .1);else if (e === 'BOW_CRIT') root.Crossbow.crit += .1;else if (e === 'PILEDRIVER') root.Crossbow.piledriver = true;else if (e === 'SCATTER_BOLT') root.Crossbow.scatter = true;else if (e === 'MARKSMAN') root.Crossbow.marksman = true;
       var id = rarity && rarity.ID;
-      if (id === 'RARE' || id === 'EPIC' || id === 'LEGENDARY') root.Objectives.add(id === 'RARE' ? 'rare' : id === 'EPIC' ? 'epic' : 'legend', 1);
+      if (id === 'RARE' || id === 'EPIC' || id === 'LEGENDARY' || id === 'RAINBOW') root.Objectives.add(id === 'RARE' ? 'rare' : id === 'EPIC' ? 'epic' : 'legend', 1);
     },
     applyPulseTune: function (definition, quality) {
       PulseGun.damageFlat += definition.DAMAGE * quality;
@@ -498,7 +629,7 @@
           break;
         }
         var r = o.rarity;
-        if (!r || !/^(COMMON|RARE|EPIC|LEGENDARY)$/.test(r.ID) || !isFinite(Number(r.MULTIPLIER)) || typeof CONFIG.COLORS[r.COLOR_KEY] !== 'string') {
+        if (!r || !/^(COMMON|RARE|EPIC|LEGENDARY|RAINBOW)$/.test(r.ID) || !isFinite(Number(r.MULTIPLIER)) || typeof CONFIG.COLORS[r.COLOR_KEY] !== 'string') {
           o.rarity = CONFIG.UPGRADES.RARITIES[0];
           o.description = this.buildDescription(o.definition, o.rarity);
         }
@@ -526,6 +657,16 @@
       for (var i = 0; i < this.pool.length; i++) this.pool[i].active = false;
     },
     drop: function (x, y, value) {
+      if (this.activeCount >= CONFIG.COIN.DROWN_CAP) {
+        var nearest = null, nearestSq = Infinity;
+        for (var m = 0; m < this.pool.length; m++) {
+          var existing = this.pool[m];
+          if (!existing.active || existing.flying) continue;
+          var mdx = existing.x - x, mdy = existing.y - y, md2 = mdx * mdx + mdy * mdy;
+          if (md2 < nearestSq) { nearestSq = md2; nearest = existing; }
+        }
+        if (nearest) { nearest.value += value; return; }
+      }
       for (var i = 0; i < this.pool.length; i++) {
         var coin = this.pool[i];
         if (!coin.active) {
@@ -551,21 +692,23 @@
         if (!coin.active) continue;
         var dx = Player.x - coin.x,
           dy = Player.y - coin.y;
-        var distance = Math.hypot(dx, dy);
-        if (!coin.flying && (magnet || distance <= CONFIG.COIN.PICKUP_RADIUS)) coin.flying = true;
-        if (coin.flying) this.moveCoin(coin, dx, dy, distance, dt);
+        var distanceSq = dx * dx + dy * dy;
+        if (!coin.flying && (magnet || distanceSq <= CONFIG.COIN.PICKUP_RADIUS * CONFIG.COIN.PICKUP_RADIUS)) coin.flying = true;
+        if (coin.flying) this.moveCoin(coin, dx, dy, distanceSq, dt);
       }
     },
-    moveCoin: function (coin, dx, dy, distance, dt) {
+    moveCoin: function (coin, dx, dy, distanceSq, dt) {
       var wasActive = coin.active,
         value = coin.value || 0;
-      if (distance <= CONFIG.COIN.COLLECT_DISTANCE) {
+      if (distanceSq <= CONFIG.COIN.COLLECT_DISTANCE * CONFIG.COIN.COLLECT_DISTANCE) {
         coin.active = false;
         this.activeCount -= 1;
         RunStats.pickedCoins += coin.value;
+        RunStats.gold += coin.value;
         return;
       }
-      if (distance > 0) {
+      if (distanceSq > 0) {
+        var distance = Math.sqrt(distanceSq);
         var magnet = root.PowerUps.magnetActive();
         var speed = magnet ? CONFIG.POWERUPS.MAGNET_PULL_SPEED : CONFIG.COIN.FLY_SPEED;
         var movement = Math.min(distance, speed * dt);
@@ -581,6 +724,7 @@
       for (var i = 0; i < this.pool.length; i++) {
         var coin = this.pool[i];
         if (!coin.active) continue;
+        if (!Camera.isVisible(coin.x, coin.y, CONFIG.COIN.RADIUS * 2)) continue;
         var x = coin.x - Camera.x,
           y = coin.y - Camera.y;
         ctx.save();
@@ -607,6 +751,8 @@
     inventory: [0, 0, 0, 0, 0, 0],
     freezeTimer: 0,
     magnetTimer: 0,
+    bombAim: { active: false, touchId: -1, x: 0, y: 0 },
+    thrownBombs: [],
     initPool: function () {
       this.pool.length = 0;
       for (var i = 0; i < CONFIG.POWERUPS.POOL_SIZE; i++) {
@@ -618,10 +764,13 @@
           typeIndex: 0
         });
       }
+      if (!this.thrownBombs.length) for (var b = 0; b < 5; b++) this.thrownBombs.push({ active: false, state: '', sx: 0, sy: 0, x: 0, y: 0, t: 0 });
     },
     reset: function () {
       this.freezeTimer = 0;
       this.magnetTimer = 0;
+      this.bombAim.active = false;
+      for (var b = 0; b < this.thrownBombs.length; b++) this.thrownBombs[b].active = false;
       for (var i = 0; i < this.pool.length; i++) this.pool[i].active = false;
       for (var i = 0; i < this.inventory.length; i++) this.inventory[i] = 0;
     },
@@ -632,6 +781,7 @@
     update: function (dt) {
       if (this.freezeTimer > 0) this.freezeTimer = Math.max(0, this.freezeTimer - dt);
       if (this.magnetTimer > 0) this.magnetTimer = Math.max(0, this.magnetTimer - dt);
+      this.updateThrownBombs(dt);
       var magnet = this.magnetActive();
       var pickupDistanceSquared = CONFIG.POWERUPS.PICKUP_DISTANCE * CONFIG.POWERUPS.PICKUP_DISTANCE;
       var pullSpeed = CONFIG.POWERUPS.MAGNET_PULL_SPEED;
@@ -699,20 +849,68 @@
       }
       return false;
     },
+    // #77 按道具类型返回持有上限（键名对齐 TYPE_*：激光/炸弹/血包/磁铁/冰冻）。
+    maxFor: function (typeIndex) {
+      var M = CONFIG.POWERUPS.MAX;
+      if (typeIndex === CONFIG.POWERUPS.TYPE_BOMB) return M.BOMB;
+      if (typeIndex === CONFIG.POWERUPS.TYPE_MAGNET) return M.MAGNET;
+      if (typeIndex === CONFIG.POWERUPS.TYPE_MEDKIT) return M.MEDKIT;
+      if (typeIndex === CONFIG.POWERUPS.TYPE_FREEZE) return M.FREEZE;
+      if (typeIndex === CONFIG.POWERUPS.TYPE_LASER_EMITTER) return M.LASER;
+      return CONFIG.POWERUPS.MAX_INVENTORY_EACH;
+    },
     collect: function (item) {
+      // #77 达上限后拾取无效：不增加数量、不计进度、不播拾取反馈，道具留在地上。
+      if (this.inventory[item.typeIndex] >= this.maxFor(item.typeIndex)) return;
+      this.inventory[item.typeIndex] += 1;
+      if (root.Armory) root.Armory.triggerPerk('magnet');
+      item.active = false;
       root.Objectives.add('items', 1);
       root.Achievements.add('items', 1);
-      var max = CONFIG.POWERUPS.MAX_INVENTORY_EACH;
-      if (CONFIG.POWERUPS.MAX_INVENTORY_OVERRIDE && CONFIG.POWERUPS.MAX_INVENTORY_OVERRIDE[item.typeIndex]) {
-        max = CONFIG.POWERUPS.MAX_INVENTORY_OVERRIDE[item.typeIndex];
-      }
-      if (this.inventory[item.typeIndex] >= max) return;
-      this.inventory[item.typeIndex] += 1;
-      item.active = false;
     },
     handleInput: function () {
       var selectedType = UI.consumePowerUpButton();
       if (selectedType >= 0) this.activate(selectedType);
+    },
+    beginBombAim: function (touchId) {
+      this.bombAim.active = true; this.bombAim.touchId = touchId;
+      this.bombAim.x = Player.x + Math.cos(Player.facingAngle || 0) * CONFIG.BOMB_THROW.RANGE;
+      this.bombAim.y = Player.y + Math.sin(Player.facingAngle || 0) * CONFIG.BOMB_THROW.RANGE;
+    },
+    moveBombAim: function (touchId, sx, sy) {
+      if (!this.bombAim.active || this.bombAim.touchId !== touchId) return;
+      var wx = Camera.screenToWorldX(sx), wy = Camera.screenToWorldY(sy), dx = wx - Player.x, dy = wy - Player.y, d = Math.hypot(dx, dy) || 1;
+      var len = Math.min(CONFIG.BOMB_THROW.RANGE, d);
+      this.bombAim.x = Player.x + dx / d * len; this.bombAim.y = Player.y + dy / d * len;
+    },
+    endBombAim: function (touchId, sx, sy, ms, move) {
+      if (!this.bombAim.active || this.bombAim.touchId !== touchId) return;
+      var slot = UI.ITEM_SLOTS.indexOf(CONFIG.POWERUPS.TYPE_BOMB), r = UI.getSlotRect(slot);
+      if (UI.isPointInRect({ x: sx, y: sy }, r.x, r.y, r.w, r.h) && !(ms < CONFIG.BOMB_THROW.QUICK_MS && move < CONFIG.BOMB_THROW.QUICK_MOVE)) { this.bombAim.active = false; return; }
+      if (ms < CONFIG.BOMB_THROW.QUICK_MS && move < CONFIG.BOMB_THROW.QUICK_MOVE) this.beginBombAim(touchId);
+      if (this.throwBomb(this.bombAim.x, this.bombAim.y)) this.inventory[CONFIG.POWERUPS.TYPE_BOMB] -= 1;
+      this.bombAim.active = false;
+    },
+    throwBomb: function (x, y) {
+      for (var i = 0; i < this.thrownBombs.length; i++) if (!this.thrownBombs[i].active) {
+        var b = this.thrownBombs[i]; b.active = true; b.state = 'flight'; b.sx = Player.x; b.sy = Player.y; b.x = x; b.y = y; b.t = 0; return true;
+      }
+      return false;
+    },
+    updateThrownBombs: function (dt) {
+      for (var i = 0; i < this.thrownBombs.length; i++) {
+        var b = this.thrownBombs[i]; if (!b.active) continue; b.t += dt;
+        if (b.state === 'flight' && b.t >= CONFIG.BOMB_THROW.FLIGHT) { b.state = 'fuse'; b.t = 0; }
+        else if (b.state === 'fuse' && b.t >= CONFIG.BOMB_THROW.FUSE) { this.explodeThrownBomb(b); b.active = false; }
+      }
+    },
+    explodeThrownBomb: function (b) {
+      var r2 = CONFIG.BOMB_THROW.RADIUS * CONFIG.BOMB_THROW.RADIUS;
+      for (var i = 0; i < Enemy.pool.length; i++) { var e = Enemy.pool[i], dx, dy; if (!e.active) continue; dx = e.x - b.x; dy = e.y - b.y; if (dx * dx + dy * dy > r2) continue;
+        if (e.typeIndex === CONFIG.ENEMY.TYPE_BOSS || e.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED) { e.hp -= e.maxHp * CONFIG.BOMB_THROW.BOSS_RATIO; e.stunTimer = Math.max(e.stunTimer || 0, CONFIG.BOMB_THROW.BOSS_STUN); if (e.hp <= 0) Enemy.kill(e); }
+        else Combat.hitEnemyFixed(e, e.maxHp * CONFIG.BOMB_THROW.HP_RATIO, e.x, e.y);
+      }
+      if (FX) FX.burst(b.x, b.y, '#ff8c00'); if (Camera && root.Settings.shake) Camera.startShake(8, .3);
     },
     activate: function (typeIndex) {
       if (this.inventory[typeIndex] <= 0) return false;
@@ -725,8 +923,7 @@
       }
       var used = false;
       if (typeIndex === CONFIG.POWERUPS.TYPE_BOMB) {
-        this.useBomb();
-        used = true;
+        used = this.useBomb();
       } else if (typeIndex === CONFIG.POWERUPS.TYPE_MAGNET) {
         // #57 主动磁铁：激活 N 秒全图高速吸附
         this.magnetTimer = CONFIG.POWERUPS.MAGNET_DURATION;
@@ -750,6 +947,8 @@
     },
     useBomb: function () {
       var r2 = CONFIG.BALANCE.BOMB_RADIUS * CONFIG.BALANCE.BOMB_RADIUS;
+      // 即使范围内暂时没有敌人也明确播放中心爆炸，便于确认道具已触发。
+      if (FX && FX.burst) FX.burst(Player.x, Player.y, '#ffb13b');
       for (var i = 0; i < Enemy.pool.length; i++) {
         var e = Enemy.pool[i];
         if (!e.active || (e.x - Player.x) * (e.x - Player.x) + (e.y - Player.y) * (e.y - Player.y) > r2) continue;
@@ -797,6 +996,7 @@
       return this.freezeTimer > 0;
     },
     drawWorldItems: function (ctx) {
+      this.drawBombs(ctx);
       for (var i = 0; i < this.pool.length; i++) {
         var item = this.pool[i];
         if (!item.active) continue;
@@ -816,6 +1016,14 @@
         var drawSize = CONFIG.UI.WORLD_ITEM_RADIUS * 1.55;
         if (icon) ctx.drawImage(icon, x - drawSize / 2, y - drawSize / 2, drawSize, drawSize);else UI.drawPowerUpIcon(ctx, item.typeIndex, x, y, CONFIG.UI.POWERUP_ICON_SIZE);
         ctx.restore();
+      }
+    },
+    drawBombs: function (ctx) {
+      var c = CONFIG.BOMB_THROW;
+      if (this.bombAim.active) { var px = Player.x - Camera.x, py = Player.y - Camera.y, ax = this.bombAim.x - Camera.x, ay = this.bombAim.y - Camera.y; ctx.save(); ctx.fillStyle = 'rgba(255,140,0,.08)'; ctx.strokeStyle = '#ff8c00'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(px, py, c.RANGE, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(ax, ay); ctx.stroke(); ctx.beginPath(); ctx.arc(ax, ay, 14, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
+      for (var i = 0; i < this.thrownBombs.length; i++) { var b = this.thrownBombs[i]; if (!b.active) continue; var x = b.x - Camera.x, y = b.y - Camera.y;
+        if (b.state === 'flight') { var p = Math.min(1, b.t / c.FLIGHT), arc = Math.sin(p * Math.PI) * 35; x = (b.sx + (b.x - b.sx) * p) - Camera.x; y = (b.sy + (b.y - b.sy) * p) - Camera.y - arc; ctx.fillStyle = '#ff8c00'; ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.fill(); }
+        else { var pulse = 1 + .08 * (.5 + .5 * Math.sin(b.t * 7)); ctx.save(); ctx.strokeStyle = '#e74c3c'; ctx.fillStyle = 'rgba(231,76,60,.12)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x, y, c.RADIUS * pulse, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#fff'; ctx.font = 'bold 34px Arial'; ctx.textAlign = 'center'; ctx.fillText(String(Math.max(1, Math.ceil(c.FUSE - b.t))), x, y - c.RADIUS - 12); ctx.restore(); }
       }
     }
   };

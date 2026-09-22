@@ -36,17 +36,21 @@
     shakeY: 0,
     shakeTimer: 0,
     shakeSize: 4,
+    zoom: CONFIG.CAMERA.ZOOM,
+    cx: CONFIG.VIEW.WIDTH / 2,
+    cy: CONFIG.VIEW.HEIGHT / 2,
     startShake: function (size, duration) {
-      this.shakeSize = size;
+      var quality = root.Settings && root.Settings.getQuality ? root.Settings.getQuality() : null;
+      this.shakeSize = size * (quality ? quality.SHAKE : 1);
       this.shakeTimer = Math.max(this.shakeTimer, duration);
     },
     update: function (dt) {
-      var targetX = Player.x - CONFIG.VIEW.WIDTH / 2;
-      var targetY = Player.y - CONFIG.VIEW.HEIGHT / 2;
-      var maxX = CONFIG.WORLD.WIDTH - CONFIG.VIEW.WIDTH;
-      var maxY = CONFIG.WORLD.HEIGHT - CONFIG.VIEW.HEIGHT;
-      this.x = Math.max(0, Math.min(maxX, targetX));
-      this.y = Math.max(0, Math.min(maxY, targetY));
+      this.zoom = Math.max(CONFIG.CAMERA.MIN, Math.min(CONFIG.CAMERA.MAX, CONFIG.CAMERA.ZOOM));
+      var hw = CONFIG.VIEW.WIDTH / (2 * this.zoom), hh = CONFIG.VIEW.HEIGHT / (2 * this.zoom);
+      this.cx = Math.max(hw, Math.min(CONFIG.WORLD.WIDTH - hw, Player.x));
+      this.cy = Math.max(hh, Math.min(CONFIG.WORLD.HEIGHT - hh, Player.y));
+      this.x = this.cx - CONFIG.VIEW.WIDTH / 2;
+      this.y = this.cy - CONFIG.VIEW.HEIGHT / 2;
       // 抖动衰减与每帧随机偏移（不影响跟随目标）
       if (dt === undefined) dt = 0;
       if (this.shakeTimer > 0) {
@@ -57,6 +61,14 @@
         this.shakeX = 0;
         this.shakeY = 0;
       }
+    },
+    worldToScreenX: function (wx) { return CONFIG.VIEW.WIDTH / 2 + (wx - this.cx) * this.zoom; },
+    worldToScreenY: function (wy) { return CONFIG.VIEW.HEIGHT / 2 + (wy - this.cy) * this.zoom; },
+    screenToWorldX: function (sx) { return this.cx + (sx - CONFIG.VIEW.WIDTH / 2) / this.zoom; },
+    screenToWorldY: function (sy) { return this.cy + (sy - CONFIG.VIEW.HEIGHT / 2) / this.zoom; },
+    isVisible: function (wx, wy, r) {
+      var hw = CONFIG.VIEW.WIDTH / (2 * this.zoom), hh = CONFIG.VIEW.HEIGHT / (2 * this.zoom), pad = r || 0;
+      return wx >= this.cx - hw - pad && wx <= this.cx + hw + pad && wy >= this.cy - hh - pad && wy <= this.cy + hh + pad;
     }
   };
   var DamageText = {
@@ -87,6 +99,11 @@
           item.life = CONFIG.DAMAGE_TEXT.LIFE;
           item.isCrit = isCrit;
           item.text = (isCrit ? CONFIG.TEXT.CRIT_PREFIX : '') + Math.round(damage);
+          // v014 #96 命中反馈分级：暴击重（中粒子+重音+轻震），普通命中只小点不震屏。
+          if (root.FX) {
+            if (isCrit) root.FX.feedbackCrit(x, y);
+            else root.FX.feedbackHit(x, y);
+          }
           return;
         }
       }
@@ -121,6 +138,8 @@
     hitEnemy: function (enemy, baseDamage, hitX, hitY) {
       if (!enemy.active) return;
       var isCrit = Math.random() < Player.critChance;
+      if (isCrit && root.Armory) root.Armory.triggerPerk('critical');
+      if (root.Armory && (enemy.typeIndex === CONFIG.ENEMY.TYPE_ELITE || enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS || enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED)) root.Armory.triggerPerk('damage');
       var permanentMultiplier = 1 + Meta.getEffectTotal('WEAPON_DAMAGE');
       var damage = baseDamage * permanentMultiplier * (1 + Player.globalDamageBonus) * (isCrit ? CONFIG.PLAYER.CRIT_MULTIPLIER + Player.critDamageBonus : 1);
       DamageText.spawn(hitX, hitY, damage, isCrit);
@@ -136,6 +155,11 @@
     state: CONFIG.GAME.STATE_MENU,
     exitType: 'death',
     // 'death' | 'quit' | 'victory' | 'extract'
+    // v014 #96 BOSS 击杀慢动作：real dt 计时，gameDt 乘 slowMoScale。
+    slowMoTimer: 0,
+    slowMoScale: 1,
+    // v014 #98 结算三项之"本局进步"快照（settleRun 前抓取）。
+    runProgress: null,
     survivedSeconds: 0,
     lastTimestamp: 0,
     boundLoop: null,
@@ -185,6 +209,7 @@
         self._hidden = false;
         self.lastTimestamp = 0;
         Meta.handleReturnOnline();
+        Settings.applyFrameRate();
         if (AudioFX.ctx && AudioFX.ctx.resume) {
           AudioFX.ctx.resume().catch(function () {});
         }
@@ -193,6 +218,12 @@
     enterMenu: function () {
       this.state = CONFIG.GAME.STATE_MENU;
       Input.reset();
+      Input.setMovementEnabled(false);
+    },
+    // v012 #75 选图界面入口（主菜单"开始战斗" → 选图 → 选武器 → 开战）。
+    enterMapSelect: function () {
+      this.state = CONFIG.GAME.STATE_MAP_SELECT;
+      Input.clearTap();
       Input.setMovementEnabled(false);
     },
     enterBase: function () {
@@ -211,6 +242,9 @@
       this.state = CONFIG.GAME.STATE_PLAYING;
       this.exitType = 'death';
       this.survivedSeconds = 0;
+      this.slowMoTimer = 0;
+      this.slowMoScale = 1;
+      this.runProgress = null;
       Player.reset();
       Enemy.reset();
       Weapons.reset();
@@ -225,6 +259,7 @@
       LaserEmitter.reset();
       MortarStrike.reset();
       root.Extraction.reset();
+      if (root.SupplyPoint) root.SupplyPoint.reset();
       Input.reset();
       Input.setMovementEnabled(true);
       Camera.update();
@@ -271,6 +306,10 @@
         return;
       }
       if (root.DevConsole.handleInput() || root.DevConsole.open) return;
+      if (this.state === CONFIG.GAME.STATE_MAP_SELECT) {
+        root.MapSelect.update();
+        return;
+      }
       if (this.state === 'WEAPON_SELECT') {
         root.WeaponSelect.update();
         return;
@@ -286,9 +325,14 @@
         root.FateCards.update(dt);
         return;
       }
-      var gameDt = dt * root.DevConsole.timeScale;
+      // v014 #96 BOSS 击杀慢动作：用 real dt 计时恢复，避免游戏减速时无法回正。
+      if (this.slowMoTimer > 0) {
+        this.slowMoTimer = Math.max(0, this.slowMoTimer - dt);
+        if (this.slowMoTimer <= 0) this.slowMoScale = 1;
+      }
+      var gameDt = dt * root.DevConsole.timeScale * this.slowMoScale;
       FX.update(gameDt);
-      if (this.state === 'PAUSED' || this.state === 'SETTINGS' || this.state === 'HELP') {
+      if (this.state === 'PAUSED' || this.state === 'SETTINGS' || this.state === 'HELP' || this.state === 'BUILD') {
         Panels.update();
         return;
       }
@@ -296,14 +340,10 @@
         Panels.pause();
         return;
       }
-      if (this.state === CONFIG.GAME.STATE_PLAYING && root.Objectives.handle()) return;
-      if (this.state === CONFIG.GAME.STATE_MENU && !Meta.offlinePopupActive && Input.pendingTap.active && UI.isPointInRect(Input.pendingTap, CONFIG.UI.MENU_BUTTON_X, CONFIG.POLISH.MENU_TOOL_Y, CONFIG.UI.MENU_BUTTON_WIDTH, CONFIG.UI.MENU_BUTTON_HEIGHT)) {
-        Panels.open('SETTINGS');
-        Input.clearTap();
-        return;
-      }
+      // #85 商店面板打开期间为模态：小目标折叠不消费点击，点击全归商店面板。
+      if (this.state === CONFIG.GAME.STATE_PLAYING && !(root.SupplyPoint && root.SupplyPoint.open) && root.Objectives.handle()) return;
       Meta.update(gameDt);
-      if (this.state === CONFIG.GAME.STATE_MENU) this.updateMenu();else if (this.state === CONFIG.GAME.STATE_BASE) this.updateBase(gameDt);else if (this.state === CONFIG.GAME.STATE_PLAYING) this.updatePlaying(gameDt);else if (this.state === CONFIG.GAME.STATE_LEVELUP) ExpLevelUp.handleInput();else if (this.state === CONFIG.GAME.STATE_GAMEOVER || this.state === CONFIG.GAME.STATE_VICTORY) this.updateSettlement(this.state === CONFIG.GAME.STATE_VICTORY);
+      if (this.state === CONFIG.GAME.STATE_MENU) this.updateMenu();else if (this.state === CONFIG.GAME.STATE_HISTORY) this.updateHistory();else if (this.state === CONFIG.GAME.STATE_BASE) this.updateBase(gameDt);else if (this.state === CONFIG.GAME.STATE_PLAYING) this.updatePlaying(gameDt);else if (this.state === CONFIG.GAME.STATE_LEVELUP) ExpLevelUp.handleInput();else if (this.state === CONFIG.GAME.STATE_GAMEOVER || this.state === CONFIG.GAME.STATE_VICTORY) this.updateSettlement(this.state === CONFIG.GAME.STATE_VICTORY);
       root.NextRun.update(gameDt);
       if (Spawner.waveIndex > FX.wave) {
         FX.wave = Spawner.waveIndex;
@@ -325,11 +365,15 @@
         }, this.handleAdFail.bind(this));
         return;
       }
+      // 右上设置齿轮先于按钮消费（未命中不消费触点，留给按钮）。
+      if (UI.consumeMenuSettings()) {
+        Panels.open('SETTINGS');
+        return;
+      }
       var a = UI.consumeMenuAction();
       if (a === 0) {
-        this.state = 'WEAPON_SELECT';
-        Input.reset();
-        Input.setMovementEnabled(false);
+        // v012 #75 先选图再选武器：主菜单"开始战斗"进入选图界面。
+        this.enterMapSelect();
       } else if (a === 1) this.enterBase();else if (a === 2) {
         this.state = 'ACHIEVEMENTS';
         Input.reset();
@@ -338,7 +382,14 @@
         root.Achievements.category = 'all';
       } else if (a === 3 && Meta.isSpeedupReady()) Ads.showRewarded(CONFIG.ADS.PLACEMENT_SPEEDUP, function () {
         Meta.claimSpeedup();
-      }, this.handleAdFail.bind(this));
+      }, this.handleAdFail.bind(this));else if (a === 4) {
+        this.state = CONFIG.GAME.STATE_HISTORY;
+        Input.reset();
+        Input.setMovementEnabled(false);
+      }
+    },
+    updateHistory: function () {
+      if (UI.consumeHistoryBack()) this.enterMenu();
     },
     updateBase: function (dt) {
       root.MenuController.updateBase.call(this, dt);
@@ -347,6 +398,14 @@
       // 撤离动画期间：游戏逻辑暂停，仅推进撤退动画
       if (root.Extraction.state === 'extracting') {
         root.Extraction.update(dt);
+        return;
+      }
+      // v014 #85 补给点商店打开 = 战斗暂停：敌人/刷怪/子弹/计时等所有 dt 逻辑全部冻结，
+      // 只响应商店面板输入（购买/关闭/点遮罩关闭）与金币滚动动画；
+      // 复用 STATE_PLAYING 内拦截，不新建状态机。关闭面板后本分支不再命中，游戏立即恢复。
+      if (root.SupplyPoint && root.SupplyPoint.active && root.SupplyPoint.open) {
+        root.SupplyPoint.handleInput();
+        root.SupplyPoint.update(dt);
         return;
       }
       var hpBefore = Player.hp,
@@ -358,6 +417,8 @@
       }
       // 撤退按钮输入
       UI.consumeExtractionAction();
+      // v012 #78 补给点购买面板：先于道具按钮消费 tap（面板按钮与道具栏不重叠，稳妥起见先消费）。
+      if (root.SupplyPoint) root.SupplyPoint.handleInput();
       PowerUps.handleInput();
       if (this.state !== CONFIG.GAME.STATE_PLAYING) return;
       Player.update(dt);
@@ -387,6 +448,7 @@
       if (this.state === CONFIG.GAME.STATE_PLAYING) {
         root.Field.update(dt);
         if (root.BattleEvents) root.BattleEvents.update(dt);
+        if (root.SupplyPoint) root.SupplyPoint.update(dt);
         root.FlameWeapon.update(dt);
         root.Crossbow.update(dt);
         var objectives = root.Objectives,
@@ -464,10 +526,31 @@
       Input.clearTap();
       this.commitSettlement(true);
     },
+    // v014 #96 触发短暂慢动作（BOSS 击杀用）。
+    startSlowMo: function (scale, duration) {
+      this.slowMoScale = scale;
+      this.slowMoTimer = Math.max(this.slowMoTimer, duration);
+    },
     commitSettlement: function (isVictory) {
       RunStats.calculateCoins(this.survivedSeconds, ExpLevelUp.level, isVictory);
-      var newCoins = Math.max(0, RunStats.finalCoins - RunStats.committedCoins);
-      Meta.settleRun(this.survivedSeconds, RunStats.kills, Spawner.waveIndex, newCoins, !RunStats.runCounted);
+      // v014 #98 结算进步点快照：必须在 settleRun 刷新 best*/合并成就进度之前抓取。
+      this.runProgress = {
+        wave: Spawner.waveIndex,
+        newBestWave: Spawner.waveIndex > (Meta.data.bestWave || 0),
+        firstBoss: RunStats.killBoss > 0 && (Meta.data.achievements.progress.boss || 0) === RunStats.killBoss
+      };
+      // v012 #72 双货币：幸存者硬币只在成功撤离(extract)时按公式全额入账。
+      // v014 #98 失败保护：非撤离退出也保留小额基础收益 floor(wave*2 + kills*0.05)；重复结算(翻倍/复活)不再重复发。
+      var survivorCoins;
+      if (this.exitType === 'extract') {
+        survivorCoins = Math.max(0, RunStats.finalCoins - RunStats.committedCoins);
+      } else if (RunStats.runCounted) {
+        survivorCoins = 0;
+      } else {
+        var FR = CONFIG.FAIL_REWARD;
+        survivorCoins = Math.floor(Spawner.waveIndex * FR.WAVE + RunStats.kills * FR.KILL);
+      }
+      Meta.settleRun(this.survivedSeconds, RunStats.kills, Spawner.waveIndex, survivorCoins, !RunStats.runCounted);
       RunStats.runCounted = true;
       RunStats.committedCoins = RunStats.finalCoins;
     },
@@ -516,13 +599,18 @@
       Platform.beginFrame();
       ctx.save();
       try {
+        if (this.state === CONFIG.GAME.STATE_MAP_SELECT) {
+          root.MapSelect.draw(ctx);
+          return;
+        }
         if (this.state === 'WEAPON_SELECT') {
           root.WeaponSelect.draw(ctx);
           return;
         }
-        if (this.state === 'PAUSED' || this.state === 'SETTINGS' || this.state === 'HELP') {
+        if (this.state === 'PAUSED' || this.state === 'SETTINGS' || this.state === 'HELP' || this.state === 'BUILD') {
+          // 暂停及其子页是战斗画面上的覆层：先画完整战场，再由 Panels 压暗。
+          if ((this.state === 'PAUSED' || Panels.parent === 'PAUSED') && root.BattleView) root.BattleView.draw();
           Panels.draw(ctx);
-          if (this.state === 'PAUSED' || Panels.parent === 'PAUSED') UI.drawBossBar(ctx, CONFIG.FIELD.BOSS_PANEL_Y);
           return;
         }
         if (this.state === 'RUNTIME_ERROR' || this.state === 'FATE' || this.state === 'ACHIEVEMENTS') {
@@ -530,16 +618,17 @@
           Ads.draw(ctx);
           return;
         }
-        if (this.state === CONFIG.GAME.STATE_MENU || this.state === CONFIG.GAME.STATE_BASE) {
-          if (this.state === CONFIG.GAME.STATE_MENU) {
-            UI.drawMenu(ctx);
-            if (!Meta.offlinePopupActive && !Ads.active) UI.drawActionButton(ctx, CONFIG.UI.MENU_BUTTON_X, CONFIG.POLISH.MENU_TOOL_Y, CONFIG.UI.MENU_BUTTON_WIDTH, CONFIG.UI.MENU_BUTTON_HEIGHT, CONFIG.TEXT.SETTINGS, true, 30);
-          } else UI.drawBase(ctx);
+        if (this.state === CONFIG.GAME.STATE_MENU || this.state === CONFIG.GAME.STATE_BASE || this.state === CONFIG.GAME.STATE_HISTORY) {
+          if (this.state === CONFIG.GAME.STATE_MENU) UI.drawMenu(ctx);
+          else if (this.state === CONFIG.GAME.STATE_HISTORY) UI.drawHistory(ctx);
+          else UI.drawBase(ctx);
           Ads.draw(ctx);
           if (!Ads.active) Metrics.draw(ctx);
           return;
         }
         root.BattleView.draw();
+        // #92 核心词条首次横幅浮在战斗最上层（不暂停、不打断）。
+        UI.drawPerkBanner(ctx);
       } finally {
         ctx.restore();
         Platform.endFrame();

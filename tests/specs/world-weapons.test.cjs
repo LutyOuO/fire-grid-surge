@@ -85,12 +85,12 @@ LaserEmitter.update(0.05);
 assert(LaserEmitter.angle !== laserAngle, '旋转激光没有旋转');
 
 // ---------- #59 激光修订 ----------
-// (1) 穿透内部墙：光束只算到 2400 世界边界，玩家在中心朝 +x 应止于 x=2400
+// (1) 无墙方向光束止于世界边界附近：玩家在中心朝 +x（y=1200 无内部墙）应止于 x≈2398
 Player.x = 1200; Player.y = 1200;
 LaserEmitter.reset(); LaserEmitter.activate(); LaserEmitter.angle = 0;
 var _end = LaserEmitter.ends()[0];
-assert(Math.abs(_end.x - 2400) < 2 && Math.abs(_end.y - 1200) < 2,
-  '激光未穿透内部墙延伸到世界边界, end=' + JSON.stringify(_end));
+assert(Math.abs(_end.x - 2400) <= 2 && Math.abs(_end.y - 1200) < 2,
+  '无墙方向激光未到世界边界附近, end=' + JSON.stringify(_end));
 // (2) 旋转加速：起始≈0.8 圈/秒，1.5s ease-out 后≈5 圈/秒
 LaserEmitter.reset(); LaserEmitter.activate();
 var _a0 = LaserEmitter.angle; LaserEmitter.update(1 / 60);

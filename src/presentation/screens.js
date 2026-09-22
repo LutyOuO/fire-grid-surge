@@ -101,35 +101,42 @@
     }
     function layoutMenu() {
       var c = CONFIG.SCREEN_LAYOUT.MENU,
-        h = CONFIG.VIEW.HEIGHT,
-        b = CONFIG.UI.BOTTOM_INSET || 0;
+        h = CONFIG.VIEW.HEIGHT;
+      // 小屏等比压缩；大屏(>=1200)使用 config.js MENU 内的 preview.png 基准值。
       if (h < 1200) {
-        c.LOGO_H = 270;
-        c.HISTORY_Y = 350;
-        c.BUFF_Y = 378;
-        c.BUTTON_Y = 400;
-        c.BUTTON_W = 540;
-        c.BUTTON_H = 78;
-        c.SPEEDUP_H = 96;
-        c.GAP = 12;
-        CONFIG.POLISH.MENU_TOOL_Y = h - b - 220;
-        CONFIG.UI.MENU_BUTTON_X = 105;
-        CONFIG.UI.MENU_BUTTON_WIDTH = 540;
-        CONFIG.UI.MENU_BUTTON_HEIGHT = 78;
-      } else {
-        c.LOGO_H = 340;
-        c.HISTORY_Y = 430;
-        c.BUFF_Y = 462;
-        c.BUTTON_Y = 490;
-        c.BUTTON_W = 560;
-        c.BUTTON_H = 96;
-        c.SPEEDUP_H = 112;
-        c.GAP = 20;
-        CONFIG.POLISH.MENU_TOOL_Y = 1100;
-        CONFIG.UI.MENU_BUTTON_X = 145;
-        CONFIG.UI.MENU_BUTTON_WIDTH = 460;
-        CONFIG.UI.MENU_BUTTON_HEIGHT = 92;
+        c.LOGO_Y = 170;
+        c.LOGO_H = 210;
+        c.HISTORY_Y = 480;
+        c.BUFF_Y = 510;
+        c.PLAY_Y = 560;
+        c.PLAY_H = 110;
+        c.BASE_Y = 680;
+        c.BASE_H = 84;
+        c.SIDE_Y = 790;
+        c.SIDE_H = 78;
+        c.HIST_BTN_Y = 900;
+        c.HIST_BTN_H = 48;
       }
+    }
+
+    // 将带透明留白的 Logo 按内容比例放进目标区域，绝不非等比拉伸。
+    function drawContainedLogo(ctx, image, x, y, width, height) {
+      if (!image) return false;
+      var iw = image.width || image.naturalWidth || 1254;
+      var ih = image.height || image.naturalHeight || 1254;
+      // 当前 Logo 的有效像素区域约为 x=2.5%..97.8%、y=11.3%..82.7%。
+      // 裁去透明留白后再 contain，既保持原图比例，也不会显得过小。
+      var sx = Math.round(iw * 0.025);
+      var sy = Math.round(ih * 0.113);
+      var sw = Math.round(iw * 0.953);
+      var sh = Math.round(ih * 0.714);
+      var scale = Math.min(width / sw, height / sh);
+      var dw = sw * scale;
+      var dh = sh * scale;
+      var dx = x + (width - dw) / 2;
+      var dy = y + (height - dh) / 2;
+      ctx.drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh);
+      return true;
     }
 
     // ---------- 主菜单本地 Logo ----------
@@ -168,12 +175,9 @@
       draw: function (ctx, c, top) {
         this.ensure();
         if (!this.ready || !this.image) return false;
-        var iw = this.image.width || 1240,
-          ih = this.image.height || 1240,
-          sourceH = Math.max(1, Math.floor(ih * .86));
         ctx.save();
         ctx.globalAlpha = 1;
-        ctx.drawImage(this.image, 0, 0, iw, sourceH, c.LOGO_X, c.LOGO_Y + top, c.LOGO_W, c.LOGO_H);
+        drawContainedLogo(ctx, this.image, c.LOGO_X, c.LOGO_Y + top, c.LOGO_W, c.LOGO_H);
         ctx.restore();
         return true;
       }
@@ -186,63 +190,181 @@
         top = CONFIG.UI.TOP_INSET || 0;
       ctx.fillStyle = CONFIG.COLORS.MENU_BACKGROUND;
       ctx.fillRect(0, 0, CONFIG.VIEW.WIDTH, CONFIG.VIEW.HEIGHT);
+      // v014：main-menu 背景切图全屏铺满；未就绪时保留底色兜底。
+      var menuBg = UI.icon('menu_background');
+      if (menuBg) ctx.drawImage(menuBg, 0, 0, CONFIG.VIEW.WIDTH, CONFIG.VIEW.HEIGHT);
       UI.drawMenuGlow(ctx);
-      // 货币胶囊：金币和钻石只占右上同一行。
+      // 左上货币胶囊：幸存者硬币 + 分隔 + 钻石。
       box(ctx, c.CURRENCY_X, c.CURRENCY_Y + top, c.CURRENCY_W, c.CURRENCY_H, 25, 'rgba(7,17,20,.88)', '#456258');
-      drawCoin(ctx, c.CURRENCY_X + 28, c.CURRENCY_Y + top + 25, 10);
-      label(ctx, String(Meta.data.coins), c.CURRENCY_X + 47, c.CURRENCY_Y + top + 25, 18, '#ffe27a', 'left', true);
+      var survIcon = UI.icon('coin_survivor') || UI.icon('menu_coin_survivor');
+      if (survIcon) ctx.drawImage(survIcon, c.CURRENCY_X + 18, c.CURRENCY_Y + top + 15, 22, 22);
+      else drawCoin(ctx, c.CURRENCY_X + 28, c.CURRENCY_Y + top + 25, 10);
+      label(ctx, String(Meta.data.survivorCoins), c.CURRENCY_X + 47, c.CURRENCY_Y + top + 25, 18, '#9fd6ff', 'left', true);
       label(ctx, '|', c.CURRENCY_X + 150, c.CURRENCY_Y + top + 25, 19, '#667b72', 'center');
       drawDiamond(ctx, c.CURRENCY_X + 177, c.CURRENCY_Y + top + 25, 10);
       label(ctx, String(Meta.data.diamonds || 0), c.CURRENCY_X + 196, c.CURRENCY_Y + top + 25, 18, '#83d7ff', 'left', true);
-      // Logo 完成加载前显示文字标题，避免弱网或首帧出现空白。
-      if (!MenuLogo.draw(ctx, c, top)) UI.drawCenteredText(ctx, CONFIG.TEXT.GAME_TITLE, 220 + top, 66, true, CONFIG.COLORS.TEXT);
+      // 右上设置齿轮（切图优先，矢量兜底）。
+      UI.drawMenuGear(ctx, c, top);
+      // Logo 只走统一资源预加载，避免首帧为同一路径重复创建图片对象。
+      var logoImg = UI.icon('menu_logo');
+      if (logoImg) drawContainedLogo(ctx, logoImg, c.LOGO_X, c.LOGO_Y + top, c.LOGO_W, c.LOGO_H);
+      else UI.drawCenteredText(ctx, CONFIG.TEXT.GAME_TITLE, c.LOGO_Y + c.LOGO_H / 2 + top, 66, true, CONFIG.COLORS.TEXT);
       UI.drawCenteredText(ctx, CONFIG.TEXT.HISTORY(Meta.data.bestWave, UI.formatTime(Meta.data.bestTime), Meta.data.bestKills), c.HISTORY_Y + top, 21, false, CONFIG.COLORS.HINT_TEXT);
       if (Meta.data.nextRunBuff) UI.drawCenteredText(ctx, '下一局增益：' + Meta.data.nextRunBuff.name, c.BUFF_Y + top, 20, true, Meta.data.nextRunBuff.rarity === 'LEGENDARY' ? '#ffd54a' : Meta.data.nextRunBuff.rarity === 'EPIC' ? '#E67E22' : Meta.data.nextRunBuff.rarity === 'RARE' ? '#3498DB' : '#95A5A6');
+      // 5 个按钮：0 开始战斗 / 1 幸存者基地 / 2 成就 / 3 加速补给 / 4 历史战绩。
       var ready = Meta.isSpeedupReady(),
-        rewardValue = Number(Meta.getSpeedupReward()),
-        reward = isFinite(rewardValue) ? CONFIG.TEXT.SPEEDUP_REWARD(CONFIG.META.SPEEDUP_MINUTES, rewardValue) : '观看广告领取120分钟产出',
         cool = CONFIG.TEXT.SPEEDUP_COOLDOWN(UI.formatDuration(Meta.getSpeedupRemainingMs()));
       drawMenuButton(ctx, 0, CONFIG.TEXT.START_GAME, '');
-      drawMenuButton(ctx, 1, CONFIG.TEXT.OPEN_BASE, '');
-      drawMenuButton(ctx, 2, '成就', Meta.data.achievements.completed.length + '/29', true);
-      drawMenuButton(ctx, 3, CONFIG.TEXT.SPEEDUP, ready ? reward : cool, ready);
-      UI.drawCenteredText(ctx, CONFIG.TEXT.SPEEDUP_TODO, CONFIG.VIEW.HEIGHT - (CONFIG.UI.BOTTOM_INSET || 0) - 75, 18, false, CONFIG.COLORS.HINT_TEXT);
+      drawMenuButton(ctx, 1, CONFIG.TEXT.OPEN_BASE, '角色强化·武器成长·炮台升级');
+      drawMenuButton(ctx, 2, '成就', '');
+      drawMenuButton(ctx, 3, CONFIG.TEXT.SPEEDUP, ready ? '广告·120分钟产出' : cool, ready);
+      drawMenuButton(ctx, 4, '历史战绩', '');
       if (Meta.offlinePopupActive) UI.drawOfflinePopup(ctx);
       UI.drawToast(ctx);
       if (root.DevConsole) root.DevConsole.draw(ctx);
     };
-    function menuButtonY(i) {
-      var c = CONFIG.SCREEN_LAYOUT.MENU;
-      return c.BUTTON_Y + (CONFIG.UI.TOP_INSET || 0) + i * (c.BUTTON_H + c.GAP);
+    // 按钮矩形：0/1 居中大按钮；2 成就(左) / 3 加速补给(右) 并排等宽同 Y；4 底部小按钮。
+    function menuButtonRect(i) {
+      var c = CONFIG.SCREEN_LAYOUT.MENU,
+        top = CONFIG.UI.TOP_INSET || 0,
+        sideX = (750 - (c.SIDE_W * 2 + c.SIDE_GAP)) / 2,
+        histX = (750 - c.HIST_BTN_W) / 2;
+      if (i === 0) return { x: c.BIG_X, y: c.PLAY_Y + top, w: c.BIG_W, h: c.PLAY_H, kind: 'play' };
+      if (i === 1) return { x: c.BIG_X, y: c.BASE_Y + top, w: c.BIG_W, h: c.BASE_H, kind: 'base' };
+      if (i === 2) return { x: sideX, y: c.SIDE_Y + top, w: c.SIDE_W, h: c.SIDE_H, kind: 'achievement' };
+      if (i === 3) return { x: sideX + c.SIDE_W + c.SIDE_GAP, y: c.SIDE_Y + top, w: c.SIDE_W, h: c.SIDE_H, kind: 'supply' };
+      return { x: histX, y: c.HIST_BTN_Y + top, w: c.HIST_BTN_W, h: c.HIST_BTN_H, kind: 'history' };
     }
     function drawMenuButton(ctx, i, title, sub, enabled) {
-      var c = CONFIG.SCREEN_LAYOUT.MENU,
-        x = (750 - c.BUTTON_W) / 2,
-        y = menuButtonY(i),
-        h = i === 3 ? c.SPEEDUP_H : c.BUTTON_H;
-      if (i === 3) {
-        UI.drawActionButton(ctx, x, y, c.BUTTON_W, h, '', enabled !== false, 1);
-        label(ctx, title, 375, y + 39, 20, enabled === false ? '#82958b' : '#243027', 'center', true);
-        var safeSub = typeof sub === 'string' && sub ? sub : '观看广告领取120分钟产出';
-        label(ctx, safeSub, 375, y + 76, safeSub.length > 25 ? 12 : 13, enabled === false ? '#82958b' : 'rgba(36,48,39,.85)', 'center', false);
-        return;
+      var rect = menuButtonRect(i),
+        size = i === 4 ? 20 : i === 1 ? 26 : i === 3 ? 24 : 28;
+      // 主菜单也恢复为最初的 Canvas 暖色按钮，不再使用横向按钮切图。
+      UI.drawActionButton(ctx, rect.x, rect.y, rect.w, rect.h, sub ? '' : title, enabled !== false, size);
+      // 左侧图标：切图优先，矢量兜底。
+      if (i === 1) drawMenuIcon(ctx, 'icon_menu_base', rect, 46, drawHouseIcon);
+      else if (i === 2) drawMenuIcon(ctx, 'icon_menu_achievement', rect, 36, drawTrophyIcon);
+      else if (i === 3) drawMenuIcon(ctx, 'icon_menu_supply', rect, 36, drawBoxIcon);
+      else if (i === 4) drawMenuIcon(ctx, 'icon_menu_history', rect, 28, drawTrophyIcon);
+      // 副标题。
+      if (sub) {
+        var subCol = enabled === false ? '#82958b' : 'rgba(36,48,39,.82)';
+        label(ctx, title, rect.x + rect.w / 2, rect.y + rect.h * 0.38, size, enabled === false ? CONFIG.COLORS.BUTTON_DISABLED_TEXT : CONFIG.COLORS.BUTTON_TEXT, 'center', true);
+        label(ctx, sub, rect.x + rect.w / 2, rect.y + rect.h * 0.74, 14, subCol, 'center', false);
       }
-      UI.drawActionButton(ctx, x, y, c.BUTTON_W, h, title, enabled !== false, 30);
-      if (i === 2) trophy(ctx, x + 45, y + h / 2, 18, '#3c2c12');
-      if (sub) label(ctx, sub, x + c.BUTTON_W - 28, y + h / 2, 16, enabled === false ? '#82958b' : '#243027', 'right', true);
     }
+    function drawMenuIcon(ctx, key, rect, size, fallback) {
+      var img = UI.icon(key);
+      var ix = rect.x + (rect.w > 400 ? 26 : 20),
+        iy = rect.y + rect.h / 2 - size / 2;
+      if (img) ctx.drawImage(img, ix, iy, size, size);
+      else fallback(ctx, ix + size / 2, rect.y + rect.h / 2, size * 0.46);
+    }
+    function drawHouseIcon(ctx, cx, cy, s) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.fillStyle = '#9fd6ff';
+      ctx.beginPath();
+      ctx.moveTo(-s, -s * 0.05);
+      ctx.lineTo(0, -s);
+      ctx.lineTo(s, -s * 0.05);
+      ctx.lineTo(s, s);
+      ctx.lineTo(-s, s);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#0d2a3a';
+      ctx.fillRect(-s * 0.28, s * 0.2, s * 0.56, s * 0.8);
+      ctx.restore();
+    }
+    function drawTrophyIcon(ctx, cx, cy, s) {
+      trophy(ctx, cx, cy, s, '#ffd166');
+    }
+    function drawBoxIcon(ctx, cx, cy, s) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.fillStyle = '#e8b34a';
+      ctx.strokeStyle = '#8a5a10';
+      ctx.lineWidth = 2;
+      ctx.fillRect(-s, -s * 0.8, s * 2, s * 1.6);
+      ctx.strokeRect(-s, -s * 0.8, s * 2, s * 1.6);
+      ctx.fillStyle = '#8a5a10';
+      ctx.fillRect(-s, -s * 0.1, s * 2, s * 0.2);
+      ctx.restore();
+    }
+    // 右上设置齿轮：切图优先，矢量齿轮兜底。
+    UI.drawMenuGear = function (ctx, c, top) {
+      var gx = c.GEAR_X,
+        gy = c.GEAR_Y + top,
+        gs = c.GEAR_SIZE;
+      var gear = UI.icon('icon_menu_settings');
+      if (gear) {
+        ctx.drawImage(gear, gx, gy, gs, gs);
+      } else {
+        ctx.save();
+        ctx.translate(gx + gs / 2, gy + gs / 2);
+        ctx.fillStyle = '#9fb8c2';
+        for (var k = 0; k < 8; k++) {
+          ctx.rotate(Math.PI / 4);
+          ctx.fillRect(-gs * 0.08, -gs * 0.48, gs * 0.16, gs * 0.2);
+        }
+        ctx.strokeStyle = '#5e7a86';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(0, 0, gs * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#0d1a1e';
+        ctx.beginPath();
+        ctx.arc(0, 0, gs * 0.12, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    };
     UI.consumeMenuAction = function () {
       layoutMenu();
       if (!Input.consumeTap(this.tapPoint)) return -1;
-      var c = CONFIG.SCREEN_LAYOUT.MENU,
-        x = (750 - c.BUTTON_W) / 2;
-      if (this.tapPoint.x < x || this.tapPoint.x > x + c.BUTTON_W) return -1;
-      for (var i = 0; i < 4; i++) {
-        var y = menuButtonY(i),
-          h = i === 3 ? c.SPEEDUP_H : c.BUTTON_H;
-        if (this.tapPoint.y >= y && this.tapPoint.y <= y + h) return i;
+      for (var i = 0; i < 5; i++) {
+        var r = menuButtonRect(i);
+        if (this.tapPoint.x >= r.x && this.tapPoint.x <= r.x + r.w && this.tapPoint.y >= r.y && this.tapPoint.y <= r.y + r.h) return i;
       }
       return -1;
+    };
+    // 右上设置按钮：peek 触点，命中才消费（不命中保留给按钮）。
+    UI.consumeMenuSettings = function () {
+      layoutMenu();
+      if (!Input.pendingTap.active) return false;
+      var c = CONFIG.SCREEN_LAYOUT.MENU,
+        top = CONFIG.UI.TOP_INSET || 0,
+        gx = c.GEAR_X,
+        gy = c.GEAR_Y + top,
+        gs = c.GEAR_SIZE;
+      var hit = UI.isPointInRect(Input.pendingTap, gx - 10, gy - 10, gs + 20, gs + 20);
+      if (hit) Input.clearTap();
+      return hit;
+    };
+    // 历史战绩占位页：最高波次 / 最长生存 / 总击杀 + 返回。
+    UI.drawHistory = function (ctx) {
+      layoutMenu();
+      var top = CONFIG.UI.TOP_INSET || 0;
+      ctx.fillStyle = '#08110e';
+      ctx.fillRect(0, 0, 750, CONFIG.VIEW.HEIGHT);
+      UI.drawMenuGlow(ctx);
+      UI.drawActionButton(ctx, 24, 34 + top, 132, 62, CONFIG.TEXT.BACK, true, 22);
+      var histIcon = UI.icon('icon_menu_history') || UI.icon('nav_history');
+      if (histIcon) ctx.drawImage(histIcon, 340, 150 + top, 70, 70);
+      var historyBadge = UI.icon('nav_history');
+      if (historyBadge && historyBadge !== histIcon) ctx.drawImage(historyBadge, 174, 226 + top, 34, 34);
+      UI.drawCenteredText(ctx, '历史战绩', 250 + top, 46, true, '#e8eef0');
+      UI.drawCenteredText(ctx, '最高波次：第 ' + (Meta.data.bestWave || 0) + ' 波', 330 + top, 26, false, '#9fd6ff');
+      UI.drawCenteredText(ctx, '最长生存：' + UI.formatTime(Meta.data.bestTime || 0), 390 + top, 26, false, '#9fd6ff');
+      UI.drawCenteredText(ctx, '总击杀：' + (Meta.data.bestKills || 0), 450 + top, 26, false, '#9fd6ff');
+      Ads.draw(ctx);
+    };
+    UI.consumeHistoryBack = function () {
+      layoutMenu();
+      if (!Input.consumeTap(this.tapPoint)) return false;
+      var top = CONFIG.UI.TOP_INSET || 0;
+      if (this.tapPoint.x >= 24 && this.tapPoint.x <= 156 && this.tapPoint.y >= 34 + top && this.tapPoint.y <= 96 + top) return true;
+      return false;
     };
 
     // ---------- #31 独立全屏成就页 ----------
@@ -267,7 +389,8 @@
       ctx.fillRect(0, 0, 750, CONFIG.VIEW.HEIGHT);
       UI.drawMenuGlow(ctx);
       UI.drawActionButton(ctx, 24, 34 + top, 132, 62, '返回', true, 22);
-      trophy(ctx, 375, 92 + top, 26);
+      var achievementIcon = UI.icon('nav_achievement');
+      if (achievementIcon) ctx.drawImage(achievementIcon, 345, 62 + top, 60, 60);else trophy(ctx, 375, 92 + top, 26);
       UI.drawCenteredText(ctx, '成就', 142 + top, 46, true, '#f4d58d');
       UI.drawCenteredText(ctx, '已完成 ' + Meta.data.achievements.completed.length + ' / ' + CONFIG.CONTENT.ACHIEVEMENT_COUNT, 184 + top, 18, false, '#ffd54a');
       for (var i = 0; i < this.categories.length; i++) {
@@ -431,7 +554,7 @@
       }
       var cf = {
           all: '全部',
-          coins: '金币',
+          survivorCoins: '幸存者硬币',
           diamonds: '钻石'
         },
         rf = {
@@ -487,7 +610,7 @@
       }[rar], x + 18, y + 24, 14, col, 'left', true);
       this.drawPreview(ctx, d, x + w / 2, y + 125, 72, col);
       label(ctx, d[1], x + w / 2, y + 220, 20, '#fff', 'center', true);
-      var price = d[3] === 'free' ? '初始拥有' : d[3] === 'achievement' ? '成就解锁' : d[4] + ' ' + (d[3] === 'diamonds' ? '钻石' : '金币');
+      var price = d[3] === 'free' ? '初始拥有' : d[3] === 'achievement' ? '成就解锁' : d[4] + ' ' + (d[3] === 'diamonds' ? '钻石' : '幸存者硬币');
       label(ctx, price, x + w / 2, y + 254, 15, d[3] === 'diamonds' ? '#83d7ff' : '#ffd166', 'center');
       var enabled = !equipped && !locked,
         txt = equipped ? '已装备' : owned ? '装备' : locked ? '尚未解锁' : '购买';
@@ -607,7 +730,7 @@
       }
       if (inside(p, 30, y, 216, 44)) {
         Input.clearTap();
-        this.cycle('currency', ['all', 'coins', 'diamonds']);
+        this.cycle('currency', ['all', 'survivorCoins', 'diamonds']);
         return;
       }
       if (inside(p, 267, y, 216, 44)) {
@@ -668,17 +791,28 @@
     UI.drawHud = function (ctx) {
       this.drawBoundaryWarnings(ctx);
       drawTopStats(ctx);
-      drawHpLane(ctx);
-      drawExpLane(ctx);
-      drawBossLane(ctx);
       if (root.Objectives) root.Objectives.draw(ctx);
       if (root.DiamondFX) root.DiamondFX.draw(ctx);
       if (Achievements) Achievements.drawToast(ctx);
     };
     function drawTopStats(ctx) {
-      label(ctx, UI.formatTime(Game.survivedSeconds), 375, 43, 27, '#fff', 'center', true);
-      label(ctx, '击杀 ' + RunStats.kills, 730, 43, 20, '#fff', 'right', true);
+      label(ctx, '第 ' + Math.max(1, Spawner.waveIndex) + ' 波', 20, 34, 22, '#fff', 'left', true);
+      label(ctx, UI.formatTime(Game.survivedSeconds), 20, 62, 18, '#d8e0dc', 'left', true);
     }
+    UI.drawPlayerStatus = function (ctx) {
+      var sx = Player.x - Camera.x, sy = Player.y - Camera.y, w = 70, h = 6;
+      var armorMax = Math.max(Player.armorMax || 0, Player.upgradeShieldMax || 0, Player.shield || 0);
+      var targets = [ExpLevelUp.need ? ExpLevelUp.exp / ExpLevelUp.need : 0, Player.hp / Player.maxHp, armorMax ? Player.shield / armorMax : 0];
+      if (!this._playerStatusSmooth) this._playerStatusSmooth = targets.slice();
+      var ys = [sy - 58, sy - 46, sy - 34], colors = ['#e5bd42', '#e45656', armorMax ? '#55cfee' : '#777'], icons = ['status_xp', 'status_hp', 'status_armor'];
+      for (var i = 0; i < 3; i++) {
+        this._playerStatusSmooth[i] += (targets[i] - this._playerStatusSmooth[i]) * .085;
+        var img = this.icon(icons[i]); if (img) ctx.drawImage(img, sx - w / 2 - 22, ys[i] - 6, 18, 18);
+        ctx.fillStyle = 'rgba(4,10,12,.78)'; ctx.fillRect(sx - w / 2, ys[i], w, h);
+        ctx.fillStyle = colors[i]; ctx.fillRect(sx - w / 2, ys[i], w * Math.max(0, Math.min(1, this._playerStatusSmooth[i])), h);
+      }
+      if (root.WeaponProgress.selected === 'pistol' && !root.PulseGun.reloading) label(ctx, Math.max(0, Math.ceil(root.PulseGun.ammo)) + '/' + root.PulseGun.getMagazineSize(), sx + 28, sy - 40, 14, '#ffd166', 'left', true);
+    };
     function drawHpLane(ctx) {
       var x = 20,
         y = 72,
@@ -692,9 +826,15 @@
       ctx.fill();
       ctx.restore();
       label(ctx, 'HP ' + Math.ceil(Player.hp) + ' / ' + Math.ceil(Player.maxHp), x + w / 2, y + h / 2, 17, '#fff', 'center', true);
+      var armorMax = Math.max(Player.armorMax || 0, Player.upgradeShieldMax || 0, Player.shield || 0);
+      var ar = armorMax > 0 ? Math.max(0, Player.shield / armorMax) : 0;
+      ctx.fillStyle = armorMax > 0 ? 'rgba(16,48,60,.95)' : 'rgba(80,84,85,.85)'; ctx.fillRect(x, y - 9, w, 6);
+      if (ar > 0) { ctx.fillStyle = '#59d8f3'; ctx.fillRect(x, y - 9, w * Math.min(1, ar), 6); }
+      ctx.strokeStyle = armorMax > 0 ? '#9af2ff' : '#777'; ctx.lineWidth = 1; ctx.strokeRect(x, y - 9, w, 6);
       if (Player.reviveCharges > 0) {
         label(ctx, '复活 ×' + Player.reviveCharges, 478, y + h / 2, 18, '#e0b6ff', 'left', true);
       }
+      if (root.WeaponProgress.selected === 'pistol') label(ctx, '弹药 ' + Math.max(0, Math.ceil(root.PulseGun.ammo)) + '/' + root.PulseGun.getMagazineSize(), 720, y + h / 2, 17, '#ffd166', 'right', true);
     }
     function drawExpLane(ctx) {
       var x = 20,
@@ -768,7 +908,7 @@
       var s = CONFIG.UI,
         slot = s.SLOT_SIZE,
         gap = s.SLOT_GAP;
-      var x = s.ITEM_BAR_X,
+      var x = UI.mirrorX(s.ITEM_BAR_X + slot / 2) - slot / 2,
         bottomEdge = s.ITEM_BAR_BOTTOM,
         topOfLast = bottomEdge - slot;
       var y = topOfLast - (UI.ITEM_SLOTS.length - 1 - i) * (slot + gap);
@@ -876,6 +1016,160 @@
     UI.getDashButtonY = function () {
       return CONFIG.UI.DASH_CY;
     };
+
+    // ---------- v012 #75 选图界面：主菜单"开始战斗" → 选图 → 选武器 → 开战 ----------
+    // 每张卡片 = 该 layout 的小俯视缩略图（walls/turrets/extract）+ 一句话简介；
+    // 未解锁灰显并提示解锁条件（波次里程碑 / 幸存者硬币购买），解锁进度存 Meta.data.unlockedMaps。
+    var MapSelect = {
+      CARD_X: 40,
+      CARD_W: 670,
+      CARD_H: 296,
+      CARD_Y0: 218,
+      CARD_GAP: 18,
+      THUMB: 190,
+      WALL_COLORS: {
+        concrete: '#5c6b66',
+        container: '#7a5a3a',
+        rubble: '#4a4f49'
+      },
+      backRect: function () {
+        return {
+          x: 24,
+          y: 30 + (CONFIG.UI.TOP_INSET || 0),
+          w: 132,
+          h: 58
+        };
+      },
+      cardRect: function (i) {
+        return {
+          x: this.CARD_X,
+          y: this.CARD_Y0 + i * (this.CARD_H + this.CARD_GAP),
+          w: this.CARD_W,
+          h: this.CARD_H
+        };
+      },
+      buyRect: function (i) {
+        var c = this.cardRect(i);
+        return {
+          x: c.x + c.w - 200,
+          y: c.y + c.h - 78,
+          w: 180,
+          h: 54
+        };
+      },
+      drawThumb: function (ctx, layout, x, y, s, dim) {
+        // 世界 2400×2400 → s×s 缩略图。
+        var scale = s / CONFIG.WORLD.WIDTH;
+        ctx.save();
+        ctx.fillStyle = dim ? '#101714' : '#0c1714';
+        ctx.fillRect(x, y, s, s);
+        // 撤离点
+        if (layout.extract) {
+          ctx.strokeStyle = dim ? '#3a4a44' : '#7db392';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(x + layout.extract.x * scale, y + layout.extract.y * scale, layout.extract.r * scale, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        // 墙
+        for (var i = 0; i < layout.walls.length; i++) {
+          var w = layout.walls[i];
+          ctx.fillStyle = dim ? '#2c3632' : (this.WALL_COLORS[w.kind] || '#5c6b66');
+          ctx.fillRect(x + w.x * scale, y + w.y * scale, Math.max(2, w.w * scale), Math.max(2, w.h * scale));
+        }
+        // 炮台
+        for (var t = 0; t < layout.turrets.length; t++) {
+          var tr = layout.turrets[t];
+          ctx.fillStyle = dim ? '#4a4f49' : '#3498DB';
+          ctx.beginPath();
+          ctx.arc(x + tr.x * scale, y + tr.y * scale, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.strokeStyle = '#2a3a34';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(x, y, s, s);
+        ctx.restore();
+      },
+      draw: function (ctx) {
+        var top = CONFIG.UI.TOP_INSET || 0;
+        ctx.fillStyle = CONFIG.COLORS.MENU_BACKGROUND;
+        ctx.fillRect(0, 0, CONFIG.VIEW.WIDTH, CONFIG.VIEW.HEIGHT);
+        UI.drawMenuGlow(ctx);
+        var br = this.backRect();
+        UI.drawActionButton(ctx, br.x, br.y, br.w, br.h, '返回', true, 21);
+        UI.drawCenteredText(ctx, CONFIG.TEXT.MAP_TITLE, 78 + top, 42, true, '#f4d58d');
+        UI.drawCenteredText(ctx, CONFIG.TEXT.MAP_HINT, 124 + top, 18, false, CONFIG.COLORS.HINT_TEXT);
+        // 幸存者硬币余额
+        drawCoin(ctx, 560, 100 + top, 10);
+        label(ctx, String(Meta.data.survivorCoins), 600, 101 + top, 18, '#ffe27a', 'left', true);
+        var layouts = CONFIG.FIELD.LAYOUTS;
+        for (var i = 0; i < layouts.length; i++) {
+          var c = this.cardRect(i);
+          var unlocked = Meta.isMapUnlocked(i);
+          var selected = Meta.data.selectedMap === i;
+          box(ctx, c.x, c.y, c.w, c.h, 18, selected ? 'rgba(58,74,40,.95)' : 'rgba(18,32,27,.96)', selected ? '#d6aa55' : unlocked ? '#456258' : '#2a3330');
+          this.drawThumb(ctx, layouts[i], c.x + 22, c.y + 22, this.THUMB, !unlocked);
+          var tx = c.x + 240;
+          label(ctx, (selected ? '✓ ' : '') + CONFIG.TEXT.MAP_NAMES[i], tx, c.y + 44, 27, unlocked ? '#f4fff7' : '#7d8d85', 'left', true);
+          label(ctx, CONFIG.TEXT.MAP_DESCS[i], tx, c.y + 84, 16, unlocked ? '#c2d0c9' : '#66796f', 'left', false);
+          // 解锁状态 / 按钮
+          if (unlocked) {
+            label(ctx, selected ? CONFIG.TEXT.MAP_SELECTED : CONFIG.TEXT.MAP_UNLOCKED, tx, c.y + c.h - 34, 17, selected ? '#ffd54a' : '#7fb89a', 'left', true);
+          } else {
+            var def = layouts[i].unlock;
+            if (def && def.kind === 'wave') {
+              label(ctx, CONFIG.TEXT.MAP_LOCK_WAVE(def.wave), tx, c.y + c.h - 34, 16, '#8aa6c9', 'left', true);
+            } else if (def && def.kind === 'coins') {
+              var buy = this.buyRect(i);
+              UI.drawActionButton(ctx, buy.x, buy.y, buy.w, buy.h, CONFIG.TEXT.MAP_BUY_UNLOCK(def.cost), Meta.canBuyMap(i), 18);
+            } else {
+              label(ctx, CONFIG.TEXT.MAP_LOCKED, tx, c.y + c.h - 34, 16, '#8a9a92', 'left', true);
+            }
+          }
+        }
+        UI.drawToast(ctx);
+        if (root.DevConsole) root.DevConsole.draw(ctx);
+      },
+      update: function () {
+        var p = peek();
+        if (!p) return;
+        var br = this.backRect();
+        if (inside(p, br.x, br.y, br.w, br.h)) {
+          Input.clearTap();
+          Game.enterMenu();
+          return;
+        }
+        var layouts = CONFIG.FIELD.LAYOUTS;
+        for (var i = 0; i < layouts.length; i++) {
+          var c = this.cardRect(i);
+          var unlocked = Meta.isMapUnlocked(i);
+          // 未解锁且支持硬币购买：先判购买按钮
+          if (!unlocked && layouts[i].unlock && layouts[i].unlock.kind === 'coins') {
+            var buy = this.buyRect(i);
+            if (inside(p, buy.x, buy.y, buy.w, buy.h)) {
+              Input.clearTap();
+              if (Meta.buyMap(i)) Meta.showToast(CONFIG.TEXT.MAP_NAMES[i] + ' 已解锁');
+              else Meta.showToast(CONFIG.TEXT.MAP_LOCK_TOAST);
+              return;
+            }
+            continue; // 未解锁卡片本体不可点
+          }
+          if (inside(p, c.x, c.y, c.w, c.h)) {
+            Input.clearTap();
+            if (!unlocked) {
+              Meta.showToast(CONFIG.TEXT.MAP_LOCK_TOAST);
+              return;
+            }
+            Meta.selectMap(i);
+            Game.state = 'WEAPON_SELECT';
+            Input.reset();
+            Input.setMovementEnabled(false);
+            return;
+          }
+        }
+      }
+    };
+    root.MapSelect = MapSelect;
 
     // 状态机和顶层渲染接入。
   })();

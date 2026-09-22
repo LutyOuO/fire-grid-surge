@@ -4,6 +4,195 @@
   // 武器：手枪、飞刃、喷火器、弩箭、激光与空袭，武器等级成长。
   var root = typeof window !== 'undefined' ? window : global;
   var CONFIG = root.CONFIG;
+  // v012 #70：共享自动索敌。按到玩家距离取前 CANDIDATE_LIMIT 个候选，逐人用
+  // WallCollision.segment 做射线检测，被墙遮挡者跳过，选最近的可见目标。
+  // 每 RESCAN_INTERVAL 秒重算一次；缓存目标死亡/失效则立即重算。
+  var Targeting = {
+    makeCache: function () {
+      return { target: null, timer: 0 };
+    },
+    acquire: function (cache, dt) {
+      var cfg = CONFIG.AI_TARGETING;
+      cache.timer -= dt;
+      var cached = cache.target;
+      var fresh = cached && cached.active;
+      if (fresh && cache.timer > 0) return cached;
+      cache.timer = cfg.RESCAN_INTERVAL;
+      var list = [];
+      for (var i = 0; i < Enemy.pool.length; i++) {
+        var e = Enemy.pool[i];
+        if (!e.active) continue;
+        list.push(e);
+      }
+      list.sort(function (a, b) {
+        var da = (a.x - Player.x) * (a.x - Player.x) + (a.y - Player.y) * (a.y - Player.y);
+        var db = (b.x - Player.x) * (b.x - Player.x) + (b.y - Player.y) * (b.y - Player.y);
+        return da - db;
+      });
+      var limit = Math.min(cfg.CANDIDATE_LIMIT, list.length);
+      var picked = null;
+      for (var j = 0; j < limit; j++) {
+        var c = list[j];
+        // segment 返回 true 表示线段穿到墙内（被遮挡），跳过该敌人
+        if (root.WallCollision.segment(Player.x, Player.y, c.x, c.y, cfg.WALL_RADIUS)) continue;
+        picked = c;
+        break;
+      }
+      cache.target = picked;
+      return picked;
+    }
+  };
+  // v015 局内军械：强化、单一特殊弹药与被动技能均只在本局生效。
+  var Armory = {
+    weaponLevel: 0,
+    ammoType: '',
+    shotInBlock: 0,
+    specialSlot: 1,
+    perks: [],
+    flashes: {},
+    zones: [],
+    paidPerks: 0,
+    healTimer: 0,
+    healTick: 0,
+    firingTimer: 0,
+    reset: function () {
+      this.weaponLevel = 0;
+      this.ammoType = '';
+      this.shotInBlock = 0;
+      this.specialSlot = 1 + Math.floor(Math.random() * CONFIG.ARMORY.SPECIAL_BLOCK);
+      this.perks.length = 0;
+      this.flashes = {};
+      this.paidPerks = 0; this.healTimer = 0; this.healTick = 0; this.firingTimer = 0;
+      if (!this.zones.length) for (var z = 0; z < CONFIG.ARMORY.ZONE_POOL; z++) this.zones.push({ active: false, x: 0, y: 0, life: 0, tick: 0, radius: 0, damage: 0, type: '', color: '' });
+      for (var zi = 0; zi < this.zones.length; zi++) this.zones[zi].active = false;
+    },
+    hasPerk: function (id) { return this.perks.indexOf(id) >= 0; },
+    damageMultiplier: function () { return Math.pow(2, this.weaponLevel) * (this.hasPerk('damage') ? 1.15 : 1); },
+    perkPrice: function () { return CONFIG.ARMORY.PERK_PRICES[Math.min(this.paidPerks, CONFIG.ARMORY.PERK_PRICES.length - 1)]; },
+    magazineMultiplier: function () { return Math.pow(2, this.weaponLevel); },
+    buyWeaponLevel: function (level) {
+      if (level !== this.weaponLevel + 1 || level > CONFIG.ARMORY.WEAPON_MAX_LEVEL) return false;
+      this.weaponLevel = level;
+      PulseGun.ammo = Math.min(PulseGun.getMagazineSize(), PulseGun.ammo + PulseGun.getMagazineSize() / 2);
+      return true;
+    },
+    buyAmmo: function (id) {
+      this.ammoType = id;
+      this.shotInBlock = 0;
+      this.specialSlot = 1 + Math.floor(Math.random() * CONFIG.ARMORY.SPECIAL_BLOCK);
+      return true;
+    },
+    buyPerk: function (id, free) {
+      if (this.hasPerk(id)) return false;
+      this.perks.push(id);
+      this.triggerPerk(id);
+      if (!free) this.paidPerks += 1;
+      if (id === 'speed') Player.moveSpeedBonus += CONFIG.PLAYER.SPEED * .12;
+      if (id === 'vitality') Player.increaseMaxHp(50);
+      if (id === 'magnet') Player.pickupRadius *= 1.5;
+      if (id === 'critical') { Player.critChance += .05; Player.critDamageBonus += .5; }
+      return true;
+    },
+    onPlayerDamaged: function () { this.healTimer = 0; this.healTick = 0; },
+    triggerPerk: function (id) { if (this.hasPerk(id)) this.flashes[id] = CONFIG.ARMORY.PERK_FLASH_TIME; },
+    update: function (dt) {
+      for (var id in this.flashes) this.flashes[id] = Math.max(0, this.flashes[id] - dt);
+      if (this.hasPerk('revive') && Player.hp < Player.maxHp) {
+        this.healTimer += dt;
+        if (this.healTimer >= CONFIG.ARMORY.HEAL_COMBAT_WAIT + CONFIG.ARMORY.HEAL_READY_TIME) {
+          this.healTick += dt;
+          if (this.healTick >= 1) { this.healTick -= 1; Player.hp = Math.min(Player.maxHp, Player.hp + CONFIG.ARMORY.HEAL_PER_TICK); this.triggerPerk('revive'); }
+        }
+      }
+      if (this.hasPerk('speed') && Player.dashing) this.triggerPerk('speed');
+      if (this.hasPerk('firerate') && !PulseGun.reloading && PulseGun.cooldown > 0) {
+        this.firingTimer += dt; if (this.firingTimer >= 5) { this.firingTimer = 0; this.triggerPerk('firerate'); }
+      } else if (PulseGun.reloading) this.firingTimer = 0;
+      for (var i = 0; i < this.zones.length; i++) {
+        var z = this.zones[i]; if (!z.active) continue;
+        z.life -= dt; z.tick -= dt;
+        if (z.life <= 0) { z.active = false; continue; }
+        if (z.tick > 0) continue;
+        z.tick = CONFIG.ARMORY.ZONE_TICK;
+        if (root.Spatial) root.Spatial.forEachInRadius(z.x, z.y, z.radius, function (e) {
+          Combat.hitEnemyFixed(e, z.damage * CONFIG.ARMORY.ZONE_TICK, e.x, e.y);
+          if (z.type === 'shock') e.stunTimer = Math.max(e.stunTimer || 0, .25);
+        });
+      }
+    },
+    spawnZone: function (type, x, y, def, damage) {
+      for (var i = 0; i < this.zones.length; i++) if (!this.zones[i].active) {
+        var z = this.zones[i]; z.active = true; z.type = type; z.x = x; z.y = y;
+        z.life = def.DURATION || 2; z.tick = 0; z.radius = def.RADIUS; z.damage = damage; z.color = def.COLOR; return;
+      }
+    },
+    nextSpecial: function () {
+      if (!this.ammoType) return '';
+      this.shotInBlock += 1;
+      var special = this.shotInBlock === this.specialSlot ? this.ammoType : '';
+      if (this.shotInBlock >= CONFIG.ARMORY.SPECIAL_BLOCK) {
+        this.shotInBlock = 0;
+        this.specialSlot = 1 + Math.floor(Math.random() * CONFIG.ARMORY.SPECIAL_BLOCK);
+      }
+      if (special) this.triggerPerk('damage');
+      return special;
+    },
+    ammoDef: function (id) {
+      for (var i = 0; i < CONFIG.ARMORY.AMMO.length; i++) if (CONFIG.ARMORY.AMMO[i].ID === id) return CONFIG.ARMORY.AMMO[i];
+      return null;
+    },
+    applySpecial: function (enemy, bullet) {
+      var d = this.ammoDef(bullet.specialAmmo);
+      if (!d) return;
+      if (root.FX) root.FX.burst(enemy.x, enemy.y, d.COLOR);
+      if (d.ID === 'firework') {
+        for (var i = 0; i < Enemy.pool.length; i++) {
+          var e = Enemy.pool[i], dx, dy;
+          if (!e.active || e === enemy) continue;
+          dx = e.x - enemy.x; dy = e.y - enemy.y;
+          if (dx * dx + dy * dy <= d.RADIUS * d.RADIUS) Combat.hitEnemyFixed(e, bullet.damage * d.DAMAGE_RATIO, e.x, e.y);
+        }
+      } else if (d.ID === 'napalm') {
+        enemy.mortarBurnTime = Math.max(enemy.mortarBurnTime || 0, d.DURATION);
+        enemy.mortarBurnDps = Math.max(enemy.mortarBurnDps || 0, bullet.damage * d.DPS_RATIO);
+      } else if (d.ID === 'void') {
+        this.spawnZone('void', enemy.x, enemy.y, d, bullet.damage * d.DPS_RATIO);
+      } else if (d.ID === 'shock') {
+        enemy.stunTimer = Math.max(enemy.stunTimer || 0, d.STUN);
+        this.spawnZone('shock', enemy.x, enemy.y, { DURATION: 2, RADIUS: d.RADIUS, COLOR: d.COLOR }, bullet.damage * d.DAMAGE_RATIO);
+      } else if (d.ID === 'frost') {
+        enemy.slowMul = Math.min(enemy.slowMul || 1, d.SLOW);
+        enemy.specialSlowTimer = d.DURATION;
+        enemy.specialVulnerable = d.VULNERABLE;
+      } else if (d.ID === 'corrupt' && enemy.typeIndex < CONFIG.ENEMY.TYPE_ELITE) {
+        enemy.allyTimer = d.DURATION;
+        enemy.allyAttackTimer = 0;
+        enemy.allyDamage = bullet.damage * CONFIG.ARMORY.ALLY_DAMAGE_RATIO;
+      }
+    },
+    drawPerks: function (ctx) {
+      var n = this.perks.length;
+      for (var i = 0; i < n; i++) {
+        var d = null, id = this.perks[i];
+        for (var j = 0; j < CONFIG.ARMORY.PERKS.length; j++) if (CONFIG.ARMORY.PERKS[j].ID === id) d = CONFIG.ARMORY.PERKS[j];
+        if (!d) continue;
+        var size = n > 6 ? 32 : 48, flash = this.flashes[id] > 0, x = Player.x - Camera.x + (i - (n - 1) / 2) * (size + 4), y = Player.y - Camera.y + 44;
+        ctx.save(); ctx.translate(x, y); ctx.scale(flash ? 1.25 : 1, flash ? 1.25 : 1);
+        ctx.shadowColor = d.COLOR; ctx.shadowBlur = flash ? 18 : 4; var img = root.UI.icon(d.ICON);
+        if (img) ctx.drawImage(img, -size / 2, -size / 2, size, size); else { ctx.fillStyle = d.COLOR; ctx.beginPath(); ctx.arc(0, 0, size / 2, 0, Math.PI * 2); ctx.fill(); }
+        ctx.restore();
+      }
+    }
+    ,drawZones: function (ctx) {
+      for (var i = 0; i < this.zones.length; i++) {
+        var z = this.zones[i]; if (!z.active) continue;
+        var x = z.x - Camera.x, y = z.y - Camera.y, pulse = .82 + Math.sin(z.life * 9) * .08;
+        ctx.save(); ctx.globalAlpha = .35; ctx.fillStyle = z.type === 'void' ? '#090313' : z.color;
+        ctx.beginPath(); ctx.arc(x, y, z.radius * pulse, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = .9; ctx.strokeStyle = z.color; ctx.lineWidth = 4; ctx.stroke(); ctx.restore();
+      }
+    }
+  };
   var Bullet = {
     pool: [],
     activeCount: 0,
@@ -20,6 +209,7 @@
           damage: 0,
           pierceRemaining: 0,
           hitCount: 0,
+          specialAmmo: '',
           hitSpawnIds: new Array(CONFIG.WEAPONS.PULSE.MAX_PENETRATION + 1).fill(-1)
         });
       }
@@ -28,7 +218,7 @@
       this.activeCount = 0;
       for (var i = 0; i < this.pool.length; i++) this.pool[i].active = false;
     },
-    spawn: function (x, y, angle, speed, damage, penetration) {
+    spawn: function (x, y, angle, speed, damage, penetration, specialAmmo) {
       for (var i = 0; i < this.pool.length; i++) {
         var bullet = this.pool[i];
         if (!bullet.active) {
@@ -41,6 +231,7 @@
           bullet.damage = damage;
           bullet.pierceRemaining = penetration;
           bullet.hitCount = 0;
+          bullet.specialAmmo = specialAmmo || '';
           this.activeCount += 1;
           return true;
         }
@@ -99,6 +290,7 @@
             } else {
               root.Combat.hitEnemy(e, bullet.damage, e.x, e.y);
             }
+            if (e.active && bullet.specialAmmo) Armory.applySpecial(e, bullet);
             root.Combat.killSource = killSource;
             bullet.hitSpawnIds[bullet.hitCount++] = e.spawnId;
             if (bullet.pierceRemaining > 0) {
@@ -123,6 +315,7 @@
       }
     },
     drawOne: function (ctx, bullet) {
+      if (!Camera.isVisible(bullet.x, bullet.y, CONFIG.WEAPONS.PULSE.TRAIL_LENGTH + 20)) return;
       var screenX = bullet.x - Camera.x;
       var screenY = bullet.y - Camera.y;
       var speed = Math.hypot(bullet.vx, bullet.vy);
@@ -142,18 +335,19 @@
         ctx.restore();
         return;
       }
+      var specialDef = Armory.ammoDef(bullet.specialAmmo);
       ctx.beginPath();
       ctx.moveTo(trailX, trailY);
       ctx.lineTo(screenX, screenY);
       ctx.lineWidth = CONFIG.WEAPONS.PULSE.TRAIL_WIDTH;
       ctx.lineCap = 'round';
-      ctx.strokeStyle = CONFIG.COLORS.BULLET_TRAIL;
+      ctx.strokeStyle = specialDef ? specialDef.COLOR : CONFIG.COLORS.BULLET_TRAIL;
       ctx.stroke();
       ctx.shadowColor = CONFIG.COLORS.BULLET_GLOW;
       ctx.shadowBlur = CONFIG.WEAPONS.PULSE.DRAW_RADIUS * 2;
       ctx.beginPath();
       ctx.arc(screenX, screenY, CONFIG.WEAPONS.PULSE.DRAW_RADIUS, 0, Math.PI * 2);
-      ctx.fillStyle = CONFIG.COLORS.BULLET;
+      ctx.fillStyle = specialDef ? specialDef.COLOR : CONFIG.COLORS.BULLET;
       ctx.fill();
       ctx.shadowBlur = 0;
       ctx.beginPath();
@@ -176,6 +370,12 @@
     projectileMultiplier: 1,
     damageMultiplier: 1,
     laserCannon: false,
+    spreadBonus: 0,
+    infinitePierce: false,
+    _aimCache: null,
+    ammo: CONFIG.WEAPONS.PULSE.MAGAZINE,
+    reloading: false,
+    reloadTimer: 0,
     reset: function () {
       this.cooldown = 0;
       this.damageBonus = 0;
@@ -187,24 +387,52 @@
       this.projectileMultiplier = 1;
       this.damageMultiplier = 1;
       this.laserCannon = false;
+      this.spreadBonus = 0;
+      this.infinitePierce = false;
+      this.ammo = this.getMagazineSize();
+      this.reloading = false;
+      this.reloadTimer = 0;
       this.projectileCount = Math.min(CONFIG.WEAPONS.PULSE.MAX_PROJECTILES, CONFIG.WEAPONS.PULSE.BASE_PROJECTILES + Math.round(Meta.getEffectTotal('START_PROJECTILE')));
       this.penetration = CONFIG.WEAPONS.PULSE.BASE_PENETRATION;
     },
     update: function (dt) {
       if (root.WeaponProgress.selected !== "pistol") return;
       if (this.muzzleFlashTimer > 0) this.muzzleFlashTimer = Math.max(0, this.muzzleFlashTimer - dt);
+      if (this.reloading) {
+        this.reloadTimer -= dt;
+        if (this.reloadTimer <= 0) { this.reloading = false; this.reloadTimer = 0; this.ammo = this.getMagazineSize(); Armory.triggerPerk('reload'); }
+        return;
+      }
       this.cooldown = Math.max(0, this.cooldown - dt);
+      if (!this._aimCache) this._aimCache = Targeting.makeCache();
+      var target = Targeting.acquire(this._aimCache, dt);
       if (this.cooldown > 0) return;
-      var target = Enemy.findNearest(Player.x, Player.y);
       if (!target) return;
       this.fireAt(target);
       this.cooldown = this.getInterval();
     },
     getDamage: function () {
-      return (CONFIG.WEAPONS.PULSE.DAMAGE + this.damageFlat) * (1 + this.damageBonus) * this.damageMultiplier;
+      return (CONFIG.WEAPONS.PULSE.DAMAGE + this.damageFlat) * (1 + this.damageBonus) * this.damageMultiplier * Armory.damageMultiplier();
+    },
+    getMagazineSize: function () { return CONFIG.WEAPONS.PULSE.MAGAZINE * Armory.magazineMultiplier(); },
+    getReloadDuration: function () { return CONFIG.WEAPONS.PULSE.RELOAD_TIME * (Armory.hasPerk('reload') ? .7 : 1); },
+    startReload: function () { this.reloading = true; this.reloadTimer = this.getReloadDuration(); },
+    drawReload: function (ctx) {
+      if (!this.reloading) return;
+      var duration = this.getReloadDuration();
+      var progress = 1 - Math.max(0, this.reloadTimer) / duration;
+      var x = Player.x - Camera.x + CONFIG.PLAYER.RADIUS + 20;
+      var y = Player.y - Camera.y - CONFIG.PLAYER.RADIUS - 16;
+      ctx.save();
+      ctx.fillStyle = 'rgba(8,14,16,.82)'; ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.fill();
+      var img = root.UI && root.UI.icon ? root.UI.icon('ammo_normal') : null;
+      if (img) ctx.drawImage(img, x - 11, y - 11, 22, 22);
+      ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(x, y, 18, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress); ctx.stroke();
+      ctx.restore();
     },
     getInterval: function () {
-      return Math.max(CONFIG.WEAPONS.PULSE.MIN_INTERVAL, CONFIG.WEAPONS.PULSE.INTERVAL * this.cooldownMultiplier / (1 + this.fireRateBonus));
+      return Math.max(CONFIG.WEAPONS.PULSE.MIN_INTERVAL, CONFIG.WEAPONS.PULSE.INTERVAL * this.cooldownMultiplier / (1 + this.fireRateBonus) / (Armory.hasPerk('firerate') ? 1.2 : 1));
     },
     getBulletSpeed: function () {
       return Math.min(CONFIG.WEAPONS.PULSE.MAX_SPEED, (CONFIG.WEAPONS.PULSE.SPEED + this.speedFlat) * (this.laserCannon ? 1.5 : 1));
@@ -213,14 +441,18 @@
       var baseAngle = Math.atan2(target.y - Player.y, target.x - Player.x);
       var totalProjectiles = this.projectileCount * this.projectileMultiplier;
       var middle = (totalProjectiles - 1) / 2;
+      var spread = CONFIG.WEAPONS.PULSE.SPREAD_ANGLE + this.spreadBonus;
+      var specialAmmo = Armory.nextSpecial();
       for (var i = 0; i < totalProjectiles; i++) {
-        var angle = baseAngle + (i - middle) * CONFIG.WEAPONS.PULSE.SPREAD_ANGLE;
-        Bullet.spawn(Player.x, Player.y, angle, this.getBulletSpeed(), this.getDamage(), this.laserCannon ? 9999 : this.penetration);
+        var angle = baseAngle + (i - middle) * spread;
+        Bullet.spawn(Player.x, Player.y, angle, this.getBulletSpeed(), this.getDamage(), (this.laserCannon || this.infinitePierce) ? 9999 : this.penetration, specialAmmo);
       }
       // #5 后坐力（主弹道方向，不叠加）；#16 枪口闪光
       Player.applyRecoil(baseAngle);
       this.muzzleFlashTimer = 0.05;
       root.AudioFX.play("shoot");
+      this.ammo -= 1;
+      if (this.ammo <= 0) this.startReload();
     }
   };
   var OrbitBlade = {
@@ -328,11 +560,13 @@
   };
   var Weapons = {
     reset: function () {
+      Armory.reset();
       Bullet.reset();
       PulseGun.reset();
       OrbitBlade.reset();
     },
     update: function (dt) {
+      Armory.update(dt);
       PulseGun.update(dt);
       Bullet.update(dt);
       OrbitBlade.update(dt);
@@ -343,6 +577,9 @@
       root.FlameWeapon.draw(ctx);
       root.Crossbow.draw(ctx);
       root.RainbowFX.draw(ctx);
+      Armory.drawZones(ctx);
+      Armory.drawPerks(ctx);
+      PulseGun.drawReload(ctx);
     },
     // 炸弹和激光共享主武器基础伤害查询。
     getMainDamage: function () {
@@ -433,6 +670,8 @@
           }
         }
         if (!hit) continue;
+        // v012 #71：光束止于墙面，墙后（距离超过该方向最近墙面）敌人不得被命中
+        if (dist > root.WallCollision.rayDistance(Player.x, Player.y, ea) + e.radius) continue;
         var strong = e.typeIndex === CONFIG.ENEMY.TYPE_ELITE || e.typeIndex === CONFIG.ENEMY.TYPE_BOSS || e.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED;
         // 无视受击无敌帧：直接扣血并触发死亡判定
         if (strong) {
@@ -500,7 +739,8 @@
         out = [];
       for (var i = 0; i < count; i++) {
         var a = this.angle + i * Math.PI,
-          d = laserRayDistance(Player.x, Player.y, a);
+          // v012 #71：光束止于最近墙面（含世界边界），不再穿墙
+          d = root.WallCollision.rayDistance(Player.x, Player.y, a);
         out.push({
           a: a,
           x: Player.x + Math.cos(a) * d,
@@ -531,6 +771,8 @@
       for (var i = 0; i < Enemy.pool.length; i++) {
         var e = Enemy.pool[i];
         if (!e.active) continue;
+        // v012 #70：墙后敌人不进入迫击炮落点网格（射线被墙遮挡）
+        if (root.WallCollision.segment(Player.x, Player.y, e.x, e.y, CONFIG.AI_TARGETING.WALL_RADIUS)) continue;
         var screenX = e.x - Camera.x,
           screenY = e.y - Camera.y;
         if (screenX < 0 || screenX > CONFIG.VIEW.WIDTH || screenY < 0 || screenY > CONFIG.VIEW.HEIGHT) continue;
@@ -637,6 +879,20 @@
     return Math.hypot(px - cx, py - cy);
   }
   root.Bullet = Bullet;
+  root.Armory = Armory;
+  // 最终属性快照：战斗与暂停构筑页读取同一批实时值，避免展示值另算一套。
+  root.FinalStats = {
+    get: function () {
+      return {
+        damage: Weapons.getMainDamage(), fireRate: root.WeaponProgress.selected === 'pistol' ? 1 / PulseGun.getInterval() : 0,
+        magazine: root.WeaponProgress.selected === 'pistol' ? PulseGun.getMagazineSize() : 0,
+        reload: root.WeaponProgress.selected === 'pistol' ? PulseGun.getReloadDuration() : 0,
+        speed: Player.getMoveSpeed(), crit: Player.critChance, critMultiplier: CONFIG.PLAYER.CRIT_MULTIPLIER + Player.critDamageBonus,
+        penetration: PulseGun.penetration, projectiles: PulseGun.projectileCount * PulseGun.projectileMultiplier,
+        pickup: Player.pickupRadius, maxHp: Player.maxHp, armor: Player.shield || 0, skills: Armory.perks.slice(), ammo: Armory.ammoType, weaponLevel: Armory.weaponLevel
+      };
+    }
+  };
   root.PulseGun = PulseGun;
   root.OrbitBlade = OrbitBlade;
   root.Weapons = Weapons;
@@ -657,6 +913,10 @@
     backdraft: false,
     inferno: false,
     infernoTimer: 0,
+    closeBurst: 0,
+    rangeShortMul: 1,
+    _aimCache: null,
+    aimTarget: null,
     init: function () {
       this.burns.length = 0;
       for (var i = 0; i < CONFIG.ENEMY.POOL_SIZE; i++) this.burns.push({
@@ -680,6 +940,8 @@
       this.backdraft = false;
       this.inferno = false;
       this.infernoTimer = 0;
+      this.closeBurst = 0;
+      this.rangeShortMul = 1;
       for (var i = 0; i < this.burns.length; i++) this.burns[i].active = false;
       for (var p = 0; p < this.patches.length; p++) this.patches[p].active = false;
     },
@@ -702,6 +964,8 @@
       if (!this.unlocked) return;
       this.timer -= dt;
       this.visual = Math.max(0, this.visual - dt);
+      if (!this._aimCache) this._aimCache = Targeting.makeCache();
+      this.aimTarget = Targeting.acquire(this._aimCache, dt);
       if (this.timer <= 0) {
         this.timer = .1 / (this.rate * (1 + (root.W8 && root.W8.rateBonusFor ? root.W8.rateBonusFor('flame') : 0)));
         this.fire();
@@ -746,12 +1010,13 @@
       }
     },
     fire: function () {
-      var target = Enemy.findNearest(Player.x, Player.y);
+      var target = this.aimTarget;
       if (!target) return;
       var a = Math.atan2(target.y - Player.y, target.x - Player.x),
         half = this.angle / 2;
       this.aim = a;
       this.visual = .22;
+      var reach = this.range * this.rangeShortMul;
       root.Combat.killSource = 'flame';
       for (var i = 0; i < Enemy.pool.length; i++) {
         var e = Enemy.pool[i];
@@ -759,7 +1024,7 @@
         var dx = e.x - Player.x,
           dy = e.y - Player.y,
           dist = Math.hypot(dx, dy);
-        if (dist > this.range + e.radius) continue;
+        if (dist > reach + e.radius) continue;
         var da = Math.atan2(Math.sin(Math.atan2(dy, dx) - a), Math.cos(Math.atan2(dy, dx) - a));
         if (Math.abs(da) <= half) {
           if (!root.WallCollision.segment(Player.x, Player.y, e.x, e.y, 2)) Combat.hitEnemy(e, CONFIG.CONTENT.FLAME.DAMAGE * this.damageMul * (1 + (root.W8 && root.W8.dmgBonusFor ? root.W8.dmgBonusFor('flame') : 0)), e.x, e.y);
@@ -769,6 +1034,17 @@
           b.tick = .2;
         }
       }
+      // #90 喷火B 近身爆发：贴脸 CLOSE_RADIUS 内敌人额外吃一次范围爆炸伤害。
+      if (this.closeBurst > 0) {
+        var closeR = CONFIG.CONTENT.FLAME.RANGE * CONFIG.PRODUCT.CLOSE_BURST_RADIUS || 90;
+        var burstDmg = CONFIG.CONTENT.FLAME.DAMAGE * this.damageMul * this.closeBurst;
+        for (var ci = 0; ci < Enemy.pool.length; ci++) {
+          var ce = Enemy.pool[ci];
+          if (!ce.active) continue;
+          var cdx = ce.x - Player.x, cdy = ce.y - Player.y;
+          if (cdx * cdx + cdy * cdy <= closeR * closeR) Combat.hitEnemy(ce, burstDmg, ce.x, ce.y);
+        }
+      }
       root.Combat.killSource = '';
       if (this.napalm) {
         for (var p = 0; p < this.patches.length; p++) if (!this.patches[p].active) {
@@ -776,9 +1052,9 @@
           patch.active = true;
           patch.x = Player.x + Math.cos(a) * this.range * 0.7;
           patch.y = Player.y + Math.sin(a) * this.range * 0.7;
-          patch.r = 70;
+          patch.r = CONFIG.CONTENT.FLAME.PATCH_R;
           patch.t = 0;
-          patch.life = 3;
+          patch.life = CONFIG.CONTENT.FLAME.PATCH_LIFE;
           break;
         }
       }
@@ -886,7 +1162,12 @@
     pileBonus: 0,
     scatter: false,
     marksman: false,
+    arrowLifeMul: 1,
+    longShotBonus: 0,
+    wallPierce: false,
     arrows: [],
+    _aimCache: null,
+    aimTarget: null,
     init: function () {
       for (var i = 0; i < CONFIG.CONTENT.CROSSBOW.POOL; i++) this.arrows.push({
         active: false,
@@ -915,6 +1196,9 @@
       this.pileBonus = 0;
       this.scatter = false;
       this.marksman = false;
+      this.arrowLifeMul = 1;
+      this.longShotBonus = 0;
+      this.wallPierce = false;
       for (var i = 0; i < this.arrows.length; i++) {
         this.arrows[i].active = false;
         this.arrows[i].hitCount = 0;
@@ -932,23 +1216,26 @@
         b.vx = Math.cos(a) * spd;
         b.vy = Math.sin(a) * spd;
         b.angle = a;
-        b.damage = this.damage * (1 + (this.pileBonus || 0));
+        b.damage = this.damage * (1 + (this.pileBonus || 0)) * (1 + this.longShotBonus);
         b.hitCount = 0;
-        b.life = opts.life || 2;
+        b.life = opts.life || CONFIG.CONTENT.CROSSBOW.ARROW_LIFE * this.arrowLifeMul;
         b.scatter = !!opts.scatter;
+        b.wallPierce = !!this.wallPierce;
         b.firstDist = 0;
         return b;
       }
     },
     fire: function () {
-      var e = Enemy.findNearest(Player.x, Player.y);
+      var e = this.aimTarget;
       if (!e) return;
       var a = Math.atan2(e.y - Player.y, e.x - Player.x);
       for (var n = 0; n < this.count; n++) this.spawn(a + (n - (this.count - 1) / 2) * .08);
     },
     update: function (dt) {
+      if (!this._aimCache) this._aimCache = Targeting.makeCache();
       if (this.unlocked) {
         this.timer -= dt;
+        this.aimTarget = Targeting.acquire(this._aimCache, dt);
         if (this.timer <= 0) {
           this.timer = CONFIG.CONTENT.CROSSBOW.COOLDOWN / (this.rate * (1 + (root.W8 && root.W8.rateBonusFor ? root.W8.rateBonusFor('crossbow') : 0)));
           this.fire();
@@ -990,7 +1277,8 @@
       }
       for (var i = 0; i < this.arrows.length; i++) {
         var b = this.arrows[i];
-        if (b.active && root.WallCollision.inside(b.x, b.y, 8)) {
+        // #90 弩箭B 穿墙：wallPierce 箭命中墙不销毁、直接穿过去。
+        if (b.active && !b.wallPierce && root.WallCollision.inside(b.x, b.y, 8)) {
           if (this.scatter && !b.scatter) this.splitBolt(b);
           b.active = false;
           b.hitCount = 0;
@@ -998,8 +1286,12 @@
       }
     },
     splitBolt: function (b) {
-      this.spawn(b.angle - 0.4, { x: b.x, y: b.y, speed: 420, life: 0.35, scatter: true });
-      this.spawn(b.angle + 0.4, { x: b.x, y: b.y, speed: 420, life: 0.35, scatter: true });
+      // #90 弩箭B：单支出墙后分裂 SCATTER_SPLITS 支短弩（1→3→5）。
+      var n = CONFIG.CONTENT.CROSSBOW.SCATTER_SPLITS;
+      for (var k = 0; k < n; k++) {
+        var off = (k - (n - 1) / 2) * 0.22;
+        this.spawn(b.angle + off, { x: b.x, y: b.y, speed: 420, life: 0.35, scatter: true });
+      }
     },
     wasHit: function (b, id) {
       for (var i = 0; i < b.hitCount; i++) if (b.hitIds[i] === id) return true;

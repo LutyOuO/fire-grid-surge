@@ -55,7 +55,7 @@
 
     var WeaponProgress = root.WeaponProgress;
     var WeaponSelect = {
-      cards: [['pistol', '脉冲手枪', '稳定射击，自动锁定最近敌人'], ['flamer', '喷火器', '近距离扇形持续灼烧'], ['crossbow', '弩箭', '直线贯穿成群敌人']],
+      cards: [['pistol', '手枪', '稳定射击，自动锁定最近敌人'], ['flamer', '喷火器', '近距离扇形持续灼烧'], ['crossbow', '弩箭', '直线贯穿成群敌人']],
       draw: function (ctx) {
         var top = CONFIG.UI.TOP_INSET || 0;
         ctx.fillStyle = '#08110e';
@@ -79,7 +79,7 @@
           text(ctx, c[1], 175, y + 50, 28, open ? '#fff' : '#8d9892', 'left', true);
           text(ctx, 'Lv.' + d.lv + '  ' + d.pts + ' / ' + need, 175, y + 88, 18, open ? '#83d7ff' : '#82958b');
           text(ctx, c[2], 175, y + 128, 17, '#b4c2bc');
-          if (!open) text(ctx, '脉冲手枪等级达到 Lv.' + (c[0] === 'flamer' ? 5 : 10) + ' 解锁', 175, y + 168, 16, '#ffb27a');else UI.drawActionButton(ctx, 480, y + 135, 160, 54, '选择', true, 18);
+          if (!open) text(ctx, '手枪等级达到 Lv.' + (c[0] === 'flamer' ? 5 : 10) + ' 解锁', 175, y + 168, 16, '#ffb27a');else UI.drawActionButton(ctx, 480, y + 135, 160, 54, '选择', true, 18);
         }
       },
       update: function () {

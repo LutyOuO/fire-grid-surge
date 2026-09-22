@@ -4,6 +4,13 @@
   // 敌人：对象池、波次属性、避障、眩晕/冻结、Boss 与命中反馈。
   var root = typeof window !== 'undefined' ? window : global;
   var CONFIG = root.CONFIG;
+  // 归一化两方向角的最短夹角（弧度，取绝对值）。
+  function wallAngDiff(a, b) {
+    var d = a - b;
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    return Math.abs(d);
+  }
   var Enemy = {
     pool: [],
     activeCount: 0,
@@ -113,6 +120,15 @@
         this.updateMortarBurn(enemy, dt);
         if (!enemy.active) continue;
         enemy.stunTimer = Math.max(0, (enemy.stunTimer || 0) - dt);
+        if (enemy.specialSlowTimer > 0) {
+          enemy.specialSlowTimer = Math.max(0, enemy.specialSlowTimer - dt);
+          if (enemy.specialSlowTimer === 0) { enemy.slowMul = 1; enemy.specialVulnerable = 1; }
+        }
+        if (enemy.allyTimer > 0) {
+          enemy.allyTimer = Math.max(0, enemy.allyTimer - dt);
+          this.updateCorruptAlly(enemy, dt);
+          continue;
+        }
         enemy.freezeTimer = Math.max(0, (enemy.freezeTimer || 0) - dt);
         if (enemy.freezeTimer > 0) continue;
         if (!PowerUps.isFrozen()) {
@@ -171,38 +187,53 @@
           px = e.x + Math.cos(base) * probe,
           py = e.y + Math.sin(base) * probe;
         if (root.WallCollision.inside(px, py, e.radius)) {
-          var a1 = base - Math.PI / 4,
-            a2 = base + Math.PI / 4,
-            p1 = !root.WallCollision.inside(e.x + Math.cos(a1) * probe, e.y + Math.sin(a1) * probe, e.radius),
-            p2 = !root.WallCollision.inside(e.x + Math.cos(a2) * probe, e.y + Math.sin(a2) * probe, e.radius);
-          if (p1 || p2) {
-            if (p1 && p2) {
-              var d1 = Math.hypot(Player.x - (e.x + Math.cos(a1) * probe), Player.y - (e.y + Math.sin(a1) * probe)),
-                d2 = Math.hypot(Player.x - (e.x + Math.cos(a2) * probe), Player.y - (e.y + Math.sin(a2) * probe));
-              angle = d1 < d2 ? a1 : a2;
-            } else angle = p1 ? a1 : a2;
-            e.avoidAngle = angle;
+          // v012 #69：前方挡墙时沿墙面切向滑动。切向与墙面法线垂直，
+          // 前进分量不再被 Field.collideWalls 推墙抵消，滑动速度=正常追击速度。
+          var slide = this.wallSlideAngle(e, base, px, py, probe);
+          if (slide !== null) {
+            e.avoidAngle = slide;
+            angle = slide;
             e.avoidTime = .3;
           } else {
-            e.avoidTime = .12;
-            angle = base + Math.PI / 2;
+            // 角落退化：两侧切向都被堵，回退 ±45° 试探
+            var a1 = base - Math.PI / 4,
+              a2 = base + Math.PI / 4,
+              p1 = !root.WallCollision.inside(e.x + Math.cos(a1) * probe, e.y + Math.sin(a1) * probe, e.radius),
+              p2 = !root.WallCollision.inside(e.x + Math.cos(a2) * probe, e.y + Math.sin(a2) * probe, e.radius);
+            if (p1 || p2) {
+              if (p1 && p2) {
+                var d1 = Math.hypot(Player.x - (e.x + Math.cos(a1) * probe), Player.y - (e.y + Math.sin(a1) * probe)),
+                  d2 = Math.hypot(Player.x - (e.x + Math.cos(a2) * probe), Player.y - (e.y + Math.sin(a2) * probe));
+                angle = d1 < d2 ? a1 : a2;
+              } else angle = p1 ? a1 : a2;
+              e.avoidAngle = angle;
+              e.avoidTime = .3;
+            } else {
+              e.avoidTime = .12;
+              angle = base + Math.PI / 2;
+            }
           }
+        } else if (e.avoidTime > 0) {
+          // 通路已打开：立即恢复朝玩家，不再继续蹭墙
+          e.avoidTime = 0;
+          e.avoidAngle = 0;
+          angle = base;
         }
       }
       var sepX = 0,
         sepY = 0;
-      if (e.avoidCheck > .19) for (var i = 0; i < Enemy.pool.length; i++) {
-        var o = Enemy.pool[i];
-        if (!o.active || o === e) continue;
-        var sx = e.x - o.x,
-          sy = e.y - o.y,
-          rr = e.radius + o.radius + 5,
-          d2 = sx * sx + sy * sy;
-        if (d2 > 0 && d2 < rr * rr) {
-          var d = Math.sqrt(d2);
-          sepX += sx / d * (rr - d) / rr;
-          sepY += sy / d * (rr - d) / rr;
-        }
+      if (e.avoidCheck > .19 && root.Spatial) {
+        var searchRadius = e.radius + CONFIG.ENEMY.MAX_RADIUS + 5;
+        root.Spatial.forEachInRadius(e.x, e.y, searchRadius, function (o) {
+          if (o === e) return;
+          var sx = e.x - o.x, sy = e.y - o.y,
+            rr = e.radius + o.radius + 5, d2 = sx * sx + sy * sy;
+          if (d2 > 0 && d2 < rr * rr) {
+            var d = Math.sqrt(d2);
+            sepX += sx / d * (rr - d) / rr;
+            sepY += sy / d * (rr - d) / rr;
+          }
+        });
       }
       var speed = e.speed * Player.enemySpeedMultiplier * (e.slowMul || 1);
       e.x += (Math.cos(angle) + sepX * .45) * speed * dt;
@@ -212,6 +243,45 @@
       var p = Field.collideWalls(e.x, e.y, e.radius);
       e.x = p.x;
       e.y = p.y;
+    },
+    // v012 #69：探测点 (px,py) 落入某面墙时，返回沿该墙切向、且偏向玩家一侧的滑动方向角；
+    // 两侧切向都被堵时返回 null（由调用方回退到 ±45° 试探）。
+    wallSlideAngle: function (e, base, px, py, probe) {
+      var walls = CONFIG.FIELD.WALLS;
+      for (var i = 0; i < walls.length; i++) {
+        var w = walls[i];
+        if (px < w.x - e.radius || px > w.x + w.w + e.radius) continue;
+        if (py < w.y - e.radius || py > w.y + w.h + e.radius) continue;
+        // 敌人到这面墙最近点的法线方向
+        var cx = Math.max(w.x, Math.min(e.x, w.x + w.w)),
+          cy = Math.max(w.y, Math.min(e.y, w.y + w.h)),
+          nx = cx - e.x,
+          ny = cy - e.y,
+          nd = Math.hypot(nx, ny);
+        if (nd < 0.001) continue;
+        // 切向 = 法线逆时针旋转 90°
+        var a1 = Math.atan2(nx / nd, -ny / nd);
+        var a2 = a1 + Math.PI;
+        var clear1 = !root.WallCollision.inside(e.x + Math.cos(a1) * probe, e.y + Math.sin(a1) * probe, e.radius);
+        var clear2 = !root.WallCollision.inside(e.x + Math.cos(a2) * probe, e.y + Math.sin(a2) * probe, e.radius);
+        if (!clear1 && !clear2) continue;
+        if (clear1 && clear2) {
+          // 已在沿墙滑动且新方向仍畅通：保持原方向（迟滞），避免在墙前来回抖动
+          if (e.avoidTime > 0 && e.avoidAngle) {
+            return wallAngDiff(e.avoidAngle, a1) < wallAngDiff(e.avoidAngle, a2) ? a1 : a2;
+          }
+          // 首次选择：选探测点离玩家更近的一侧，即绕向更近的墙角
+          var g1x = e.x + Math.cos(a1) * probe,
+            g1y = e.y + Math.sin(a1) * probe,
+            g2x = e.x + Math.cos(a2) * probe,
+            g2y = e.y + Math.sin(a2) * probe;
+          var h1 = Math.hypot(Player.x - g1x, Player.y - g1y),
+            h2 = Math.hypot(Player.x - g2x, Player.y - g2y);
+          return h1 < h2 ? a1 : a2;
+        }
+        return clear1 ? a1 : a2;
+      }
+      return null;
     },
     // ---------- 近战Boss：预警线后冲锋 ----------
     updateBossMelee: function (enemy, dt) {
@@ -303,6 +373,23 @@
           enemy.bossTargetX = Player.x;
           enemy.bossTargetY = Player.y;
         }
+      }
+    },
+    // 腐化敌人暂时成为盟友：追击最近的非盟友敌人并持续造成接触伤害。
+    updateCorruptAlly: function (ally, dt) {
+      var target = null, best = Infinity;
+      for (var i = 0; i < this.pool.length; i++) {
+        var e = this.pool[i]; if (!e.active || e === ally || e.allyTimer > 0) continue;
+        var dx = e.x - ally.x, dy = e.y - ally.y, d2 = dx * dx + dy * dy;
+        if (d2 < best) { best = d2; target = e; }
+      }
+      if (!target) return;
+      var dist = Math.sqrt(best) || 1, step = ally.speed * dt;
+      ally.x += (target.x - ally.x) / dist * step; ally.y += (target.y - ally.y) / dist * step;
+      ally.allyAttackTimer = Math.max(0, (ally.allyAttackTimer || 0) - dt);
+      if (dist <= ally.radius + target.radius + 8 && ally.allyAttackTimer <= 0) {
+        ally.allyAttackTimer = CONFIG.ARMORY.ALLY_ATTACK_INTERVAL;
+        this.applyDamage(target, ally.allyDamage || 1);
       }
     },
     fireBossProjectile: function (enemy) {
@@ -479,6 +566,7 @@
     },
     applyDamage: function (e, damage) {
       if (!e.active) return;
+      damage *= e.specialVulnerable || 1;
       if (e.affixShield > 0) {
         var absorb = Math.min(e.affixShield, damage);
         e.affixShield -= absorb;
@@ -487,30 +575,60 @@
         if (damage <= 0) return;
       }
       e.hitFlash = CONFIG.POLISH.HIT_FLASH;
-      if (Settings.shake) FX.shake = CONFIG.POLISH.SHAKE_TIME;
+      // v014 #96 普通命中轻量反馈：只 hitFlash + 轻点音，不再每击震屏（震屏只给精英/BOSS/暴击）。
       AudioFX.play('hit');
       this.receiveDamage(e, damage);
+    },
+    // v014 #96 击杀反馈分级：普通=小粒子，精英=大粒子+强音+震屏，BOSS/远程BOSS=超大爆炸+最强音+震屏+慢动作。
+    killFeedback: function (e, typeIndex) {
+      if (typeIndex === CONFIG.ENEMY.TYPE_BOSS || (typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED && !e.isSummonTurret)) {
+        root.FX.feedbackBossKill(e.x, e.y);
+      } else if (typeIndex === CONFIG.ENEMY.TYPE_ELITE) {
+        root.FX.feedbackEliteKill(e.x, e.y);
+      } else {
+        root.FX.burst(e.x, e.y);
+      }
     },
     kill: function (enemy) {
       if (!enemy.active) return;
       var blast = enemy.affixBlast, split = enemy.affixSplit, dropX = enemy.x, dropY = enemy.y;
-      root.FX.burst(enemy.x, enemy.y);
-      this.recordKill(enemy);
       var typeIndex = enemy.typeIndex;
+      this.killFeedback(enemy, typeIndex);
+      this.recordKill(enemy);
       var type = CONFIG.ENEMY.TYPES[typeIndex];
       enemy.active = false;
       this.activeCount -= 1;
       RunStats.kills += 1;
+      // v012 #73 按类型击杀计数（仅累加，不改 AI/伤害）：普通=walker/runner/tank，精英，BOSS=近战大Boss，特殊=远程Boss（召唤炮台不计特殊）。
+      if (typeIndex === CONFIG.ENEMY.TYPE_ELITE) RunStats.killElite += 1;
+      else if (typeIndex === CONFIG.ENEMY.TYPE_BOSS) RunStats.killBoss += 1;
+      else if (typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED && !enemy.isSummonTurret) RunStats.killSpecial += 1;
+      else RunStats.killNormal += 1;
       if (Player.killHeal > 0) Player.hp = Math.min(Player.maxHp, Player.hp + Player.killHeal);
       if (blast) this.queueBlast(dropX, dropY);
       if (split) this.trySplit(dropX, dropY, enemy.maxHp);
-      // 远程Boss：大量经验 + 金币 + 必掉主动道具，不触发近战Boss胜利
-      if (typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED && !enemy.isSummonTurret) {
-        var gemCount = CONFIG.BOSS_RANGED.DROP_GEMS;
-        for (var g = 0; g < gemCount; g++) {
-          Experience.dropGem(dropX + (Math.random() * 2 - 1) * 100, dropY + (Math.random() * 2 - 1) * 100, 10);
+      // v013 #81 金币(金圆)与经验(蓝菱)完全分离：蓝经验只进 ExpLevelUp，金圆只进 RunStats.gold。
+      var KD = CONFIG.KILL_DROPS;
+      var dropXp = function (count) {
+        for (var g = 0; g < count; g++) {
+          Experience.dropGem(
+            dropX + (Math.random() * 2 - 1) * KD.SPREAD,
+            dropY + (Math.random() * 2 - 1) * KD.SPREAD,
+            KD.GEM_VALUE);
         }
-        if (type.COINS > 0) CoinDrops.drop(dropX, dropY, type.COINS);
+      };
+      var dropGold = function (count) {
+        for (var c = 0; c < count; c++) {
+          CoinDrops.drop(
+            dropX + (Math.random() * 2 - 1) * KD.SPREAD,
+            dropY + (Math.random() * 2 - 1) * KD.SPREAD,
+            KD.COIN_VALUE);
+        }
+      };
+      // 远程Boss（特殊）：经验 20 个，金币 5 枚 + 必掉主动道具，不触发近战Boss胜利
+      if (typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED && !enemy.isSummonTurret) {
+        dropXp(KD.EXP_SPECIAL_COUNT);
+        dropGold(KD.GOLD_SPECIAL_COUNT);
         PowerUps.dropRandom(dropX, dropY);
         if (root.BossSystem) root.BossSystem.onRangedBossDefeated();
         return;
@@ -519,8 +637,17 @@
         Experience.dropGem(dropX, dropY, 2);
         return;
       }
-      if (type.EXP > 0) Experience.dropGem(dropX, dropY, type.EXP);
-      if (type.COINS > 0) CoinDrops.drop(dropX, dropY, type.COINS);
+      // 近战 BOSS：经验 20 个，金币 100 枚；精英：经验 5 个，金币 5 枚；普通：经验 1 个，金币 20% 掉 1 枚。
+      if (typeIndex === CONFIG.ENEMY.TYPE_BOSS) {
+        dropXp(KD.EXP_BOSS_COUNT);
+        dropGold(KD.GOLD_BOSS_COUNT);
+      } else if (typeIndex === CONFIG.ENEMY.TYPE_ELITE) {
+        dropXp(KD.EXP_ELITE_COUNT);
+        dropGold(KD.GOLD_ELITE_COUNT);
+      } else {
+        dropXp(KD.EXP_NORMAL_COUNT);
+        if (Math.random() < KD.GOLD_NORMAL_CHANCE) dropGold(KD.GOLD_NORMAL_COUNT);
+      }
       PowerUps.rollDrop(dropX, dropY, typeIndex);
       if (typeIndex === CONFIG.ENEMY.TYPE_BOSS) BossSystem.onBossDefeated();
     },
@@ -621,7 +748,7 @@
         nearestDistanceSquared = Infinity;
       for (var i = 0; i < this.pool.length; i++) {
         var enemy = this.pool[i];
-        if (!enemy.active) continue;
+        if (!enemy.active || enemy.allyTimer > 0) continue;
         var dx = enemy.x - x,
           dy = enemy.y - y;
         var d2 = dx * dx + dy * dy;
@@ -659,6 +786,7 @@
       }
     },
     drawOne: function (ctx, e) {
+      if (!Camera.isVisible(e.x, e.y, e.radius + 32)) return;
       var x = e.x - Camera.x,
         y = e.y - Camera.y;
       ctx.save();
@@ -679,6 +807,10 @@
       this.drawBody(ctx, e);
       ctx.restore();
       this.drawIce(ctx, e);
+      if (e.allyTimer > 0) {
+        ctx.save(); ctx.strokeStyle = '#8be05a'; ctx.lineWidth = 4; ctx.shadowColor = '#8be05a'; ctx.shadowBlur = 10;
+        ctx.beginPath(); ctx.arc(x, y, e.radius + 7, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+      }
       if (e.mortarBurnTime > 0) {
         ctx.save();
         ctx.strokeStyle = CONFIG.COLORS.COIN;
@@ -687,6 +819,14 @@
         ctx.fillStyle = CONFIG.COLORS.COIN; ctx.font = '14px Arial';
         ctx.fillText(CONFIG.TEXT.PRODUCT.BURN, x, y - e.radius - 8);
         ctx.restore();
+      }
+      if ((e.typeIndex === CONFIG.ENEMY.TYPE_BOSS || e.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED) && !e.isSummonTurret) {
+        var bw = Math.max(100, e.radius * 2.4), bh = 9, bx = x - bw / 2, by = y - e.radius - 28;
+        var name = e.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED ? CONFIG.TEXT.BOSS_RANGED_NAME : CONFIG.TEXT.BOSS_MELEE_NAME;
+        ctx.save(); ctx.fillStyle = 'rgba(20,5,20,.9)'; ctx.fillRect(bx, by, bw, bh);
+        ctx.fillStyle = e.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED ? '#a55be8' : '#e5533d'; ctx.fillRect(bx, by, bw * Math.max(0, e.hp / e.maxHp), bh);
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(bx, by, bw, bh);
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial,"Microsoft YaHei"'; ctx.textAlign = 'center'; ctx.fillText(name, x, by - 4); ctx.restore();
       }
     },
     drawTypeMark: function (ctx, enemy, x, y, type) {
@@ -735,6 +875,11 @@
       e.stunTimer = 0;
       e.freezeTimer = 0;
       e.slowMul = 1;
+      e.specialSlowTimer = 0;
+      e.specialVulnerable = 1;
+      e.allyTimer = 0;
+      e.allyAttackTimer = 0;
+      e.allyDamage = 0;
       e.frostTouched = {};
       e.avoidCheck = Math.random() * .2;
       e.avoidTime = 0;
@@ -847,24 +992,60 @@
         var e = this.pool[i];
         if (e.active && e.typeIndex === CONFIG.ENEMY.TYPE_BOSS && e.meleePhase === 'warn') this.drawMeleeChargeTelegraph(ctx, e, e.x - Camera.x, e.y - Camera.y);
       }
+      // v014 #95 远程 BOSS 攻击前红圈预警：蓄力期间在锁定落点画危险范围（召唤炮台不算）。
+      for (var j = 0; j < this.pool.length; j++) {
+        var r = this.pool[j];
+        if (!r.active || r.isSummonTurret) continue;
+        if (r.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED && r.bossChargeTimer > 0) this.drawRangedChargeTelegraph(ctx, r);
+      }
       this.drawBossProjectiles(ctx);
     },
+    // v014 #95 远程 BOSS 蓄力落点红圈：最后 WARN_FLASH_WINDOW 秒明显前摇（更亮）。
+    drawRangedChargeTelegraph: function (ctx, enemy) {
+      var wx = enemy.bossTargetX - Camera.x;
+      var wy = enemy.bossTargetY - Camera.y;
+      var total = this.bossRangedCharge(enemy);
+      var ratio = total > 0 ? 1 - enemy.bossChargeTimer / total : 1;
+      var flash = ratio >= (1 - (CONFIG.BOSS_MELEE.WARN_FLASH_WINDOW || 0.5) / total) ? 1 : 0.6;
+      ctx.save();
+      ctx.globalAlpha = 0.32 * flash;
+      ctx.fillStyle = CONFIG.COLORS.WARNING_CIRCLE;
+      ctx.beginPath();
+      ctx.arc(wx, wy, CONFIG.BOSS_RANGED.EXPLOSION_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 0.85 * flash;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = CONFIG.COLORS.AIM_LINE;
+      ctx.stroke();
+      ctx.restore();
+    },
     drawMeleeChargeTelegraph: function (ctx, enemy, sx, sy) {
+      // v014 #95 冲锋前 1s 红色预警线：线宽 20px、半透明红，方向稳定指向锁定点（meleeTx/Ty）。
       var ax = enemy.meleeTx - Camera.x;
       var ay = enemy.meleeTy - Camera.y;
+      var dx = ax - sx, dy = ay - sy;
+      var d = Math.hypot(dx, dy) || 1;
+      // 从 BOSS 沿锁定方向延伸约 CHARGE_RANGE_MAX，让玩家看清整条冲锋通道。
+      var ext = CONFIG.BOSS_MELEE.CHARGE_RANGE_MAX;
+      var ex = sx + dx / d * ext;
+      var ey = sy + dy / d * ext;
+      var cfg = CONFIG.BOSS_MELEE;
+      // 最后 WARN_FLASH_WINDOW(0.5)s 明显动作前摇：更亮给玩家可躲避时间。
+      var flash = enemy.meleeTimer <= (cfg.WARN_FLASH_WINDOW || 0.5) ? 1 : 0.6;
       ctx.save();
-      ctx.strokeStyle = CONFIG.COLORS.AIM_LINE;
-      ctx.lineWidth = CONFIG.BOSS_MELEE.AIM_LINE_WIDTH;
-      ctx.setLineDash([CONFIG.BOSS_RANGED.AIM_DASH, CONFIG.BOSS_RANGED.AIM_DASH]);
-      ctx.globalAlpha = 0.8;
+      ctx.strokeStyle = CONFIG.COLORS.BOSS_WARN_LINE;
+      ctx.lineWidth = cfg.WARN_LINE_WIDTH || 20;
+      ctx.lineCap = 'round';
+      ctx.globalAlpha = (cfg.WARN_LINE_ALPHA || 0.45) * flash;
       ctx.beginPath();
       ctx.moveTo(sx, sy);
-      ctx.lineTo(ax, ay);
+      ctx.lineTo(ex, ey);
       ctx.stroke();
-      ctx.setLineDash([]);
+      // 锁定目标点红圈
+      ctx.globalAlpha = 0.5 * flash;
+      ctx.fillStyle = CONFIG.COLORS.WARNING_CIRCLE;
       ctx.beginPath();
       ctx.arc(ax, ay, enemy.radius * 0.9, 0, Math.PI * 2);
-      ctx.fillStyle = CONFIG.COLORS.WARNING_CIRCLE;
       ctx.fill();
       ctx.restore();
     },

@@ -21,6 +21,18 @@
       {
         "value": "package.json",
         "type": "file"
+      },
+      {
+        "value": "assets/ui/main-menu/preview.png",
+        "type": "file"
+      },
+      {
+        "value": "assets/ui/main-menu/states-preview.png",
+        "type": "file"
+      },
+      {
+        "value": "assets/ui/main-menu/logo.png",
+        "type": "file"
       }
     ],
     "include": []
@@ -67,7 +79,7 @@
     "condition": false
   },
   "compileType": "game",
-  "libVersion": "3.0.0",
+  "libVersion": "3.17.2",
   "appid": "wx7f463704d20ace35",
   "projectname": "fire-grid-surge",
   "condition": {},
