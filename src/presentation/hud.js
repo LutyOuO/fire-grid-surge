@@ -500,11 +500,25 @@
         }
       }
     },
+    // 在玩家前方的高墙局部半透明盖回角色，关键危险预警仍在此层之后绘制。
+    drawPlayerOcclusion: function (ctx) {
+      var c=CONFIG.CHARACTER.OCCLUSION;
+      for(var i=0;i<CONFIG.FIELD.WALLS.length;i++) {
+        var w=CONFIG.FIELD.WALLS[i];
+        if(Player.x<w.x-36 || Player.x>w.x+w.w+36 || Player.y>w.y || Player.y<w.y-c.RISE)continue;
+        ctx.save();ctx.globalAlpha=c.ALPHA;ctx.fillStyle=c.COLOR;
+        ctx.fillRect(w.x-Camera.x,w.y-Camera.y-c.RISE,w.w,c.RISE);
+        ctx.strokeStyle=c.EDGE;ctx.lineWidth=2;ctx.strokeRect(w.x-Camera.x,w.y-Camera.y-c.RISE,w.w,c.RISE);
+        ctx.restore();
+      }
+    },
     draw: function (ctx) {
+      var renderQuality = root.Settings && root.Settings.getQuality ? root.Settings.getQuality() : CONFIG.RENDER_QUALITY.LEVELS.high;
       // #8 四角废墟装饰（视野裁剪）
       var ruinR = CONFIG.BOUNDARY.CORNER_RUIN_RADIUS;
       var corners = [[0, 0], [CONFIG.WORLD.WIDTH, 0], [0, CONFIG.WORLD.HEIGHT], [CONFIG.WORLD.WIDTH, CONFIG.WORLD.HEIGHT]];
       for (var ci = 0; ci < 4; ci++) {
+        if (renderQuality.DECOR === 0 || renderQuality.DECOR < 1 && ci % 2) continue;
         var rx = corners[ci][0] - Camera.x,
           ry = corners[ci][1] - Camera.y;
         if (rx + ruinR < -ruinR || rx - ruinR > CONFIG.VIEW.WIDTH + ruinR || ry + ruinR < -ruinR || ry - ruinR > CONFIG.VIEW.HEIGHT + ruinR) continue;
@@ -537,6 +551,8 @@
           sy = w.y - Camera.y;
         if (sx + w.w < 0 || sx > CONFIG.VIEW.WIDTH || sy + w.h < 0 || sy > CONFIG.VIEW.HEIGHT) continue;
         ctx.save();
+        ctx.fillStyle=CONFIG.CHARACTER.OCCLUSION.COLOR;
+        ctx.fillRect(sx,sy-CONFIG.CHARACTER.OCCLUSION.RISE,w.w,CONFIG.CHARACTER.OCCLUSION.RISE);
         ctx.fillStyle = CONFIG.COLORS.WALL;
         ctx.fillRect(sx, sy, w.w, w.h);
         ctx.lineWidth = 5;
@@ -611,7 +627,7 @@
             ctx.globalAlpha = t.muzzleFlash / .12;
             ctx.fillStyle = '#ffbd4a';
             ctx.shadowColor = '#ff7b24';
-            ctx.shadowBlur = 18;
+            ctx.shadowBlur = 0;
             ctx.beginPath();
             ctx.arc(0, -CONFIG.TURRET_VISUAL.TUBE_LENGTH, 12, 0, Math.PI * 2);
             ctx.fill();
@@ -647,10 +663,12 @@
       for (var i = 0; i < this.turrets.length && shown < cfg.GUIDE_LIMIT; i++) {
         var t = this.turrets[i];
         if (t.active || t.cooldownTimer > 0 || Math.hypot(t.x - Player.x, t.y - Player.y) > cfg.GUIDE_RANGE) continue;
-        var x = t.x - Camera.x, y = t.y - Camera.y;
+        var x = Camera.worldToScreenX(t.x), y = Camera.worldToScreenY(t.y);
         if (x > cfg.GUIDE_MARGIN && x < CONFIG.VIEW.WIDTH - cfg.GUIDE_MARGIN && y > cfg.GUIDE_TOP && y < CONFIG.VIEW.HEIGHT - cfg.GUIDE_BOTTOM) continue;
-        var px = Math.max(cfg.GUIDE_MARGIN, Math.min(CONFIG.VIEW.WIDTH - cfg.GUIDE_MARGIN, x));
-        var py = Math.max(cfg.GUIDE_TOP, Math.min(CONFIG.VIEW.HEIGHT - cfg.GUIDE_BOTTOM, y));
+        var cx = CONFIG.VIEW.WIDTH / 2, cy = CONFIG.VIEW.HEIGHT / 2, dx = x - cx, dy = y - cy;
+        var tx = Math.abs(dx) > .001 ? (CONFIG.VIEW.WIDTH / 2 - cfg.GUIDE_MARGIN) / Math.abs(dx) : Infinity;
+        var ty = Math.abs(dy) > .001 ? (CONFIG.VIEW.HEIGHT / 2 - Math.max(cfg.GUIDE_TOP, cfg.GUIDE_BOTTOM)) / Math.abs(dy) : Infinity;
+        var edgeScale = Math.min(tx, ty), px = cx + dx * edgeScale, py = cy + dy * edgeScale;
         ctx.fillStyle = CONFIG.COLORS.COIN;
         ctx.save(); ctx.translate(px, py); ctx.rotate(Math.atan2(y - py, x - px));
         ctx.beginPath(); ctx.moveTo(16, 0); ctx.lineTo(-9, -9); ctx.lineTo(-9, 9); ctx.closePath(); ctx.fill(); ctx.restore();
@@ -746,7 +764,7 @@
         ctx.save();
         ctx.fillStyle = '#d8f4ff';
         ctx.shadowColor = '#8eb4d4';
-        ctx.shadowBlur = 12;
+        ctx.shadowBlur = 0;
         ctx.beginPath();
         ctx.arc(o.x - Camera.x, o.y - Camera.y, 9, 0, Math.PI * 2);
         ctx.fill();
@@ -828,7 +846,7 @@
           ctx.lineWidth = 7;
           ctx.lineCap = 'round';
           ctx.shadowColor = CONFIG.COLORS.COIN;
-          ctx.shadowBlur = 10;
+          ctx.shadowBlur = 0;
           ctx.stroke();
           ctx.restore();
         } else if (t.cooldownTimer > 0) {
@@ -1098,7 +1116,7 @@
         ctx.textBaseline = 'middle';
         ctx.fillStyle = '#2fc966';
         ctx.shadowColor = 'rgba(0,0,0,0.3)';
-        ctx.shadowBlur = 10;
+        ctx.shadowBlur = 0;
         ctx.fillText(CONFIG.TEXT.EXTRACTION_SUCCESS, CONFIG.VIEW.WIDTH / 2, CONFIG.VIEW.HEIGHT / 2);
       }
       ctx.restore();
@@ -1134,6 +1152,7 @@
     goldT: 0,
     pressIndex: -1,
     pressT: 0,
+    scrollY: 0,
     // 行序：血包 / 激光 / 磁铁 / 冰冻 / 炸弹（type 对齐 TYPE_*）。
     ITEMS: [{
       key: 'MEDKIT',
@@ -1169,6 +1188,7 @@
       this.goldT = 0;
       this.pressIndex = -1;
       this.pressT = 0;
+      this.scrollY = 0;
       this.category = 0;
     },
     rollGap: function () {
@@ -1240,10 +1260,11 @@
     },
     // #86 面板几何：屏幕居中。
     panelRect: function () {
-      var w = CONFIG.SUPPLY.PANEL_W;
-      var h = CONFIG.SUPPLY.PANEL_H;
+      var safeTop = Math.max(0, root.Platform.safeTop || 0), safeBottom = Math.max(0, root.Platform.safeBottom || 0);
+      var w = Math.min(CONFIG.SUPPLY.PANEL_W, CONFIG.VIEW.WIDTH - 48);
+      var h = Math.min(CONFIG.SUPPLY.PANEL_H, CONFIG.VIEW.HEIGHT - safeTop - safeBottom - 24);
       var x = Math.round((CONFIG.VIEW.WIDTH - w) / 2);
-      var y = Math.round((CONFIG.VIEW.HEIGHT - h) / 2);
+      var y = Math.round(safeTop + (CONFIG.VIEW.HEIGHT - safeTop - safeBottom - h) / 2);
       return {
         x: x,
         y: y,
@@ -1255,20 +1276,31 @@
       var p = this.panelRect();
       return {
         x: p.x,
-        y: p.y + 164 + i * CONFIG.SUPPLY.PANEL_ROW_H,
+        y: p.y + CONFIG.SUPPLY.CONTENT_TOP + i * CONFIG.SUPPLY.PANEL_ROW_H - this.scrollY,
         w: p.w,
         h: CONFIG.SUPPLY.PANEL_ROW_H
       };
     },
     tabRect: function (i) {
       var p = this.panelRect(), gap = 6, w = (p.w - 48 - gap * 3) / 4;
-      return { x: p.x + 24 + i * (w + gap), y: p.y + 120, w: w, h: 36 };
+      return { x: p.x + 24 + i * (w + gap), y: p.y + 134, w: w, h: 36 };
     },
     currentEntries: function () {
       if (this.category === 1) return [1, 2, 3];
       if (this.category === 2) return CONFIG.ARMORY.AMMO;
       if (this.category === 3) return CONFIG.ARMORY.PERKS;
       return this.ITEMS;
+    },
+    listViewport: function () {
+      var p = this.panelRect(), top = p.y + CONFIG.SUPPLY.CONTENT_TOP, bottom = p.y + p.h - CONFIG.SUPPLY.CONTENT_BOTTOM;
+      return { x: p.x + CONFIG.SUPPLY.CONTENT_SIDE_PAD, y: top, w: p.w - CONFIG.SUPPLY.CONTENT_SIDE_PAD * 2, h: bottom - top };
+    },
+    maxScroll: function () {
+      var content = this.currentEntries().length * CONFIG.SUPPLY.PANEL_ROW_H;
+      return Math.max(0, content - this.listViewport().h);
+    },
+    scrollBy: function (delta) {
+      this.scrollY = Math.max(0, Math.min(this.maxScroll(), this.scrollY + delta));
     },
     buyRect: function (i) {
       var r = this.rowRect(i);
@@ -1282,10 +1314,10 @@
     closeRect: function () {
       var p = this.panelRect();
       return {
-        x: p.x + p.w - CONFIG.SUPPLY.CLOSE_SIZE - 14,
-        y: p.y + 14,
-        w: CONFIG.SUPPLY.CLOSE_SIZE,
-        h: CONFIG.SUPPLY.CLOSE_SIZE
+        x: p.x + 36,
+        y: p.y + p.h - 110 + 20,
+        w: p.w - 72,
+        h: 68
       };
     },
     update: function (dt) {
@@ -1300,7 +1332,7 @@
         return;
       }
       // #85 商店打开（战斗暂停中）：只推进金币滚动/按钮按下动画；
-      // 存在时限倒计时仍照常走（沿用旧行为，超时面板随补给点关闭）。
+      // 玩家停留期间商店时限冻结，只有补给点自然到期或点击 X 才结束面板。
       if (this.open) {
         this.tickFx(dt);
         this.t -= dt;
@@ -1352,8 +1384,15 @@
       for (i = 0; i < 4; i++) {
         r = this.tabRect(i);
         if (UI.isPointInRect(tap, r.x, r.y, r.w, r.h)) {
-          this.category = i; this.pressIndex = -1; root.Input.clearTap(); return;
+          this.category = i; this.scrollY = 0; this.pressIndex = -1; root.Input.clearTap(); return;
         }
+      }
+      var viewport = this.listViewport();
+      if (!UI.isPointInRect(tap, viewport.x, viewport.y, viewport.w, viewport.h)) {
+        r = this.closeRect();
+        if (UI.isPointInRect(tap, r.x, r.y, r.w, r.h)) this.exitShop();
+        root.Input.clearTap();
+        return;
       }
       // #86 购买按钮（金币不足/已满自然不可点）。
       for (i = 0; i < this.currentEntries().length; i++) {
@@ -1447,15 +1486,8 @@
       if (!this.active || !this.open) return;
       var p = this.panelRect();
       ctx.save();
-      // 半透明遮罩 + 居中面板
-      ctx.fillStyle = 'rgba(5,8,7,0.55)';
-      ctx.fillRect(0, 0, CONFIG.VIEW.WIDTH, CONFIG.VIEW.HEIGHT);
-      UI.roundedRectPath(ctx, p.x, p.y, p.w, p.h, 24);
-      ctx.fillStyle = CONFIG.COLORS.PANEL_BG;
-      ctx.fill();
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = CONFIG.COLORS.MENU_ACCENT;
-      ctx.stroke();
+      // 共用弹窗框架固定标题/内容/底栏，商品列表只能在内容区滚动。
+      UI.drawModalChrome(ctx, p, CONFIG.TEXT.SUPPLY_TITLE, '关闭商店', 0.60);
       // 标题 / 副标题
       var supplyIcon = UI.icon('nav_supply');
       if (supplyIcon) ctx.drawImage(supplyIcon, p.x + 34, p.y + 18, 44, 44);
@@ -1463,12 +1495,12 @@
       ctx.textBaseline = 'middle';
       ctx.fillStyle = CONFIG.COLORS.TEXT;
       ctx.font = 'bold 30px Arial, "Microsoft YaHei", sans-serif';
-      ctx.fillText(CONFIG.TEXT.SUPPLY_TITLE, p.x + p.w / 2, p.y + 40);
+      // 标题已由共用框架居中绘制；副标题留在标题栏内。
       ctx.fillStyle = CONFIG.COLORS.HINT_TEXT;
       ctx.font = '16px Arial, "Microsoft YaHei", sans-serif';
       ctx.fillText(CONFIG.TEXT.SUPPLY_SUBTITLE, p.x + p.w / 2, p.y + 68);
       // 顶部金币栏：左"当前金币"，右 coin_gold 图标 + 金色滚动数字
-      var barY = p.y + 84,
+      var barY = p.y + 92,
         barH = 32;
       UI.roundedRectPath(ctx, p.x + 24, barY, p.w - 48, barH, 12);
       ctx.fillStyle = 'rgba(255,212,71,0.12)';
@@ -1506,6 +1538,9 @@
         ctx.font = 'bold 15px Arial, "Microsoft YaHei", sans-serif'; ctx.fillText(CONFIG.TEXT.SUPPLY_TABS[ti], tr.x + tr.w / 2, tr.y + tr.h / 2);
       }
       var entries = this.currentEntries();
+      var viewport = this.listViewport();
+      ctx.save();
+      ctx.beginPath(); ctx.rect(viewport.x, viewport.y, viewport.w, viewport.h); ctx.clip();
       for (var i = 0; i < entries.length; i++) {
         var item = entries[i], row = this.rowRect(i), type = -1, price = 0, maxed = false, locked = false;
         var name = '', desc = '', iconName = '', iconColor = CONFIG.COLORS.ITEM_BORDER;
@@ -1556,9 +1591,15 @@
         var press = this.pressIndex === i && this.pressT > 0;
         UI.drawActionButton(ctx, br.x, br.y + (press ? 3 : 0), br.w, br.h, label, affordable, 20);
       }
-      // 唯一关闭入口固定在右上角，避免摇杆松手误关。
-      var cr = this.closeRect();
-      UI.drawActionButton(ctx, cr.x, cr.y, cr.w, cr.h, '×', true, 34);
+      ctx.restore();
+      var maxScroll = this.maxScroll();
+      if (maxScroll > 0) {
+        var thumbH = Math.max(48, viewport.h * viewport.h / (entries.length * CONFIG.SUPPLY.PANEL_ROW_H));
+        var thumbY = viewport.y + (viewport.h - thumbH) * this.scrollY / maxScroll;
+        ctx.fillStyle = 'rgba(255,255,255,.16)'; ctx.fillRect(p.x + p.w - 8, viewport.y, 3, viewport.h);
+        ctx.fillStyle = 'rgba(233,173,88,.75)'; ctx.fillRect(p.x + p.w - 9, thumbY, 5, thumbH);
+      }
+      // 唯一关闭入口由统一弹窗框架固定在底栏。
       ctx.restore();
     }
   };
@@ -1588,6 +1629,9 @@
         MortarStrike.draw(ctx);
         Weapons.draw(ctx);
         Player.draw(ctx);
+        Field.drawPlayerOcclusion(ctx);
+        root.Armory.drawPerks(ctx);
+        root.PulseGun.drawReload(ctx);
         UI.drawPlayerStatus(ctx);
         DamageText.draw(ctx);
         FX.draw(ctx);

@@ -94,7 +94,7 @@
       return true;
     },
     onPlayerDamaged: function () { this.healTimer = 0; this.healTick = 0; },
-    triggerPerk: function (id) { if (this.hasPerk(id)) this.flashes[id] = CONFIG.ARMORY.PERK_FLASH_TIME; },
+    triggerPerk: function (id) { if (this.hasPerk(id)) this.flashes[id] = CONFIG.CHARACTER.PERKS.FLASH_TIME; },
     update: function (dt) {
       for (var id in this.flashes) this.flashes[id] = Math.max(0, this.flashes[id] - dt);
       if (this.hasPerk('revive') && Player.hp < Player.maxHp) {
@@ -176,9 +176,11 @@
         var d = null, id = this.perks[i];
         for (var j = 0; j < CONFIG.ARMORY.PERKS.length; j++) if (CONFIG.ARMORY.PERKS[j].ID === id) d = CONFIG.ARMORY.PERKS[j];
         if (!d) continue;
-        var size = n > 6 ? 32 : 48, flash = this.flashes[id] > 0, x = Player.x - Camera.x + (i - (n - 1) / 2) * (size + 4), y = Player.y - Camera.y + 44;
-        ctx.save(); ctx.translate(x, y); ctx.scale(flash ? 1.25 : 1, flash ? 1.25 : 1);
-        ctx.shadowColor = d.COLOR; ctx.shadowBlur = flash ? 18 : 4; var img = root.UI.icon(d.ICON);
+        var cfg=CONFIG.CHARACTER.PERKS, anchor=CONFIG.CHARACTER.ANCHORS.SKILLS, col=i%cfg.COLUMNS, row=Math.floor(i/cfg.COLUMNS);
+        var columns=Math.min(cfg.COLUMNS,n-row*cfg.COLUMNS), size=cfg.SIZE, flash=this.flashes[id]>0;
+        var x=Player.x-Camera.x+anchor.x+(col-(columns-1)/2)*(size+cfg.GAP), y=Player.y-Camera.y+anchor.y+row*(size+cfg.GAP);
+        ctx.save(); ctx.translate(x,y); ctx.scale(flash?cfg.FLASH_SCALE:1,flash?cfg.FLASH_SCALE:1);
+        var img = root.UI.icon(d.ICON);
         if (img) ctx.drawImage(img, -size / 2, -size / 2, size, size); else { ctx.fillStyle = d.COLOR; ctx.beginPath(); ctx.arc(0, 0, size / 2, 0, Math.PI * 2); ctx.fill(); }
         ctx.restore();
       }
@@ -227,7 +229,7 @@
           bullet.y = y;
           bullet.vx = Math.cos(angle) * speed;
           bullet.vy = Math.sin(angle) * speed;
-          bullet.life = CONFIG.WEAPONS.PULSE.LIFE + (Player.nextBulletLife || 0);
+          bullet.life = PulseGun.getSpec().LIFE + (Player.nextBulletLife || 0);
           bullet.damage = damage;
           bullet.pierceRemaining = penetration;
           bullet.hitCount = 0;
@@ -327,7 +329,6 @@
         ctx.translate(screenX, screenY);
         ctx.rotate(angle);
         ctx.shadowColor = '#fff36a';
-        ctx.shadowBlur = 18;
         ctx.fillStyle = '#ffd928';
         ctx.fillRect(-30, -3, 30, 6);
         ctx.fillStyle = '#fffbd2';
@@ -336,15 +337,22 @@
         return;
       }
       var specialDef = Armory.ammoDef(bullet.specialAmmo);
-      ctx.beginPath();
-      ctx.moveTo(trailX, trailY);
-      ctx.lineTo(screenX, screenY);
-      ctx.lineWidth = CONFIG.WEAPONS.PULSE.TRAIL_WIDTH;
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = specialDef ? specialDef.COLOR : CONFIG.COLORS.BULLET_TRAIL;
-      ctx.stroke();
+      var renderQuality = root.Settings && root.Settings.getQuality ? root.Settings.getQuality() : CONFIG.RENDER_QUALITY.LEVELS.high;
+      if (renderQuality.TRAILS) {
+        ctx.beginPath();
+        ctx.moveTo(trailX, trailY);
+        ctx.lineTo(screenX, screenY);
+        ctx.lineWidth = CONFIG.WEAPONS.PULSE.TRAIL_WIDTH;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = specialDef ? specialDef.COLOR : CONFIG.COLORS.BULLET_TRAIL;
+        ctx.stroke();
+      }
+      var bulletColor = specialDef ? specialDef.COLOR : CONFIG.COLORS.BULLET;
+      var bulletKey = 'bullet_' + bulletColor;
+      var bulletSprite = root.SpriteCache && root.SpriteCache.getCircle(bulletKey, CONFIG.WEAPONS.PULSE.DRAW_RADIUS, bulletColor, CONFIG.COLORS.BULLET_GLOW, bulletColor, CONFIG.COLORS.BULLET_CORE);
+      if (bulletSprite) { ctx.drawImage(bulletSprite, screenX - bulletSprite.width / 2, screenY - bulletSprite.height / 2); ctx.restore(); return; }
       ctx.shadowColor = CONFIG.COLORS.BULLET_GLOW;
-      ctx.shadowBlur = CONFIG.WEAPONS.PULSE.DRAW_RADIUS * 2;
+      ctx.shadowBlur = 0;
       ctx.beginPath();
       ctx.arc(screenX, screenY, CONFIG.WEAPONS.PULSE.DRAW_RADIUS, 0, Math.PI * 2);
       ctx.fillStyle = specialDef ? specialDef.COLOR : CONFIG.COLORS.BULLET;
@@ -374,6 +382,7 @@
     infinitePierce: false,
     _aimCache: null,
     ammo: CONFIG.WEAPONS.PULSE.MAGAZINE,
+    sustainTime: 0,
     reloading: false,
     reloadTimer: 0,
     reset: function () {
@@ -390,39 +399,44 @@
       this.spreadBonus = 0;
       this.infinitePierce = false;
       this.ammo = this.getMagazineSize();
+      this.sustainTime = 0;
       this.reloading = false;
       this.reloadTimer = 0;
       this.projectileCount = Math.min(CONFIG.WEAPONS.PULSE.MAX_PROJECTILES, CONFIG.WEAPONS.PULSE.BASE_PROJECTILES + Math.round(Meta.getEffectTotal('START_PROJECTILE')));
       this.penetration = CONFIG.WEAPONS.PULSE.BASE_PENETRATION;
     },
     update: function (dt) {
-      if (root.WeaponProgress.selected !== "pistol") return;
+      if (!CONFIG.WEAPONS.FIREARMS[root.WeaponProgress.selected || 'pistol']) return;
+      if (!this._aimCache) this._aimCache = Targeting.makeCache();
+      var target = Targeting.acquire(this._aimCache, dt);
+      Weapons.aimAt(target, root.WeaponProgress.selected);
       if (this.muzzleFlashTimer > 0) this.muzzleFlashTimer = Math.max(0, this.muzzleFlashTimer - dt);
       if (this.reloading) {
         this.reloadTimer -= dt;
-        if (this.reloadTimer <= 0) { this.reloading = false; this.reloadTimer = 0; this.ammo = this.getMagazineSize(); Armory.triggerPerk('reload'); }
+        if (this.reloadTimer <= 0) { this.reloading = false; this.reloadTimer = 0; this.ammo = this.getMagazineSize(); this.sustainTime = 0; Armory.triggerPerk('reload'); }
         return;
       }
       this.cooldown = Math.max(0, this.cooldown - dt);
-      if (!this._aimCache) this._aimCache = Targeting.makeCache();
-      var target = Targeting.acquire(this._aimCache, dt);
       if (this.cooldown > 0) return;
-      if (!target) return;
+      if (!target) { this.sustainTime = 0; return; }
       this.fireAt(target);
       this.cooldown = this.getInterval();
     },
     getDamage: function () {
-      return (CONFIG.WEAPONS.PULSE.DAMAGE + this.damageFlat) * (1 + this.damageBonus) * this.damageMultiplier * Armory.damageMultiplier();
+      return (this.getSpec().DAMAGE + this.damageFlat) * (1 + this.damageBonus) * this.damageMultiplier * Armory.damageMultiplier();
     },
-    getMagazineSize: function () { return CONFIG.WEAPONS.PULSE.MAGAZINE * Armory.magazineMultiplier(); },
-    getReloadDuration: function () { return CONFIG.WEAPONS.PULSE.RELOAD_TIME * (Armory.hasPerk('reload') ? .7 : 1); },
+    getSpec: function () { return CONFIG.WEAPONS.FIREARMS[root.WeaponProgress.selected || 'pistol'] || CONFIG.WEAPONS.FIREARMS.pistol; },
+    getMagazineSize: function () { return this.getSpec().MAGAZINE * Armory.magazineMultiplier(); },
+    getReloadDuration: function () { return this.getSpec().RELOAD * (Armory.hasPerk('reload') ? .7 : 1); },
     startReload: function () { this.reloading = true; this.reloadTimer = this.getReloadDuration(); },
     drawReload: function (ctx) {
-      if (!this.reloading) return;
+      if (!this.reloading || Player.hp <= 0) return;
       var duration = this.getReloadDuration();
       var progress = 1 - Math.max(0, this.reloadTimer) / duration;
-      var x = Player.x - Camera.x + CONFIG.PLAYER.RADIUS + 20;
-      var y = Player.y - Camera.y - CONFIG.PLAYER.RADIUS - 16;
+      var anchor = CONFIG.CHARACTER.ANCHORS.RELOAD;
+      var scale=CONFIG.CHARACTER.HEIGHT/96;
+      var x = Player.x - Camera.x + anchor.x*scale;
+      var y = Player.y - Camera.y + anchor.y*scale;
       ctx.save();
       ctx.fillStyle = 'rgba(8,14,16,.82)'; ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.fill();
       var img = root.UI && root.UI.icon ? root.UI.icon('ammo_normal') : null;
@@ -432,26 +446,34 @@
       ctx.restore();
     },
     getInterval: function () {
-      return Math.max(CONFIG.WEAPONS.PULSE.MIN_INTERVAL, CONFIG.WEAPONS.PULSE.INTERVAL * this.cooldownMultiplier / (1 + this.fireRateBonus) / (Armory.hasPerk('firerate') ? 1.2 : 1));
+      return Math.max(CONFIG.WEAPONS.PULSE.MIN_INTERVAL, (1 / this.getSpec().RATE) * this.cooldownMultiplier / (1 + this.fireRateBonus) / (Armory.hasPerk('firerate') ? 1.2 : 1));
     },
     getBulletSpeed: function () {
-      return Math.min(CONFIG.WEAPONS.PULSE.MAX_SPEED, (CONFIG.WEAPONS.PULSE.SPEED + this.speedFlat) * (this.laserCannon ? 1.5 : 1));
+      return Math.min(CONFIG.WEAPONS.PULSE.MAX_SPEED, (this.getSpec().SPEED + this.speedFlat) * (this.laserCannon ? 1.5 : 1));
     },
     fireAt: function (target) {
-      var baseAngle = Math.atan2(target.y - Player.y, target.x - Player.x);
+      Weapons.aimAt(target, root.WeaponProgress.selected);
+      var baseAngle = Weapons.presentation.angle;
+      var muzzle = Weapons.getMuzzle(baseAngle, root.WeaponProgress.selected);
+      if (muzzle.blocked) return;
       var totalProjectiles = this.projectileCount * this.projectileMultiplier;
       var middle = (totalProjectiles - 1) / 2;
-      var spread = CONFIG.WEAPONS.PULSE.SPREAD_ANGLE + this.spreadBonus;
+      var spec = this.getSpec();
+      var halfSpread = spec.SPREAD + this.spreadBonus;
+      if (spec.SUSTAIN_SPREAD) halfSpread += Math.min(spec.SUSTAIN_SPREAD, this.sustainTime * 0.025);
       var specialAmmo = Armory.nextSpecial();
       for (var i = 0; i < totalProjectiles; i++) {
-        var angle = baseAngle + (i - middle) * spread;
-        Bullet.spawn(Player.x, Player.y, angle, this.getBulletSpeed(), this.getDamage(), (this.laserCannon || this.infinitePierce) ? 9999 : this.penetration, specialAmmo);
+        var normalizedSpread = totalProjectiles === 1 ? Math.random() * 2 - 1 : (i - middle) / Math.max(0.5, middle);
+        var angle = baseAngle + normalizedSpread * halfSpread;
+        Bullet.spawn(muzzle.x, muzzle.y, angle, this.getBulletSpeed(), this.getDamage(), (this.laserCannon || this.infinitePierce) ? 9999 : spec.PIERCE + this.penetration, specialAmmo);
       }
       // #5 后坐力（主弹道方向，不叠加）；#16 枪口闪光
       Player.applyRecoil(baseAngle);
+      Weapons.shot(root.WeaponProgress.selected);
       this.muzzleFlashTimer = 0.05;
       root.AudioFX.play("shoot");
       this.ammo -= 1;
+      this.sustainTime += this.getInterval();
       if (this.ammo <= 0) this.startReload();
     }
   };
@@ -530,13 +552,18 @@
       }
     },
     drawOne: function (ctx, x, y, angle) {
+      var sprite = root.SpriteCache && root.SpriteCache.getDiamond('blade_default', CONFIG.WEAPONS.BLADE.WIDTH / 2, CONFIG.WEAPONS.BLADE.LENGTH / 2, CONFIG.COLORS.WEAPON_BLADE, CONFIG.COLORS.WEAPON_BLADE_GLOW, CONFIG.COLORS.BLADE_OUTLINE, CONFIG.COLORS.BLADE_CORE);
+      if (sprite) {
+        ctx.save(); ctx.translate(x, y); ctx.rotate(angle + Math.PI / 2); ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2); ctx.restore();
+        return;
+      }
       var halfLength = CONFIG.WEAPONS.BLADE.LENGTH / 2;
       var halfWidth = CONFIG.WEAPONS.BLADE.WIDTH / 2;
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(angle + Math.PI / 2);
       ctx.shadowColor = CONFIG.COLORS.WEAPON_BLADE_GLOW;
-      ctx.shadowBlur = 8;
+      ctx.shadowBlur = 0;
       ctx.beginPath();
       ctx.moveTo(0, -halfLength);
       ctx.lineTo(halfWidth, 0);
@@ -559,13 +586,45 @@
     }
   };
   var Weapons = {
+    presentation: { valid:false, angle:Math.PI/2, flash:0, recoil:0 },
+    muzzlePoint: {x:0,y:0,blocked:false},
+    // 共享真实瞄准状态；角色不再自行索敌。非主武器不能覆盖持握朝向。
+    aimAt: function (target, id) {
+      if (id !== root.WeaponProgress.selected) return;
+      var p=this.presentation; p.valid=!!(target && target.active !== false);
+      if(!p.valid)return;
+      var s=Player.visual;
+      var grip=root.CharacterView.grip(s);
+      var scale=CONFIG.CHARACTER.HEIGHT/96;
+      p.angle=Math.atan2(target.y-Player.y-grip.y*scale,target.x-Player.x-grip.x*scale);
+      root.CharacterView.setDirection(s,p.angle);
+      grip=root.CharacterView.grip(s);
+      p.angle=Math.atan2(target.y-Player.y-grip.y*scale,target.x-Player.x-grip.x*scale);
+    },
+    getMuzzle: function (angle,id) {
+      var p=this.muzzlePoint;
+      root.CharacterView.muzzle(Player.x,Player.y,angle,id,Player.visual.facing,p);
+      p.blocked=!!root.WallCollision.segment(Player.x,Player.y,p.x,p.y,CONFIG.AI_TARGETING.WALL_RADIUS);
+      var dx=p.x-Player.x,dy=p.y-Player.y;
+      if(root.WallCollision.rayDistance(Player.x,Player.y,Math.atan2(dy,dx))+2 < Math.hypot(dx,dy))p.blocked=true;
+      return p;
+    },
+    shot: function (id) {
+      if(id !== root.WeaponProgress.selected)return;
+      this.presentation.flash=CONFIG.CHARACTER.FLASH_TIME;
+      this.presentation.recoil=CONFIG.CHARACTER.RECOIL_TIME;
+    },
     reset: function () {
+      this.presentation.valid=false; this.presentation.angle=Math.PI/2; this.presentation.flash=0; this.presentation.recoil=0;
       Armory.reset();
       Bullet.reset();
       PulseGun.reset();
       OrbitBlade.reset();
     },
     update: function (dt) {
+      this.presentation.valid=false;
+      this.presentation.flash=Math.max(0,this.presentation.flash-dt);
+      this.presentation.recoil=Math.max(0,this.presentation.recoil-dt);
       Armory.update(dt);
       PulseGun.update(dt);
       Bullet.update(dt);
@@ -578,8 +637,6 @@
       root.Crossbow.draw(ctx);
       root.RainbowFX.draw(ctx);
       Armory.drawZones(ctx);
-      Armory.drawPerks(ctx);
-      PulseGun.drawReload(ctx);
     },
     // 炸弹和激光共享主武器基础伤害查询。
     getMainDamage: function () {
@@ -712,7 +769,7 @@
           ey = z.y - Camera.y;
         ctx.globalAlpha = .38;
         ctx.shadowColor = '#30dfff';
-        ctx.shadowBlur = 16;
+        ctx.shadowBlur = 0;
         ctx.strokeStyle = '#32d9ff';
         ctx.lineWidth = 30;
         ctx.beginPath();
@@ -727,7 +784,7 @@
       }
       ctx.fillStyle = '#fff';
       ctx.shadowColor = '#39e5ff';
-      ctx.shadowBlur = 22;
+      ctx.shadowBlur = 0;
       ctx.beginPath();
       ctx.arc(sx, sy, 16, 0, Math.PI * 2);
       ctx.fill();
@@ -883,12 +940,13 @@
   // 最终属性快照：战斗与暂停构筑页读取同一批实时值，避免展示值另算一套。
   root.FinalStats = {
     get: function () {
+      var weaponId = root.WeaponProgress.selected, firearm = CONFIG.WEAPONS.FIREARMS[weaponId], fireRate = firearm ? 1 / PulseGun.getInterval() : weaponId === 'flamer' ? root.FlameWeapon.rate / CONFIG.CONTENT.FLAME.TICK : weaponId === 'crossbow' ? root.Crossbow.rate * (1 + (root.W8 && root.W8.rateBonusFor ? root.W8.rateBonusFor('crossbow') : 0)) / CONFIG.CONTENT.CROSSBOW.COOLDOWN : 0;
       return {
-        damage: Weapons.getMainDamage(), fireRate: root.WeaponProgress.selected === 'pistol' ? 1 / PulseGun.getInterval() : 0,
-        magazine: root.WeaponProgress.selected === 'pistol' ? PulseGun.getMagazineSize() : 0,
-        reload: root.WeaponProgress.selected === 'pistol' ? PulseGun.getReloadDuration() : 0,
+        damage: Weapons.getMainDamage(), fireRate: fireRate,
+        magazine: firearm ? PulseGun.getMagazineSize() : 0,
+        reload: firearm ? PulseGun.getReloadDuration() : 0,
         speed: Player.getMoveSpeed(), crit: Player.critChance, critMultiplier: CONFIG.PLAYER.CRIT_MULTIPLIER + Player.critDamageBonus,
-        penetration: PulseGun.penetration, projectiles: PulseGun.projectileCount * PulseGun.projectileMultiplier,
+        penetration: weaponId === 'crossbow' ? '无限' : PulseGun.penetration + ((firearm || {}).PIERCE || 0), projectiles: weaponId === 'crossbow' ? root.Crossbow.count : PulseGun.projectileCount * PulseGun.projectileMultiplier,
         pickup: Player.pickupRadius, maxHp: Player.maxHp, armor: Player.shield || 0, skills: Armory.perks.slice(), ammo: Armory.ammoType, weaponLevel: Armory.weaponLevel
       };
     }
@@ -905,7 +963,7 @@
     rate: 1,
     angle: CONFIG.CONTENT.FLAME.ANGLE,
     range: CONFIG.CONTENT.FLAME.RANGE,
-    burnLife: CONFIG.BALANCE.FLAME_BURN_DURATION,
+    burnLife: CONFIG.CONTENT.FLAME.BURN_TIME,
     burns: [],
     patches: [],
     visual: 0,
@@ -934,7 +992,7 @@
       this.rate = 1;
       this.angle = CONFIG.CONTENT.FLAME.ANGLE;
       this.range = CONFIG.CONTENT.FLAME.RANGE;
-      this.burnLife = CONFIG.BALANCE.FLAME_BURN_DURATION;
+      this.burnLife = CONFIG.CONTENT.FLAME.BURN_TIME;
       this.visual = 0;
       this.napalm = false;
       this.backdraft = false;
@@ -957,8 +1015,8 @@
           continue;
         }
         if (b.tick <= 0) {
-          b.tick += CONFIG.BALANCE.FLAME_BURN_TICK;
-          Combat.hitEnemyFixed(e, CONFIG.CONTENT.FLAME.DAMAGE * this.damageMul * (1 + (root.W8 && root.W8.dmgBonusFor ? root.W8.dmgBonusFor('flame') : 0)), e.x, e.y);
+          b.tick += CONFIG.CONTENT.FLAME.BURN_TICK;
+          Combat.hitEnemyFixed(e, CONFIG.CONTENT.FLAME.BURN_DPS * CONFIG.CONTENT.FLAME.BURN_TICK * this.damageMul * (1 + (root.W8 && root.W8.dmgBonusFor ? root.W8.dmgBonusFor('flame') : 0)), e.x, e.y);
         }
       }
       if (!this.unlocked) return;
@@ -966,6 +1024,7 @@
       this.visual = Math.max(0, this.visual - dt);
       if (!this._aimCache) this._aimCache = Targeting.makeCache();
       this.aimTarget = Targeting.acquire(this._aimCache, dt);
+      Weapons.aimAt(this.aimTarget, 'flamer');
       if (this.timer <= 0) {
         this.timer = .1 / (this.rate * (1 + (root.W8 && root.W8.rateBonusFor ? root.W8.rateBonusFor('flame') : 0)));
         this.fire();
@@ -989,7 +1048,7 @@
       }
     },
     updatePatches: function (dt) {
-      var dps = CONFIG.CONTENT.FLAME.DAMAGE * this.damageMul * 0.08;
+      var dps = CONFIG.CONTENT.FLAME.DAMAGE * this.damageMul * CONFIG.CONTENT.FLAME.PATCH_DPS_COEF;
       for (var i = 0; i < this.patches.length; i++) {
         var p = this.patches[i];
         if (!p.active) continue;
@@ -1012,8 +1071,13 @@
     fire: function () {
       var target = this.aimTarget;
       if (!target) return;
-      var a = Math.atan2(target.y - Player.y, target.x - Player.x),
+      Weapons.aimAt(target,'flamer');
+      var a = root.WeaponProgress.selected==='flamer' ? Weapons.presentation.angle : Math.atan2(target.y - Player.y, target.x - Player.x),
         half = this.angle / 2;
+      var muzzle=Weapons.getMuzzle(a,'flamer');
+      if(muzzle.blocked)return;
+      this.originX=muzzle.x;this.originY=muzzle.y;
+      Weapons.shot('flamer');
       this.aim = a;
       this.visual = .22;
       var reach = this.range * this.rangeShortMul;
@@ -1025,9 +1089,10 @@
           dy = e.y - Player.y,
           dist = Math.hypot(dx, dy);
         if (dist > reach + e.radius) continue;
-        var da = Math.atan2(Math.sin(Math.atan2(dy, dx) - a), Math.cos(Math.atan2(dy, dx) - a));
+        var da = Math.atan2(Math.sin(Math.atan2(e.y-muzzle.y, e.x-muzzle.x) - a), Math.cos(Math.atan2(e.y-muzzle.y, e.x-muzzle.x) - a));
         if (Math.abs(da) <= half) {
-          if (!root.WallCollision.segment(Player.x, Player.y, e.x, e.y, 2)) Combat.hitEnemy(e, CONFIG.CONTENT.FLAME.DAMAGE * this.damageMul * (1 + (root.W8 && root.W8.dmgBonusFor ? root.W8.dmgBonusFor('flame') : 0)), e.x, e.y);
+          if (root.WallCollision.segment(Player.x, Player.y, e.x, e.y, 2) || root.WallCollision.segment(muzzle.x,muzzle.y,e.x,e.y,2)) continue;
+          Combat.hitEnemy(e, CONFIG.CONTENT.FLAME.DAMAGE * this.damageMul * (1 + (root.W8 && root.W8.dmgBonusFor ? root.W8.dmgBonusFor('flame') : 0)), e.x, e.y);
           var b = this.burns[i];
           b.active = true;
           b.time = this.burnLife;
@@ -1050,8 +1115,9 @@
         for (var p = 0; p < this.patches.length; p++) if (!this.patches[p].active) {
           var patch = this.patches[p];
           patch.active = true;
-          patch.x = Player.x + Math.cos(a) * this.range * 0.7;
-          patch.y = Player.y + Math.sin(a) * this.range * 0.7;
+          var patchDist=Math.min(this.range*.7,root.WallCollision.rayDistance(muzzle.x,muzzle.y,a));
+          patch.x = muzzle.x + Math.cos(a) * patchDist;
+          patch.y = muzzle.y + Math.sin(a) * patchDist;
           patch.r = CONFIG.CONTENT.FLAME.PATCH_R;
           patch.t = 0;
           patch.life = CONFIG.CONTENT.FLAME.PATCH_LIFE;
@@ -1071,15 +1137,16 @@
         if (root.FX) root.FX.burst(bx, by);
       }
       for (var i = 0; i < this.burns.length; i++) if (this.burns[i].active) {
-        this.burns[i].time = CONFIG.BALANCE.FLAME_BURN_DURATION;
-        this.burns[i].tick = Math.min(this.burns[i].tick, CONFIG.BALANCE.FLAME_BURN_TICK);
+        this.burns[i].time = CONFIG.CONTENT.FLAME.BURN_TIME;
+        this.burns[i].tick = Math.min(this.burns[i].tick, CONFIG.CONTENT.FLAME.BURN_TICK);
       }
     },
     draw: function (ctx) {
       this.drawCone(ctx);
       if (this.unlocked && this.visual > 0) {
-        var x = Player.x - Camera.x,
-          y = Player.y - Camera.y;
+        var origin=Weapons.getMuzzle(this.aim,'flamer');
+        var x = origin.x - Camera.x,
+          y = origin.y - Camera.y;
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         for (var i = 0; i < 18; i++) {
@@ -1087,6 +1154,7 @@
             a = this.aim + Math.sin(i * 7.3 + Game.survivedSeconds * 20) * this.angle * .42,
             rr = this.range * f,
             sz = 18 * (1 - f) + 6;
+          if(origin.blocked || rr+sz>root.WallCollision.rayDistance(origin.x,origin.y,a))continue;
           ctx.globalAlpha = .35 + .45 * (1 - f);
           ctx.fillStyle = i % 3 ? '#ff8a24' : '#ffe46b';
           ctx.beginPath();
@@ -1104,7 +1172,7 @@
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
         ctx.shadowColor = '#ff5a18';
-        ctx.shadowBlur = 14;
+        ctx.shadowBlur = 0;
         for (var k = 0; k < 4; k++) {
           var ang = k * Math.PI / 2 + Game.survivedSeconds * 4,
             rr = e.radius * .55;
@@ -1113,6 +1181,9 @@
           ctx.arc(sx + Math.cos(ang) * rr, sy + Math.sin(ang) * rr - 5, 5 + k, 0, Math.PI * 2);
           ctx.fill();
         }
+        ctx.globalAlpha = 0.88;
+        ctx.fillStyle = '#fff2a1';
+        ctx.beginPath(); ctx.arc(sx, sy - e.radius * 0.45, Math.max(3, e.radius * 0.16), 0, Math.PI * 2); ctx.fill();
         ctx.restore();
       }
       for (var pi = 0; pi < this.patches.length; pi++) {
@@ -1130,22 +1201,23 @@
     // 火焰扇形底层。
     drawCone: function (ctx) {
       if (!this.unlocked || this.visual <= 0) return;
-      var x = Player.x - Camera.x,
-        y = Player.y - Camera.y,
-        a = this.aim,
-        half = this.angle / 2;
+      var origin=Weapons.getMuzzle(this.aim,'flamer');
+      if(origin.blocked)return;
+      var x=origin.x-Camera.x,y=origin.y-Camera.y,a=this.aim,half=this.angle/2;
       ctx.save();
       ctx.globalAlpha = Math.min(1, this.visual / .12);
-      var g = ctx.createRadialGradient(x, y, 5, x, y, this.range);
-      root.safeStop(g, 0, 'rgba(255,245,100,.9)');
-      root.safeStop(g, .55, 'rgba(255,140,30,.65)');
-      root.safeStop(g, 1, 'rgba(230,45,15,0)');
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.moveTo(x, y);
-      ctx.arc(x, y, this.range, a - half, a + half);
-      ctx.closePath();
-      ctx.fill();
+      // 外焰橙红、内焰金黄、核心黄白；三层扇形都受同一射程与墙体命中判定约束。
+      var layers=CONFIG.CHARACTER.FLAME_LAYERS,rays=CONFIG.CHARACTER.FLAME_RAYS;
+      for (var li = 0; li < layers.length; li++) {
+        var layer=layers[li];
+        ctx.fillStyle=layer.COLOR;ctx.beginPath();ctx.moveTo(x,y);
+        for(var ray=0;ray<=rays;ray++) {
+          var angle=a-half*layer.ANGLE+ray/rays*half*layer.ANGLE*2;
+          var reach=Math.min(this.range*layer.RANGE,root.WallCollision.rayDistance(origin.x,origin.y,angle));
+          ctx.lineTo(x+Math.cos(angle)*reach,y+Math.sin(angle)*reach);
+        }
+        ctx.closePath();ctx.fill();
+      }
       ctx.restore();
     }
   };
@@ -1228,14 +1300,20 @@
     fire: function () {
       var e = this.aimTarget;
       if (!e) return;
-      var a = Math.atan2(e.y - Player.y, e.x - Player.x);
-      for (var n = 0; n < this.count; n++) this.spawn(a + (n - (this.count - 1) / 2) * .08);
+      Weapons.aimAt(e,'crossbow');
+      var a=root.WeaponProgress.selected==='crossbow'?Weapons.presentation.angle:Math.atan2(e.y-Player.y,e.x-Player.x);
+      var muzzle=Weapons.getMuzzle(a,'crossbow');
+      if(muzzle.blocked && !this.wallPierce)return;
+      var opts=this._shotOrigin || (this._shotOrigin={x:0,y:0});opts.x=muzzle.x;opts.y=muzzle.y;
+      for (var n = 0; n < this.count; n++) this.spawn(a + (n - (this.count - 1) / 2) * .08,opts);
+      Weapons.shot('crossbow');
     },
     update: function (dt) {
       if (!this._aimCache) this._aimCache = Targeting.makeCache();
       if (this.unlocked) {
         this.timer -= dt;
         this.aimTarget = Targeting.acquire(this._aimCache, dt);
+        Weapons.aimAt(this.aimTarget,'crossbow');
         if (this.timer <= 0) {
           this.timer = CONFIG.CONTENT.CROSSBOW.COOLDOWN / (this.rate * (1 + (root.W8 && root.W8.rateBonusFor ? root.W8.rateBonusFor('crossbow') : 0)));
           this.fire();
@@ -1301,7 +1379,13 @@
       ctx.save();
       for (var i = 0; i < this.arrows.length; i++) {
         var b = this.arrows[i];
-        if (!b.active) continue;
+        if (!b.active || !Camera.isVisible(b.x, b.y, 24)) continue;
+        var arrow = root.SpriteCache && root.SpriteCache.getCrossbowArrow();
+        if (arrow) {
+          ctx.save(); ctx.translate(b.x - Camera.x, b.y - Camera.y); ctx.rotate(b.angle);
+          ctx.drawImage(arrow, -arrow.width / 2, -arrow.height / 2); ctx.restore();
+          continue;
+        }
         ctx.save();
         ctx.translate(b.x - Camera.x, b.y - Camera.y);
         ctx.rotate(b.angle);
@@ -1334,12 +1418,21 @@
     },
     unlocked: function (id) {
       if (id === 'pistol') return true;
+      var mastery = Meta.data.weaponMastery || {};
+      if (id === 'smg') return (mastery.total || 0) >= CONFIG.WEAPONS.UNLOCKS.SMG_TOTAL;
+      if (id === 'ar') return (mastery.smg || 0) >= CONFIG.WEAPONS.UNLOCKS.AR_SMG;
+      if (id === 'mg') return (mastery.ar || 0) >= CONFIG.WEAPONS.UNLOCKS.MG_AR;
       var lv = Meta.data.weaponLevel.pistol.lv;
       return id === 'flamer' ? lv >= 5 : lv >= 10;
     },
     addKill: function (type) {
       var d = Meta.data.weaponLevel[this.selected],
-        pts = type === CONFIG.ENEMY.TYPE_TANK ? 2 : type === CONFIG.ENEMY.TYPE_ELITE ? 15 : type === CONFIG.ENEMY.TYPE_BOSS || type === CONFIG.ENEMY.TYPE_BOSS_RANGED ? 100 : 1;
+        pts = type === CONFIG.ENEMY.TYPE_TANK ? 2 : type === CONFIG.ENEMY.TYPE_ELITE ? 15 : type === CONFIG.ENEMY.TYPE_BOSS || type === CONFIG.ENEMY.TYPE_BOSS_RANGED ? 100 : 1,
+        masteryPts = type === CONFIG.ENEMY.TYPE_ELITE ? CONFIG.WEAPONS.MASTERY.ELITE : type === CONFIG.ENEMY.TYPE_BOSS || type === CONFIG.ENEMY.TYPE_BOSS_RANGED ? CONFIG.WEAPONS.MASTERY.BOSS : 1;
+      var mastery = Meta.data.weaponMastery || (Meta.data.weaponMastery = { total: 0 });
+      mastery.total = (mastery.total || 0) + masteryPts;
+      mastery[this.selected] = (mastery[this.selected] || 0) + masteryPts;
+      if (!d) d = Meta.data.weaponLevel[this.selected] = { lv: 0, pts: 0 };
       d.pts += pts;
       while (d.pts >= this.need(d.lv)) {
         d.pts -= this.need(d.lv);

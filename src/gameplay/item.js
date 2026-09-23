@@ -18,6 +18,7 @@
   var CONFIG = root.CONFIG;
   var RunStats = {
     kills: 0,
+    damageDone: 0,
     pickedCoins: 0,
     // v012 #73 按类型击杀计数：普通/精英/BOSS/特殊（远程Boss），用于幸存者硬币换算。
     killNormal: 0,
@@ -39,6 +40,7 @@
     extractAdClaimed: false,
     reset: function () {
       this.kills = 0;
+      this.damageDone = 0;
       this.pickedCoins = 0;
       this.gold = 0;
       this.killNormal = 0;
@@ -257,9 +259,10 @@
         y = gem.y - Camera.y;
       var halfWidth = CONFIG.EXPERIENCE.GEM_WIDTH / 2;
       var halfLength = CONFIG.EXPERIENCE.GEM_LENGTH / 2;
+      var spriteKey = 'gem_' + CONFIG.COLORS.GEM;
+      var sprite = root.SpriteCache && root.SpriteCache.getDiamond(spriteKey, halfWidth, halfLength, CONFIG.COLORS.GEM, CONFIG.COLORS.GEM_GLOW, CONFIG.COLORS.GEM_OUTLINE, CONFIG.COLORS.GEM_CORE);
+      if (sprite) { ctx.drawImage(sprite, x - sprite.width / 2, y - sprite.height / 2); return; }
       ctx.save();
-      ctx.shadowColor = CONFIG.COLORS.GEM_GLOW;
-      ctx.shadowBlur = CONFIG.EXPERIENCE.GEM_RADIUS * 2;
       ctx.beginPath();
       ctx.moveTo(x, y - halfLength);
       ctx.lineTo(x + halfWidth, y);
@@ -268,7 +271,6 @@
       ctx.closePath();
       ctx.fillStyle = CONFIG.COLORS.GEM;
       ctx.fill();
-      ctx.shadowBlur = 0;
       ctx.lineWidth = CONFIG.EXPERIENCE.OUTLINE_WIDTH;
       ctx.strokeStyle = CONFIG.COLORS.GEM_OUTLINE;
       ctx.stroke();
@@ -402,7 +404,8 @@
       // 该武器已解锁，这两个词条在任何局都不再刷出（他武器局已被下方 weapon 规则排除，此处补本武器局）。
       if (definition.EFFECT === 'UNLOCK_FLAME' || definition.EFFECT === 'UNLOCK_CROSSBOW') return false;
       var w = definition.weapon;
-      if (w && w !== 'all' && w !== 'blade' && w !== curWeapon) return false;
+      var firearm = !!(CONFIG.WEAPONS.FIREARMS && CONFIG.WEAPONS.FIREARMS[curWeapon]);
+      if (w && w !== 'all' && w !== 'blade' && w !== curWeapon && !(firearm && w === 'pistol')) return false;
       if (definition.EFFECT === 'MULTISHOT') return PulseGun.projectileCount < CONFIG.WEAPONS.PULSE.MAX_PROJECTILES;
       if (definition.EFFECT === 'PENETRATION') return PulseGun.penetration < CONFIG.WEAPONS.PULSE.MAX_PENETRATION;
       if (definition.EFFECT === 'CRIT_CHANCE') return Player.critChance < CONFIG.PLAYER.MAX_CRIT_CHANCE;
@@ -727,14 +730,14 @@
         if (!Camera.isVisible(coin.x, coin.y, CONFIG.COIN.RADIUS * 2)) continue;
         var x = coin.x - Camera.x,
           y = coin.y - Camera.y;
+        var coinKey = 'coin_' + CONFIG.COLORS.COIN;
+        var coinSprite = root.SpriteCache && root.SpriteCache.getCircle(coinKey, CONFIG.COIN.RADIUS, CONFIG.COLORS.COIN, CONFIG.COLORS.COIN_GLOW, CONFIG.COLORS.COIN_OUTLINE, CONFIG.COLORS.COIN_CORE);
+        if (coinSprite) { ctx.drawImage(coinSprite, x - coinSprite.width / 2, y - coinSprite.height / 2); continue; }
         ctx.save();
-        ctx.shadowColor = CONFIG.COLORS.COIN_GLOW;
-        ctx.shadowBlur = CONFIG.COIN.RADIUS;
         ctx.beginPath();
         ctx.arc(x, y, CONFIG.COIN.RADIUS, 0, Math.PI * 2);
         ctx.fillStyle = CONFIG.COLORS.COIN;
         ctx.fill();
-        ctx.shadowBlur = 0;
         ctx.lineWidth = CONFIG.COIN.OUTLINE_WIDTH;
         ctx.strokeStyle = CONFIG.COLORS.COIN_OUTLINE;
         ctx.stroke();
@@ -1000,16 +1003,22 @@
       for (var i = 0; i < this.pool.length; i++) {
         var item = this.pool[i];
         if (!item.active) continue;
+        if (!Camera.isVisible(item.x, item.y, CONFIG.UI.WORLD_ITEM_RADIUS * 2)) continue;
         var x = item.x - Camera.x,
           y = item.y - Camera.y;
         ctx.save();
-        ctx.beginPath();
-        ctx.arc(x, y, CONFIG.UI.WORLD_ITEM_RADIUS, 0, Math.PI * 2);
-        ctx.fillStyle = CONFIG.COLORS.ITEM_BASE;
-        ctx.fill();
-        ctx.lineWidth = CONFIG.UI.WORLD_ITEM_OUTLINE;
-        ctx.strokeStyle = CONFIG.COLORS.ITEM_BORDER;
-        ctx.stroke();
+        var dropColor = CONFIG.COLORS.ITEM_BASE;
+        var dropKey = 'drop_' + item.typeIndex + '_' + CONFIG.UI.WORLD_ITEM_RADIUS;
+        var cachedDrop = root.SpriteCache && root.SpriteCache.drawCircle(ctx, dropKey, x, y, CONFIG.UI.WORLD_ITEM_RADIUS, dropColor, CONFIG.COLORS.ITEM_BORDER, CONFIG.COLORS.ITEM_BORDER);
+        if (!cachedDrop) {
+          ctx.beginPath();
+          ctx.arc(x, y, CONFIG.UI.WORLD_ITEM_RADIUS, 0, Math.PI * 2);
+          ctx.fillStyle = dropColor;
+          ctx.fill();
+          ctx.lineWidth = CONFIG.UI.WORLD_ITEM_OUTLINE;
+          ctx.strokeStyle = CONFIG.COLORS.ITEM_BORDER;
+          ctx.stroke();
+        }
         // 场景掉落物与右下道具栏共用正式切图；加载失败才退回Canvas矢量图标。
         var key = item.typeIndex === CONFIG.POWERUPS.TYPE_BOMB ? 'icon_bomb' : item.typeIndex === CONFIG.POWERUPS.TYPE_LASER_EMITTER ? 'icon_laser' : item.typeIndex === CONFIG.POWERUPS.TYPE_MAGNET ? 'icon_magnet' : item.typeIndex === CONFIG.POWERUPS.TYPE_MEDKIT ? 'icon_medkit' : item.typeIndex === CONFIG.POWERUPS.TYPE_FREEZE ? 'icon_freeze' : null;
         var icon = key && UI.icon ? UI.icon(key) : null;

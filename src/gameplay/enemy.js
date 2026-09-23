@@ -496,7 +496,7 @@
       ctx.arc(sx, sy - enemy.radius * 0.5 + breathe, 7, 0, Math.PI * 2);
       ctx.fillStyle = CONFIG.COLORS.BOSS_RANGED_PROJECTILE_GLOW;
       ctx.shadowColor = CONFIG.COLORS.BOSS_RANGED_PROJECTILE_GLOW;
-      ctx.shadowBlur = 12 * glow;
+      ctx.shadowBlur = 0;
       ctx.fill();
       ctx.restore();
       // 蓄力红色虚线瞄准线
@@ -550,8 +550,12 @@
         }
         // 深紫球体
         ctx.save();
+        if (root.SpriteCache && root.SpriteCache.drawCircle(ctx, 'boss_projectile', sx, sy, CONFIG.BOSS_RANGED.PROJECTILE_RADIUS, CONFIG.COLORS.BOSS_RANGED_PROJECTILE, CONFIG.COLORS.BOSS_RANGED_PROJECTILE_GLOW, CONFIG.COLORS.BOSS_RANGED_PROJECTILE, CONFIG.COLORS.BOSS_RANGED_PROJECTILE_GLOW)) {
+          ctx.restore();
+          continue;
+        }
         ctx.shadowColor = CONFIG.COLORS.BOSS_RANGED_PROJECTILE_GLOW;
-        ctx.shadowBlur = 14;
+        ctx.shadowBlur = 0;
         ctx.beginPath();
         ctx.arc(sx, sy, CONFIG.BOSS_RANGED.PROJECTILE_RADIUS, 0, Math.PI * 2);
         ctx.fillStyle = CONFIG.COLORS.BOSS_RANGED_PROJECTILE;
@@ -808,7 +812,7 @@
       ctx.restore();
       this.drawIce(ctx, e);
       if (e.allyTimer > 0) {
-        ctx.save(); ctx.strokeStyle = '#8be05a'; ctx.lineWidth = 4; ctx.shadowColor = '#8be05a'; ctx.shadowBlur = 10;
+        ctx.save(); ctx.strokeStyle = '#8be05a'; ctx.lineWidth = 4; ctx.shadowColor = '#8be05a'; ctx.shadowBlur = 0;
         ctx.beginPath(); ctx.arc(x, y, e.radius + 7, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
       }
       if (e.mortarBurnTime > 0) {
@@ -952,18 +956,23 @@
       var screenY = enemy.y - Camera.y;
       var margin = enemy.radius + CONFIG.SPAWNER.OUTSIDE_MARGIN;
       var type = CONFIG.ENEMY.TYPES[enemy.typeIndex];
-      if (screenX < -margin || screenX > CONFIG.VIEW.WIDTH + margin || screenY < -margin || screenY > CONFIG.VIEW.HEIGHT + margin) return;
+      if (!Camera.isVisible(enemy.x, enemy.y, margin)) return;
+      var radiusTier = Math.ceil(enemy.radius / 8) * 8;
+      var frozen = PowerUps.isFrozen() || (enemy.freezeTimer || 0) > 0;
+      var fillColor = enemy.hitFlash > 0 ? CONFIG.COLORS.ENEMY_HIT : frozen ? CONFIG.COLORS.ENEMY_FROZEN : CONFIG.COLORS[type.FILL_KEY];
+      var cacheKey = 'enemy_' + enemy.typeIndex + '_' + radiusTier + '_' + fillColor;
       ctx.save();
-      ctx.shadowColor = CONFIG.COLORS[type.GLOW_KEY];
-      ctx.shadowBlur = Enemy.activeCount < CONFIG.POLISH.LOW_FX_ENEMIES ? enemy.radius : 0;
-      ctx.beginPath();
-      ctx.arc(screenX, screenY, enemy.radius, 0, Math.PI * 2);
-      ctx.fillStyle = enemy.hitFlash > 0 ? CONFIG.COLORS.ENEMY_HIT : CONFIG.COLORS[type.FILL_KEY];
-      ctx.fill();
-      ctx.shadowBlur = 0;
-      ctx.lineWidth = CONFIG.ENEMY.OUTLINE_WIDTH;
-      ctx.strokeStyle = CONFIG.COLORS[type.OUTLINE_KEY];
-      ctx.stroke();
+      var cached = root.SpriteCache && root.SpriteCache.drawCircle(ctx, cacheKey, screenX, screenY, radiusTier, fillColor,
+        CONFIG.COLORS[type.GLOW_KEY], CONFIG.COLORS[type.OUTLINE_KEY]);
+      if (!cached) {
+        ctx.beginPath();
+        ctx.arc(screenX, screenY, enemy.radius, 0, Math.PI * 2);
+        ctx.fillStyle = fillColor;
+        ctx.fill();
+        ctx.lineWidth = CONFIG.ENEMY.OUTLINE_WIDTH;
+        ctx.strokeStyle = CONFIG.COLORS[type.OUTLINE_KEY];
+        ctx.stroke();
+      }
       this.drawTypeMark(ctx, enemy, screenX, screenY, type);
       if (enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED) {
         this.drawRangedBossDetails(ctx, enemy, screenX, screenY);

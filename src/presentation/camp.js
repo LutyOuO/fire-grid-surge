@@ -115,20 +115,9 @@
     };
     root.CampNav = CampNav;
     UI.getBaseTabRects = function (top) {
-      var y = CONFIG.UI.BASE_TAB_Y + top,
-        w = 330,
-        g = 20;
-      return [{
-        x: 35,
-        y: y,
-        w: w,
-        h: CONFIG.UI.BASE_TAB_HEIGHT
-      }, {
-        x: 35 + w + g,
-        y: y,
-        w: w,
-        h: CONFIG.UI.BASE_TAB_HEIGHT
-      }];
+      var y = CONFIG.UI.BASE_TAB_Y + top, w = CONFIG.UI.BASE_TAB_WIDTH, g = CONFIG.UI.BASE_TAB_GAP, out = [];
+      for (var i = 0; i < 4; i++) out.push({ x: 20 + i * (w + g), y: y, w: w, h: CONFIG.UI.BASE_TAB_HEIGHT });
+      return out;
     };
     function drawBack(ctx, title) {
       var top = CONFIG.UI.TOP_INSET || 0;
@@ -219,11 +208,11 @@
       UI.drawMenuGlow(ctx);
       drawBack(ctx, '强化');
       drawMoney(ctx);
-      var tabs = enhanceTabs(top), labels = ['角色/武器', '炮塔强化', '道具强化', '技能强化'], icons = ['', 'tab_turret', 'tab_item', 'tab_skill'];
+      var tabs = enhanceTabs(top), labels = ['角色武器', '炮塔强化', '道具强化', '敬请期待'], icons = ['tab_enhance', 'tab_turret', 'tab_item', 'tab_skill'];
       for (var i = 0; i < 4; i++) {
         var rr = tabs[i], enabled = i !== 3, active = UI.baseTab === ['character','turret','item','skill'][i];
-        UI.drawActionButton(ctx, rr.x, rr.y, rr.w, rr.h, labels[i], enabled && active, 18);
-        var ti = icons[i] && UI.icon(icons[i]); if (ti) ctx.drawImage(ti, rr.x + 8, rr.y + 8, 36, 36);
+        UI.drawActionButton(ctx, rr.x, rr.y, rr.w, rr.h, (icons[i] ? '  ' : '') + labels[i], enabled && active, i === 3 ? 13 : 15);
+        var ti = icons[i] && UI.icon(icons[i]); if (ti) ctx.drawImage(ti, rr.x + 8, rr.y + 12, 32, 32);
       }
       if (UI.baseTab === 'turret') { UI.baseGadgetFilter = 'turret'; UI.drawBaseGadget(ctx, top); }
       else if (UI.baseTab === 'item') { UI.baseGadgetFilter = 'item'; UI.drawBaseGadget(ctx, top); }
@@ -293,14 +282,13 @@
       }
     }
     function enhanceTabs(top) {
-      var out = [], w = 320, h = 54;
-      for (var i = 0; i < 4; i++) out.push({ x: 45 + (i % 2) * 340, y: CONFIG.UI.BASE_TAB_Y + top + Math.floor(i / 2) * 62, w: w, h: h });
-      return out;
+      return UI.getBaseTabRects(top);
     }
 
     // 外观页返回营地选择页。
 
     Wardrobe.handle = function () {
+      if(this.previewItem) { this.handleDetail(); return; }
       var p = tap(),
         top = CONFIG.UI.TOP_INSET || 0;
       if (p && hit(p, 24, 30 + top, 132, 58)) {
@@ -375,10 +363,11 @@
       text(ctx, d[1], x + w / 2, y + 220, 20, q.rainbow ? edge : q.main, 'center', true);
       var price = d[3] === 'free' ? '初始拥有' : d[3] === 'achievement' ? '成就解锁' : d[4] + ' ' + (d[3] === 'diamonds' ? '钻石' : '幸存者硬币');
       text(ctx, price, x + w / 2, y + 254, 15, d[3] === 'diamonds' ? '#83d7ff' : '#ffd166', 'center');
-      var enabled = !equipped && !locked,
+      text(ctx, CONFIG.TEXT.CHARACTER.PREVIEW, x+w/2,y+188,16,'#86cddd','center');
+      var enabled = !equipped && (owned || !locked),
         caption = equipped ? '已装备' : owned ? '装备' : locked ? '尚未解锁' : '购买';
       UI.drawActionButton(ctx, x + 40, y + h - 78, w - 80, 56, caption, enabled, 18);
-      if (locked) {
+      if (locked && !owned) {
         ctx.save();
         ctx.globalAlpha = .42;
         ctx.fillStyle = '#000';

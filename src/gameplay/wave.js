@@ -267,7 +267,7 @@
     pollAirdropWave: function () {
       var def = CONFIG.EVENTS.KINDS.airdrop;
       var wave = Spawner.waveIndex;
-      if (wave < def.MIN_WAVE) return;
+      if (wave < (def.FIRST_WAVE || def.MIN_WAVE)) return;
       if (this.airdropCount >= def.MAX_PER_RUN) return;
       if (this.lastAirdropWave > 0 && wave - this.lastAirdropWave < this.nextAirdropGap) return;
       this.start('airdrop');
@@ -316,7 +316,8 @@
           var gy = pos.y + Math.sin(gAng) * gDist;
           Enemy.spawn(gx, gy, CONFIG.ENEMY.TYPE_WALKER, Spawner.getHpMultiplier());
         }
-        this.banner(CONFIG.TEXT.PRODUCT.AIRDROP);
+        this.banner(CONFIG.TEXT.PRODUCT.AIRDROP_MARKED);
+        if (root.Settings && root.Settings.shake) Camera.startShake(def.LAND_SHAKE * 0.65, def.LAND_SHAKE_TIME);
       } else if (id === 'elite_rush') {
         for (var i = 0; i < def.EXTRA_ELITES; i++) Spawner.spawnType(CONFIG.ENEMY.TYPE_ELITE, Game.survivedSeconds);
         // v014 #97 精英狂潮开始提示
@@ -420,8 +421,10 @@
         ctx.strokeStyle = CONFIG.COLORS.AIRDROP;
         ctx.lineWidth = 3;
         ctx.globalAlpha = 0.85;
-        ctx.fillStyle = 'rgba(233,173,88,.22)';
-        ctx.fillRect(sx - def.BEAM_WIDTH / 2, sy - def.BEAM_HEIGHT, def.BEAM_WIDTH, def.BEAM_HEIGHT);
+        var beam = ctx.createLinearGradient(sx, sy - def.BEAM_HEIGHT, sx, sy + 20);
+        root.safeStop(beam, 0, 'rgba(255,158,48,0)'); root.safeStop(beam, 0.72, 'rgba(255,158,48,.18)'); root.safeStop(beam, 1, 'rgba(255,202,100,.64)');
+        ctx.fillStyle = beam;
+        ctx.fillRect(sx - def.BEAM_WIDTH / 2, sy - def.BEAM_HEIGHT, def.BEAM_WIDTH, def.BEAM_HEIGHT + 20);
         // v012 #76：激活范围圈（站立 CHARGE_TIME 秒）。
         ctx.setLineDash([10, 8]);
         ctx.beginPath();
@@ -429,7 +432,9 @@
         ctx.stroke();
         ctx.setLineDash([]);
         ctx.fillStyle = ev.opened ? '#e9ad58' : '#8a6a32';
-        ctx.fillRect(sx - 14, sy - 14, 28, 28);
+        ctx.fillRect(sx - 20, sy - 20, 40, 40);
+        var dropIcon = root.UI && root.UI.icon('icon_airdrop');
+        if (dropIcon && Camera.isVisible(ev.x, ev.y, 32)) ctx.drawImage(dropIcon, sx - 22, sy - 22, 44, 44);
         // 站立充能进度环
         if (ev.opened && ev.charge > 0) {
           var prog = Math.min(1, ev.charge / def.CHARGE_TIME);
@@ -508,12 +513,19 @@
       ctx.restore();
       // v014 #97 空投靠近前屏幕边缘文字提示（正立，不随箭头旋转）。
       ctx.save();
+      ctx.translate(px, py);
+      ctx.fillStyle = '#17201d'; ctx.strokeStyle = CONFIG.COLORS.AIRDROP; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, 0, 19, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      var icon = root.UI && root.UI.icon('icon_airdrop');
+      if (icon) ctx.drawImage(icon, -16, -16, 32, 32); else { ctx.fillStyle = CONFIG.COLORS.AIRDROP; ctx.fillRect(-7, -2, 14, 4); ctx.fillRect(-2, -7, 4, 14); }
+      ctx.restore();
+      ctx.save();
       ctx.font = 'bold 18px Arial, "Microsoft YaHei", sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = CONFIG.COLORS.AIRDROP;
       var worldDx = ev.x - Player.x, worldDy = ev.y - Player.y;
-      ctx.fillText('空投箱 ' + Math.round(Math.sqrt(worldDx * worldDx + worldDy * worldDy)) + 'm', px, py + 26);
+      ctx.fillText(CONFIG.TEXT.PRODUCT.AIRDROP_DISTANCE(Math.round(Math.sqrt(worldDx * worldDx + worldDy * worldDy))), px, py + 26);
       ctx.restore();
     },
     drawBanner: function (ctx) {

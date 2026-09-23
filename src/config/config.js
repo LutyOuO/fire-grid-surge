@@ -204,9 +204,18 @@
       TURRET_RADIUS: 18
     },
     WEAPONS: {
+      // #136 主武器数据：通用手枪逻辑驱动四种弹匣枪，特殊武器仍走独立系统。
+      FIREARMS: {
+        pistol: { MAGAZINE: 7, RELOAD: 1.5, RATE: 4, DAMAGE: 10, RANGE: 10, SPEED: 560, PIERCE: 0, SPREAD: 0, MOVE: 1.00, LIFE: 1.1, ICON: 'weapon_pistol' },
+        smg: { MAGAZINE: 28, RELOAD: 1.7, RATE: 11, DAMAGE: 5, RANGE: 5, SPEED: 520, PIERCE: 0, SPREAD: 0.1745, MOVE: 1.05, LIFE: 0.55, ICON: 'weapon_smg' },
+        ar: { MAGAZINE: 30, RELOAD: 2.3, RATE: 7, DAMAGE: 13, RANGE: 13, SPEED: 760, PIERCE: 1, SPREAD: 0.0524, MOVE: 1.00, LIFE: 1.1, ICON: 'weapon_ar' },
+        mg: { MAGAZINE: 120, RELOAD: 3.8, RATE: 13, DAMAGE: 8, RANGE: 8, SPEED: 650, PIERCE: 1, SPREAD: 0.035, MOVE: 0.82, LIFE: 0.85, SUSTAIN_SPREAD: 0.22, ICON: 'weapon_mg' }
+      },
+      MASTERY: { ELITE: 5, BOSS: 20 },
+      UNLOCKS: { SMG_TOTAL: 500, AR_SMG: 1000, MG_AR: 2500 },
       PULSE: {
         INTERVAL: 0.75,
-        MIN_INTERVAL: 0.18,
+        MIN_INTERVAL: 0.035,
         DAMAGE: 12,
         SPEED: 460,
         MAX_SPEED: 900,
@@ -1084,10 +1093,10 @@
       AD_PANEL_WIDTH: 550,
       AD_PANEL_HEIGHT: 300,
       // 营地 Tab 栏
-      BASE_TAB_Y: 196,
-      BASE_TAB_HEIGHT: 54,
-      BASE_TAB_WIDTH: 330,
-      BASE_TAB_GAP: 24,
+      BASE_TAB_Y: 166,
+      BASE_TAB_HEIGHT: 60,
+      BASE_TAB_WIDTH: 171,
+      BASE_TAB_GAP: 5,
       BASE_TAB_FADE_TIME: 0.2,
       BASE_CONTENT_OFFSET: 76,
       GADGET_HEADER_H: 40,
@@ -1665,8 +1674,8 @@
         return '第 ' + n + ' 波 · 敌群来袭';
       },
       BOSS_SUMMON_BANNER: '分身炮台已展开',
-      DEBUG_LINE: function (fps, e, b, p, d, ve, vd) {
-        return 'FPS ' + fps + ' | 敌 ' + e + '/' + ve + '可见 | 弹 ' + b + ' | 掉 ' + vd + '可见 | 粒 ' + p + ' | 字 ' + d;
+      DEBUG_LINE: function (fps, e, b, p, d, ve, vd, updateMs, drawMs) {
+        return 'FPS ' + fps + ' | 敌 ' + e + '/' + ve + '可见 | 弹 ' + b + ' | 掉 ' + vd + '可见 | 粒 ' + p + ' | 字 ' + d + ' | U ' + Number(updateMs || 0).toFixed(1) + 'ms D ' + Number(drawMs || 0).toFixed(1) + 'ms';
       },
       TURRET_ACTIVATE: '站立激活炮台 · 支援 60 秒',
       TURRET_READY: '站立 3 秒激活',
@@ -1980,14 +1989,16 @@
     DIAMOND_NOTICE_TIME: 2,
     FLAME: {
       TICK: 0.1,
-      DAMAGE: 6,
-      RANGE: 150,
+      DAMAGE: 9,
+      RANGE: 230,
       ANGLE: Math.PI / 3,
-      BURN_TIME: 2,
-      BURN_DPS: 3,
+      BURN_TIME: 5,
+      BURN_DPS: 9,
+      BURN_TICK: 1,
       // v014 #90 喷火A 烧地封路：凝固汽油落地留燃烧 DoT 区域，持续 PATCH_LIFE 秒。
       PATCH_LIFE: 5,
-      PATCH_R: 80
+      PATCH_R: 100,
+      PATCH_DPS_COEF: 0.6
     },
     CROSSBOW: {
       COOLDOWN: 1.5,
@@ -2078,6 +2089,13 @@
     ammo_void: 'assets/icons/ammo_void.png',
     ammo_shock: 'assets/icons/ammo_shock.png',
     ammo_frost: 'assets/icons/ammo_frost.png',
+    icon_airdrop: 'assets/icons/icon_airdrop.png',
+    weapon_pistol: 'assets/icons/weapon_pistol.png',
+    weapon_smg: 'assets/icons/weapon_smg.png',
+    weapon_ar: 'assets/icons/weapon_ar.png',
+    weapon_mg: 'assets/icons/weapon_mg.png',
+    weapon_flamer: 'assets/icons/weapon_flamer.png',
+    weapon_crossbow: 'assets/icons/weapon_crossbow.png',
     icon_diamond: 'assets/icons/icon_diamond.png',
     tab_enhance: 'assets/icons/tab_enhance.png',
     tab_appearance: 'assets/icons/tab_appearance.png',
@@ -2406,6 +2424,50 @@
     ALLY_DAMAGE_RATIO: .75
   };
   CONFIG.POLISH.PAUSE_OVERLAY_ALPHA = .6;
+  // 角色表现：脚底始终与逻辑坐标重合；所有偏移只用于绘制。
+  CONFIG.CHARACTER = {
+    ID: 'firegrid_operator', HEIGHT: 96, CELL: 128, FOOT_X: 64, FOOT_Y: 116,
+    HYSTERESIS: 10 * Math.PI / 180, MOVE_EPS: .5, WALK_HZ: 10, STRIDE: 5,
+    BREATH_HZ: 2.5, BREATH: 1, RECOIL_TIME: .12, RECOIL: 3, FLASH_TIME: .055,
+    HIT_COLOR: '#ffffff', SHADOW: 'rgba(0,0,0,.35)', OUTLINE: '#6fdfef',
+    HAND: '#bcc7c7', GLOVE: '#293d50', WEAPON: '#5e798e', WEAPON_LIGHT: '#f9c26a',
+    DIRECTION_ANGLES: [Math.PI / 2, -Math.PI / 2, Math.PI, 0],
+    ANCHORS: { HEAD: {x:0,y:-96}, RELOAD: {x:44,y:-104}, STATUS:{x:0,y:-130}, SKILLS:{x:0,y:28}, GRIP:{x:8,y:-44} },
+    PERKS: { COLUMNS: 4, SIZE: 24, GAP: 8, FLASH_SCALE: 1.18, FLASH_TIME: 2.5 },
+    PREVIEW: { SCALE: 1.4, MENU_SCALE: 1.2, END_SCALE: .9, HEIGHT: 740, WIDTH:660, ACTION_TIME: 1.4 },
+    DIRECTIONS: ['正面','背面','左侧','右侧'], ACTIONS: ['待机','移动','射击','换弹'],
+    LEGACY_IDS: ['default','cowboy','firefighter','special','medic','ninja','punk','hunter','mechanic','necromancer','gold','shadow'],
+    SKINS: {
+      default: { NAME:'火网行动员', ATLAS:'assets/characters/default.png', COLOR:'#344c65', ACCENT:'#ffac43', BACK:'tactical', TEMPLATES:['short','long','heavy'] },
+      special: { NAME:'灰烬重装', ATLAS:'assets/characters/special.png', COLOR:'#56616a', ACCENT:'#ff6843', BACK:'heavy', TEMPLATES:['short','long','heavy'] },
+      medic: { NAME:'极地救援', ATLAS:'assets/characters/medic.png', COLOR:'#d5e2e6', ACCENT:'#57d6e6', BACK:'rescue', TEMPLATES:['short','long','heavy'] }
+    },
+    WEAPON_ATLAS: 'assets/characters/weapons.png',
+    PORTRAITS: 'assets/characters/portraits.png',
+    FLAME_RAYS: 16,
+    FLAME_LAYERS: [
+      {RANGE:1,ANGLE:1,COLOR:'rgba(255,119,24,.42)'},
+      {RANGE:.82,ANGLE:.67,COLOR:'rgba(255,200,55,.55)'},
+      {RANGE:.58,ANGLE:.34,COLOR:'rgba(255,247,187,.78)'}
+    ],
+    OCCLUSION: { RISE:48, ALPHA:.42, COLOR:'#303e42', EDGE:'#729b9f' },
+    TEMPLATES: {
+      short: { WIDTH:52, HEIGHT:26, GRIP_X:38/128, GRIP_Y:34/64, SUPPORT_X:43/128, SUPPORT_Y:36/64, MUZZLE_X:95/128, MUZZLE_Y:30/64, RECOIL:3, RELOAD_TILT:.3 },
+      long: { WIDTH:76, HEIGHT:38, GRIP_X:38/128, GRIP_Y:34/64, SUPPORT_X:70/128, SUPPORT_Y:36/64, MUZZLE_X:114/128, MUZZLE_Y:30/64, RECOIL:4, RELOAD_TILT:.45 },
+      heavy: { WIDTH:82, HEIGHT:41, GRIP_X:38/128, GRIP_Y:34/64, SUPPORT_X:77/128, SUPPORT_Y:36/64, MUZZLE_X:119/128, MUZZLE_Y:30/64, RECOIL:2, RELOAD_TILT:.55 }
+    },
+    WEAPONS: {
+      pistol:{ ROW:0, TEMPLATE:'short', SKIN_KEY:'pulse' }, smg:{ ROW:1,TEMPLATE:'long',SKIN_KEY:'smg' },
+      ar:{ ROW:2,TEMPLATE:'long',SKIN_KEY:'ar' }, mg:{ ROW:3,TEMPLATE:'heavy',SKIN_KEY:'mg' },
+      flamer:{ ROW:4,TEMPLATE:'heavy',SKIN_KEY:'flame' }, crossbow:{ ROW:5,TEMPLATE:'long',SKIN_KEY:'crossbow',MUZZLE_X:111/128 }
+    },
+    DIRECTION_GRIPS: [{x:8,y:-43,behind:false},{x:32,y:-49,behind:true},{x:-12,y:-45,behind:false},{x:12,y:-45,behind:false}],
+    PAINTS: { pulse_silver:'#d7dde2',pulse_red:'#bd443c',pulse_blue:'#54bcdf',pulse_gold:'#e3b33e',flame_green:'#599471',flame_hell:'#e88143',flame_frost:'#8bcbdc',bow_hunter:'#af875e',bow_machine:'#839cb8',bow_holy:'#f4d678' }
+  };
+  CONFIG.TEXT.CHARACTER = { TITLE:'行动队员', PREVIEW:'预览', EQUIP:'装备外观', NOTE:'预览不改变出战武器与战斗属性', WEAPON:'预览武器', BACK:'返回列表', LEGACY:'经典外观标识', IDENTITY:'火力网行动队员' };
+  CONFIG.TEXT.CHARACTER.WEAPONS={pistol:'手枪',smg:'冲锋枪',ar:'自动步枪',mg:'机枪',flamer:'喷火器',crossbow:'弩箭'};
+  // 暂停菜单使用固定按钮间距；长屏不把四个按钮分散到整屏。
+  CONFIG.POLISH.PAUSE_MENU = { STEP: 104, HEIGHT: 80, WIDTH: 520, FONT: 30, INSET: 36, PANEL_WIDTH: 600, BODY_PADDING: 24 };
   CONFIG.TEXT.SUPPLY_TABS = ['道具', '强化武器', '弹药改装', '被动技能'];
   CONFIG.TEXT.SUPPLY_WEAPON_LEVEL = function (lv) { return '武器强化 ' + lv + '级'; };
   CONFIG.TEXT.SUPPLY_WEAPON_DESC = '伤害与弹匣容量均翻倍';
@@ -2424,12 +2486,24 @@
   CONFIG.RENDER_QUALITY = {
     DEFAULT: 'auto', FPS_SAMPLE: 0.5, LOW_FPS: 50, HIGH_FPS: 58,
     LOW_SAMPLES: 6, HIGH_SAMPLES: 6, CHANGE_COOLDOWN: 5,
+    DEFAULT_FPS: 60, HIGH_FPS_TARGET: 120,
+    SETTINGS_TOP: 265, SETTINGS_STEP: 92, SETTINGS_BUTTON_H: 66,
+    NORMAL_TEXT_INTERVAL: 0.12,
     LEVELS: {
       high: { PARTICLES: 1, SHAKE: 1, TRAILS: true, DECOR: 1 },
       medium: { PARTICLES: 0.5, SHAKE: 0.6, TRAILS: true, DECOR: 0.5 },
       low: { PARTICLES: 0.25, SHAKE: 0.3, TRAILS: false, DECOR: 0 }
     }
   };
+  CONFIG.SPRITES = {
+    CACHE_SCALE: 4, CIRCLE_CORE_RATIO: 0.32, DIAMOND_CORE_TOP: 0.58, DIAMOND_CORE_BOTTOM: 0.2, DIAMOND_LINE_WIDTH: 2,
+    CROSSBOW_ARROW: { WIDTH: 48, HEIGHT: 20, COLOR: '#bdc3c7', SHAFT: '#e6e6e6', SHAFT_W: 2, FEATHER: '#8b5a2b' }
+  };
+  CONFIG.INPUT.SHOP_SCROLL_THRESHOLD = 8;
+  CONFIG.INPUT.SHOP_SCROLL_RATIO = 0.5;
+  CONFIG.SUPPLY.CONTENT_TOP = 180;
+  CONFIG.SUPPLY.CONTENT_BOTTOM = 110;
+  CONFIG.SUPPLY.CONTENT_SIDE_PAD = 14;
   CONFIG.TEXT.QUALITY = '画质';
   CONFIG.TEXT.HIGH_FPS = '高帧率';
   CONFIG.TEXT.MIRROR = '左右手镜像';
@@ -2531,6 +2605,7 @@
     // v014 #97 事件靠近提示 + #98 结算进步/基地目标文案
     AIRDROP_NEAR: '空投：金币+道具，附近有敌人',
     AIRDROP_MARKED: '空投已标记，前往领取',
+    AIRDROP_DISTANCE: function(n) { return '空投箱 ' + n + 'px'; },
     ELITE_RUSH_START: '精英狂潮：额外精英掉落更好',
     SANCTUARY_NEAR: '净化区：可回血，但离开炮台保护',
     EXTRACT_NOW: function(n) { return '现在撤离：预计 ' + n + ' 硬币'; },

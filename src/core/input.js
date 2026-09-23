@@ -163,12 +163,22 @@
       if (!touch) return;
       touch.currentX = x;
       touch.currentY = y;
+      if (root.SupplyPoint && root.SupplyPoint.open && touch.type === null) {
+        var view = root.SupplyPoint.listViewport();
+        if (root.UI.isPointInRect({ x: touch.startX, y: touch.startY }, view.x, view.y, view.w, view.h) && Math.abs(y - touch.startY) > CONFIG.INPUT.SHOP_SCROLL_THRESHOLD) touch.type = 'shopScroll';
+        if (touch.type === 'shopScroll') {
+          root.SupplyPoint.scrollBy(((touch.lastScrollY === undefined ? touch.startY : touch.lastScrollY) - touch.currentY) * CONFIG.INPUT.SHOP_SCROLL_RATIO);
+          touch.lastScrollY = touch.currentY;
+          return;
+        }
+      }
       if (touch.type === 'joystick' && this.joystick.pointerId === touchId) this.updateJoystick(x, y);
       if (touch.type === 'bombAim') root.PowerUps.moveBombAim(touchId, x, y);
     },
     onTouchEnd: function (x, y, touchId) {
       var touch = this.activeTouches.get(touchId);
       if (!touch) return;
+      if (touch.type === 'shopScroll') { this.activeTouches.delete(touchId); return; }
       // 连升/刷新后，旧卡片上尚未松开的第二根手指不能选择新卡。
       if (touch.state === CONFIG.GAME.STATE_LEVELUP && touch.offerRevision !== root.ExpLevelUp.offerRevision) {
         root.ButtonUI.pressedTouches.delete(touchId);

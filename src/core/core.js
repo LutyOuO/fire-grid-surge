@@ -81,15 +81,23 @@
           x: 0,
           y: 0,
           life: 0,
-          text: '',
-          isCrit: false
+    text: '',
+          isCrit: false,
+          important: false
         });
       }
     },
     reset: function () {
+      this.normalCooldown = 0;
       for (var i = 0; i < this.pool.length; i++) this.pool[i].active = false;
     },
-    spawn: function (x, y, damage, isCrit) {
+    spawn: function (x, y, damage, isCrit, important) {
+      var quality = root.Settings && root.Settings.getQuality ? root.Settings.getQuality() : CONFIG.RENDER_QUALITY.LEVELS.high;
+      if (quality === CONFIG.RENDER_QUALITY.LEVELS.low && !important && !isCrit) return;
+      if (quality === CONFIG.RENDER_QUALITY.LEVELS.medium && !important && !isCrit) {
+        if (this.normalCooldown > 0) return;
+        this.normalCooldown = CONFIG.RENDER_QUALITY.NORMAL_TEXT_INTERVAL;
+      }
       for (var i = 0; i < this.pool.length; i++) {
         var item = this.pool[i];
         if (!item.active) {
@@ -98,6 +106,7 @@
           item.y = y;
           item.life = CONFIG.DAMAGE_TEXT.LIFE;
           item.isCrit = isCrit;
+          item.important = !!important;
           item.text = (isCrit ? CONFIG.TEXT.CRIT_PREFIX : '') + Math.round(damage);
           // v014 #96 命中反馈分级：暴击重（中粒子+重音+轻震），普通命中只小点不震屏。
           if (root.FX) {
@@ -109,6 +118,7 @@
       }
     },
     update: function (dt) {
+      this.normalCooldown = Math.max(0, this.normalCooldown - dt);
       for (var i = 0; i < this.pool.length; i++) {
         var item = this.pool[i];
         if (!item.active) continue;
@@ -117,6 +127,7 @@
         if (item.life <= 0) item.active = false;
       }
     },
+    normalCooldown: 0,
     draw: function (ctx) {
       for (var i = 0; i < this.pool.length; i++) {
         var item = this.pool[i];
@@ -128,7 +139,7 @@
         ctx.textBaseline = 'middle';
         ctx.fillStyle = item.isCrit ? CONFIG.COLORS.DAMAGE_CRIT : CONFIG.COLORS.DAMAGE_NORMAL;
         ctx.shadowColor = CONFIG.COLORS.TEXT_SHADOW;
-        ctx.shadowBlur = CONFIG.DAMAGE_TEXT.SHADOW_BLUR;
+        ctx.shadowBlur = 0;
         ctx.fillText(item.text, item.x - Camera.x, item.y - Camera.y);
         ctx.restore();
       }
@@ -142,12 +153,16 @@
       if (root.Armory && (enemy.typeIndex === CONFIG.ENEMY.TYPE_ELITE || enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS || enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED)) root.Armory.triggerPerk('damage');
       var permanentMultiplier = 1 + Meta.getEffectTotal('WEAPON_DAMAGE');
       var damage = baseDamage * permanentMultiplier * (1 + Player.globalDamageBonus) * (isCrit ? CONFIG.PLAYER.CRIT_MULTIPLIER + Player.critDamageBonus : 1);
-      DamageText.spawn(hitX, hitY, damage, isCrit);
+      RunStats.damageDone = (RunStats.damageDone || 0) + damage;
+      var important = enemy.typeIndex === CONFIG.ENEMY.TYPE_ELITE || enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS || enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED;
+      RunStats.damageDone = (RunStats.damageDone || 0) + damage;
+      DamageText.spawn(hitX, hitY, damage, isCrit, important);
       Enemy.applyDamage(enemy, damage);
     },
     hitEnemyFixed: function (enemy, damage, hitX, hitY) {
       if (!enemy.active) return;
-      DamageText.spawn(hitX, hitY, damage, false);
+      var important = enemy.typeIndex === CONFIG.ENEMY.TYPE_ELITE || enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS || enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED;
+      DamageText.spawn(hitX, hitY, damage, false, important);
       Enemy.applyDamage(enemy, damage);
     }
   };
@@ -166,6 +181,7 @@
     _hidden: false,
     init: function () {
       Platform.init();
+      if (root.SpriteCache) root.SpriteCache.warm();
       CanvasView.init();
       Input.init();
       Enemy.initPool();
@@ -229,11 +245,13 @@
     enterBase: function () {
       root.CampNav.page = "select";
       root.Wardrobe.open = false;
+      root.Wardrobe.previewItem = null;
       this.state = CONFIG.GAME.STATE_BASE;
       Input.clearTap();
       Input.setMovementEnabled(false);
     },
     restart: function () {
+      if (root.SpriteCache) root.SpriteCache.clear();
       root.WeaponProgress.selected = Meta.data.selectedWeapon || 'pistol';
       root.applyEquippedLooks();
       root.Field.reset();
@@ -282,8 +300,13 @@
       if (!this._hidden) {
         try {
           if (root.Metrics) root.Metrics.sample(dt);
+          var measureStart = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
           this.update(dt);
+          var updateEnd = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+          if (root.Metrics) root.Metrics.updateMs = updateEnd - measureStart;
           this.draw();
+          var drawEnd = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+          if (root.Metrics) root.Metrics.drawMs = drawEnd - updateEnd;
         } catch (error) {
           this.runtimeError = error && error.stack ? error.stack : String(error);
           this.state = 'RUNTIME_ERROR';
@@ -306,6 +329,7 @@
         return;
       }
       if (root.DevConsole.handleInput() || root.DevConsole.open) return;
+      if (this.state === CONFIG.GAME.STATE_MENU || this.state === CONFIG.GAME.STATE_BASE) root.CharacterView.updatePreview(dt);
       if (this.state === CONFIG.GAME.STATE_MAP_SELECT) {
         root.MapSelect.update();
         return;
@@ -451,6 +475,7 @@
         if (root.SupplyPoint) root.SupplyPoint.update(dt);
         root.FlameWeapon.update(dt);
         root.Crossbow.update(dt);
+        Player.updateAppearance(dt);
         var objectives = root.Objectives,
           achievements = root.Achievements;
         objectives.stats.kills = RunStats.kills;
@@ -532,6 +557,8 @@
       this.slowMoTimer = Math.max(this.slowMoTimer, duration);
     },
     commitSettlement: function (isVictory) {
+      Player.visual.end=this.exitType==='death'?'death':this.exitType==='extract'||isVictory?'extract':'';
+      Player.visual.flash=0;Player.visual.reload=0;Player.visual.recoil=0;
       RunStats.calculateCoins(this.survivedSeconds, ExpLevelUp.level, isVictory);
       // v014 #98 结算进步点快照：必须在 settleRun 刷新 best*/合并成就进度之前抓取。
       this.runProgress = {

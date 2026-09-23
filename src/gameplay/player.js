@@ -119,6 +119,8 @@
       this.recoilReturnTimer = 0;
       this.facingAngle = 0;
       this.bobOffset = 0;
+      this.visual = CharacterView.makeState();
+      this.runLook = CharacterView.snapshot(null,root.WeaponProgress.selected);
     },
     update: function (dt) {
       var startX = this.x,
@@ -241,86 +243,51 @@
           this.recoilY = 0;
         }
       }
-      // #16 朝向：优先最近敌人，其次移动方向；移动时 bob 起伏
-      this.updateFacing();
-      if (moveLen > 0.1) {
-        this.bobOffset = Math.sin((root.Game ? root.Game.survivedSeconds : 0) * 8) * 2;
-      } else {
-        this.bobOffset = 0;
-      }
-      // 残影寿命衰减
       for (var i = this.dashTrails.length - 1; i >= 0; i--) {
         this.dashTrails[i].life -= dt;
         if (this.dashTrails[i].life <= 0) this.dashTrails.splice(i, 1);
       }
       var pos = root.Field.collideWalls(this.x, this.y, CONFIG.PLAYER.RADIUS);
-      this.x = pos.x;
-      this.y = pos.y;
+      this.x = pos.x; this.y = pos.y;
       if (this.dashing && this.nextDashSpeed) {
         this.x += (this.x - startX) * this.nextDashSpeed;
         this.y += (this.y - startY) * this.nextDashSpeed;
         this.clampToWorld();
       }
+      this.visual.moveX = this.x - startX;
+      this.visual.moveY = this.y - startY;
     },
     getMoveSpeed: function () {
-      return Math.min(CONFIG.PLAYER.MAX_SPEED, CONFIG.PLAYER.SPEED * (1 + this.moveSpeedBonus));
+      var weapon = root.WeaponProgress && root.WeaponProgress.selected, firearm = CONFIG.WEAPONS.FIREARMS[weapon];
+      return Math.min(CONFIG.PLAYER.MAX_SPEED, CONFIG.PLAYER.SPEED * (1 + this.moveSpeedBonus) * (firearm ? firearm.MOVE : 1));
     },
-    canDash: function () {
-      return !this.dashing && this.dashCooldown <= 0;
-    },
+    canDash: function () { return !this.dashing && this.dashCooldown <= 0; },
     startDash: function () {
       if (!this.canDash()) return false;
-      var move = Input.getMoveVector();
-      var dx = move.x,
-        dy = move.y;
-      if (Math.hypot(dx, dy) < 0.1) {
-        dx = this.lastMoveDirX;
-        dy = this.lastMoveDirY;
-      }
-      if (Math.hypot(dx, dy) < 0.1) {
-        dx = 0;
-        dy = -1;
-      } // 无记录时默认朝上
-      var len = Math.hypot(dx, dy);
-      this.dashDirX = dx / len;
-      this.dashDirY = dy / len;
-      this.dashing = true;
-      this.dashTimer = CONFIG.PLAYER.DASH_DURATION;
-      this.dashCooldown = CONFIG.PLAYER.DASH_COOLDOWN;
-      this.dashTrailTimer = 0;
-      this.dashDustTimer = 0;
-      this.dashScaleTimer = CONFIG.PLAYER.DASH_SCALE_TIME;
-      this.dashReadyFlash = 0;
-      this.dashArrowTimer = CONFIG.PLAYER.DASH_ARROW_TIME;
-      if (this.nextDashTime) this.dashTimer += this.nextDashTime;
-      if (this.nextDashCd) this.dashCooldown = Math.max(.5, this.dashCooldown - this.nextDashCd);
-      if (this.nextDashCdRatio) this.dashCooldown *= this.nextDashCdRatio;
-      root.Objectives.add('dash', 1);
-      root.Achievements.add('dash', 1);
-      return true;
+      var move=Input.getMoveVector(), dx=move.x, dy=move.y;
+      if(Math.hypot(dx,dy)<.1) {dx=this.lastMoveDirX;dy=this.lastMoveDirY;}
+      if(Math.hypot(dx,dy)<.1) {dx=0;dy=-1;}
+      var len=Math.hypot(dx,dy); this.dashDirX=dx/len;this.dashDirY=dy/len;
+      this.dashing=true;this.dashTimer=CONFIG.PLAYER.DASH_DURATION;this.dashCooldown=CONFIG.PLAYER.DASH_COOLDOWN;
+      this.dashTrailTimer=0;this.dashDustTimer=0;this.dashScaleTimer=CONFIG.PLAYER.DASH_SCALE_TIME;this.dashReadyFlash=0;this.dashArrowTimer=CONFIG.PLAYER.DASH_ARROW_TIME;
+      if(this.nextDashTime)this.dashTimer+=this.nextDashTime;
+      if(this.nextDashCd)this.dashCooldown=Math.max(.5,this.dashCooldown-this.nextDashCd);
+      if(this.nextDashCdRatio)this.dashCooldown*=this.nextDashCdRatio;
+      root.Objectives.add('dash',1);root.Achievements.add('dash',1);return true;
     },
     clampToWorld: function () {
-      var r = CONFIG.PLAYER.RADIUS;
-      this.x = Math.max(r, Math.min(CONFIG.WORLD.WIDTH - r, this.x));
-      this.y = Math.max(r, Math.min(CONFIG.WORLD.HEIGHT - r, this.y));
+      var r=CONFIG.PLAYER.RADIUS;
+      this.x=Math.max(r,Math.min(CONFIG.WORLD.WIDTH-r,this.x));this.y=Math.max(r,Math.min(CONFIG.WORLD.HEIGHT-r,this.y));
     },
-    // #5 后坐力：向射击反方向 2~3px 渲染位移
     applyRecoil: function (angle) {
-      var dist = 2 + Math.random();
-      this.recoilX = -Math.cos(angle) * dist;
-      this.recoilY = -Math.sin(angle) * dist;
-      this.recoilTimer = 0.05;
-      this.recoilReturnTimer = 0.1;
+      // 后坐仅由武器表现处理，不移动角色整体或真实坐标。
+      this.recoilX=0;this.recoilY=0;
     },
-    // #16 朝向：优先最近敌人，否则移动方向
+    // 只读取武器已选中的真实目标，不进行第二次索敌。
     updateFacing: function () {
-      var target = root.Enemy.findNearest(this.x, this.y);
-      if (target) {
-        this.facingAngle = Math.atan2(target.y - this.y, target.x - this.x);
-      } else if (Math.hypot(this.lastMoveDirX, this.lastMoveDirY) > 0.1) {
-        this.facingAngle = Math.atan2(this.lastMoveDirY, this.lastMoveDirX);
-      }
+      CharacterView.updateBattle(this, 0);
     },
+    updateAppearance: function (dt) { CharacterView.updateBattle(this, dt); },
     takeDamage: function (amount, source, continuous) {
       if (root.Armory) root.Armory.onPlayerDamaged();
       if (root.DevConsole.god || this.nextGod) return false;
@@ -375,114 +342,166 @@
       return Math.floor(this.invincibleTimer / CONFIG.PLAYER.FLASH_INTERVAL) % 2 === 0;
     },
     draw: function (ctx) {
-      // 残影拖尾
+      var x = this.x - Camera.x, y = this.y - Camera.y;
       for (var i = 0; i < this.dashTrails.length; i++) {
-        var t = this.dashTrails[i];
-        var a = Math.max(0, t.life / CONFIG.PLAYER.DASH_TRAIL_LIFE) * CONFIG.PLAYER.DASH_TRAIL_ALPHA;
-        var tsx = t.x - Camera.x;
-        var tsy = t.y - Camera.y;
-        ctx.save();
-        ctx.globalAlpha = a;
-        ctx.beginPath();
-        ctx.arc(tsx, tsy, CONFIG.PLAYER.RADIUS, 0, Math.PI * 2);
-        ctx.fillStyle = CONFIG.COLORS.PLAYER;
-        ctx.fill();
+        var trail = this.dashTrails[i];
+        ctx.save(); ctx.globalAlpha = trail.life / CONFIG.PLAYER.DASH_TRAIL_LIFE * CONFIG.PLAYER.DASH_TRAIL_ALPHA;
+        CharacterView.draw(ctx, trail.x - Camera.x, trail.y - Camera.y, 1, this.runLook, this.visual);
         ctx.restore();
       }
-      var screenX = this.x - Camera.x + this.renderOffsetX + this.recoilX;
-      var screenY = this.y - Camera.y + this.renderOffsetY + this.recoilY + this.bobOffset;
-      var fillColor = this.shouldFlashWhite() ? CONFIG.COLORS.PLAYER_HIT : CONFIG.COLORS.PLAYER;
-      var r = CONFIG.PLAYER.RADIUS;
-      ctx.save();
-      ctx.translate(screenX, screenY);
-
-      // 形变：冲刺沿方向拉伸；受击 Y 轴压扁（二者不会同时发生，冲刺期无敌）
-      if (this.dashing || this.dashScaleTimer > 0) {
-        var stretch = this.dashing ? 1 : this.dashScaleTimer / CONFIG.PLAYER.DASH_SCALE_TIME;
-        var sxA = 1 + (CONFIG.PLAYER.DASH_STRETCH_X - 1) * stretch;
-        var syA = 1 - (1 - CONFIG.PLAYER.DASH_STRETCH_Y) * stretch;
-        var ang = Math.atan2(this.dashDirY, this.dashDirX);
-        ctx.rotate(ang);
-        ctx.scale(sxA, syA);
-        ctx.rotate(-ang);
-      } else if (this.hitScaleTimer > 0) {
-        var t2 = 1 - this.hitScaleTimer / CONFIG.PLAYER.HIT_SCALE_TIME;
-        var e2 = 1 - (1 - t2) * (1 - t2); // easeOutQuad
-        ctx.scale(CONFIG.PLAYER.HIT_SCALE_X - (CONFIG.PLAYER.HIT_SCALE_X - 1) * e2, CONFIG.PLAYER.HIT_SCALE_Y + (1 - CONFIG.PLAYER.HIT_SCALE_Y) * e2);
+      CharacterView.draw(ctx, x, y, 1, this.runLook, this.visual);
+      if (this.shield > 0 || this.hp / this.maxHp < .3) {
+        ctx.save(); ctx.strokeStyle = this.shield > 0 ? CONFIG.COLORS.SHIELD : CONFIG.COLORS.LOW_HP_AURA;
+        ctx.lineWidth = this.shieldFlash > 0 ? 4 : 2; ctx.beginPath();
+        ctx.ellipse(x, y, CONFIG.PLAYER.RADIUS + 10, 10, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
       }
-
-      // #16 低血量红色光环
-      if (this.hp / this.maxHp < 0.3) {
-        var pulse = 0.5 + 0.3 * Math.sin((typeof performance !== 'undefined' ? performance.now() : 0) / 150);
-        ctx.save();
-        ctx.globalAlpha = pulse;
-        ctx.beginPath();
-        ctx.arc(0, 0, r + 10, 0, Math.PI * 2);
-        ctx.fillStyle = CONFIG.COLORS.LOW_HP_AURA;
-        ctx.fill();
-        ctx.restore();
+      if (root.Settings && root.Settings.debug) {
+        ctx.save(); ctx.strokeStyle = CONFIG.CHARACTER.OUTLINE; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(x, y, CONFIG.PLAYER.RADIUS, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
       }
-
-      // 朝向旋转绘制军事幸存者
-      ctx.rotate(this.facingAngle);
-      var white = this.shouldFlashWhite();
-      // 身体（军绿略扁椭圆）— 用 arc+scale 兼容不支持 ellipse 的真机
-      ctx.save();
-      ctx.scale(r * 0.95, r * 0.78);
-      ctx.beginPath();
-      ctx.arc(0, 0, 1, 0, Math.PI * 2);
-      ctx.fillStyle = white ? '#ffffff' : CONFIG.COLORS.PLAYER_BODY;
-      ctx.fill();
-      ctx.restore();
-      // 战术背心（中部深色）
-      ctx.save();
-      ctx.scale(r * 0.6, r * 0.55);
-      ctx.beginPath();
-      ctx.arc(0, 0, 1, 0, Math.PI * 2);
-      ctx.fillStyle = white ? '#ffffff' : CONFIG.COLORS.PLAYER_VEST;
-      ctx.fill();
-      ctx.restore();
-      // 头盔（朝向前方 +x）
-      ctx.beginPath();
-      ctx.arc(r * 0.55, 0, r * 0.42, 0, Math.PI * 2);
-      ctx.fillStyle = white ? '#ffffff' : CONFIG.COLORS.PLAYER_HELMET;
-      ctx.fill();
-      // 手枪（朝向前方右侧伸出）
-      ctx.fillStyle = white ? '#ffffff' : CONFIG.COLORS.WEAPON_GUN;
-      ctx.fillRect(r * 0.7, -r * 0.12, r * 0.55, r * 0.22);
-      ctx.fillStyle = CONFIG.COLORS.WEAPON_CORE;
-      ctx.fillRect(r * 1.12, -r * 0.06, r * 0.1, r * 0.12);
-      // 枪口闪光（#16）
-      var pf = root.PulseGun;
-      if (pf && pf.muzzleFlashTimer > 0) {
-        var fa = pf.muzzleFlashTimer / 0.05;
-        ctx.save();
-        ctx.globalAlpha = 0.8 * fa;
-        ctx.beginPath();
-        ctx.arc(r * 1.35, 0, 6, 0, Math.PI * 2);
-        ctx.fillStyle = CONFIG.COLORS.MUZZLE_FLASH;
-        ctx.fill();
-        ctx.restore();
-      }
-      ctx.restore();
-
-      // 护盾环（蓝色半透明呼吸 + 更明显辉光）
-      if (this.shield > 0) {
-        var breathe = 1 + Math.sin((typeof performance !== 'undefined' ? performance.now() : 0) / 200) * 0.08;
-        ctx.save();
-        ctx.globalAlpha = (this.shieldFlash > 0 ? 0.9 : 0.45) * breathe;
-        ctx.shadowColor = CONFIG.COLORS.SHIELD_GLOW;
-        ctx.shadowBlur = 12;
-        ctx.beginPath();
-        ctx.arc(screenX, screenY, r + 8, 0, Math.PI * 2);
-        ctx.strokeStyle = CONFIG.COLORS.SHIELD;
-        ctx.lineWidth = 3;
-        ctx.stroke();
-        ctx.restore();
-      }
-      root.CostumeView.draw.call(this, ctx);
     }
   };
+  // 所有页面与战斗共用分层小人；状态与存档、战斗实体完全分离。
+  var CharacterView = {
+    previewState: null,
+    menuState: null,
+    previewAction: 0,
+    previewDirection: 0,
+    // 页面动画独立 dt，只改预览状态；战斗和暂停时由 core 跳过。
+    updatePreview: function (dt) {
+      if(!this.previewState)this.previewState=this.makeState();
+      if(!this.menuState)this.menuState=this.makeState();
+      this.menuState.time+=dt;
+      var s=this.previewState,c=CONFIG.CHARACTER,phase=(s.time%c.PREVIEW.ACTION_TIME)/c.PREVIEW.ACTION_TIME;
+      s.time+=dt;s.facing=this.previewDirection;s.angle=c.DIRECTION_ANGLES[s.facing];
+      s.moving=this.previewAction===1;if(s.moving)s.step+=dt*c.WALK_HZ;
+      s.flash=this.previewAction===2 && phase<.12?c.FLASH_TIME:0;
+      s.recoil=this.previewAction===2?Math.max(0,c.RECOIL_TIME-phase):0;
+      s.reload=this.previewAction===3?phase:0;
+    },
+    makeState: function () { return { time:0, step:0, facing:0, angle:Math.PI/2, moveX:0, moveY:0, moving:false, recoil:0, flash:0, reload:0, hit:false, dash:false, end:'' }; },
+    snapshot: function (outfit, weapon) {
+      var m = root.Meta.data, id = weapon || m.selectedWeapon || 'pistol', def = CONFIG.CHARACTER.WEAPONS[id] || CONFIG.CHARACTER.WEAPONS.pistol;
+      return { outfit:outfit || m.currentOutfit || 'default', weapon:id, paint:m.equippedSkins[def.SKIN_KEY] || 'default' };
+    },
+    menuLook: function () {
+      var m=root.Meta.data,d=this.weaponDef(m.selectedWeapon);
+      if(!this._menuLook || this._menuLook.outfit!==m.currentOutfit || this._menuLook.weapon!==m.selectedWeapon || this._menuLook.paint!==m.equippedSkins[d.SKIN_KEY]) this._menuLook=this.snapshot();
+      return this._menuLook;
+    },
+    setDirection: function (state, angle) {
+      var angles = CONFIG.CHARACTER.DIRECTION_ANGLES, current = angles[state.facing];
+      var delta = Math.abs(Math.atan2(Math.sin(angle-current), Math.cos(angle-current)));
+      if (delta > Math.PI/4 + CONFIG.CHARACTER.HYSTERESIS) {
+        var best = Infinity;
+        for(var i=0;i<angles.length;i++) {
+          var d = Math.abs(Math.atan2(Math.sin(angle-angles[i]),Math.cos(angle-angles[i])));
+          if(d < best) { best=d; state.facing=i; }
+        }
+      }
+      state.angle=angle;
+    },
+    updateBattle: function (player, dt) {
+      var s=player.visual, c=CONFIG.CHARACTER, aim=root.Weapons.presentation;
+      if(!s) return;
+      s.time += dt;
+      var dist=Math.hypot(s.moveX,s.moveY);
+      s.moving = dist > c.MOVE_EPS * dt;
+      if(s.moving) s.step += dist / Math.max(1, player.getMoveSpeed()) * c.WALK_HZ;
+      var angle = aim && aim.valid ? aim.angle : s.moving ? Math.atan2(s.moveY,s.moveX) : s.angle;
+      this.setDirection(s,angle);
+      player.facingAngle=angle;
+      s.recoil=aim ? aim.recoil : 0; s.flash=aim ? aim.flash : 0;
+      s.reload=root.PulseGun.reloading && CONFIG.WEAPONS.FIREARMS[root.WeaponProgress.selected] ? 1-root.PulseGun.reloadTimer/root.PulseGun.getReloadDuration() : 0;
+      s.hit=player.shouldFlashWhite(); s.dash=player.dashing; s.end=player.hp<=0?'death':'';
+    },
+    // 输出到调用方提供的固定对象，避免每帧创建锚点对象。
+    anchor: function (name, out) {
+      var a=CONFIG.CHARACTER.ANCHORS[name];
+      var scale=CONFIG.CHARACTER.HEIGHT/96;
+      out.x=root.Player.x+a.x*scale; out.y=root.Player.y+a.y*scale; return out;
+    },
+    weaponDef: function (id) { return CONFIG.CHARACTER.WEAPONS[id] || CONFIG.CHARACTER.WEAPONS.pistol; },
+    grip: function (state) { return CONFIG.CHARACTER.DIRECTION_GRIPS[state.facing]; },
+    // 武器局部坐标沿朝向旋转，左半平面翻转局部 Y，保持握把朝下。
+    muzzle: function (x,y,angle,weapon,facing,out) {
+      var d=this.weaponDef(weapon), t=CONFIG.CHARACTER.TEMPLATES[d.TEMPLATE], g=CONFIG.CHARACTER.DIRECTION_GRIPS[facing];
+      var dx=((d.MUZZLE_X || t.MUZZLE_X)-t.GRIP_X)*t.WIDTH, dy=(t.MUZZLE_Y-t.GRIP_Y)*t.HEIGHT*(Math.cos(angle)<0?-1:1);
+      var scale=CONFIG.CHARACTER.HEIGHT/96;
+      out.x=x+(g.x+Math.cos(angle)*dx-Math.sin(angle)*dy)*scale;
+      out.y=y+(g.y+Math.sin(angle)*dx+Math.cos(angle)*dy)*scale; return out;
+    },
+    layer: function (ctx,img,dir,row,dy) {
+      var c=CONFIG.CHARACTER;
+      ctx.drawImage(img,dir*c.CELL,row*c.CELL,c.CELL,c.CELL,-c.FOOT_X,-c.FOOT_Y+dy,c.CELL,c.CELL);
+    },
+    draw: function (ctx,x,y,scale,look,state) {
+      if(!state || !look) return;
+      var c=CONFIG.CHARACTER, skin=c.SKINS[look.outfit] || c.SKINS.default;
+      var img=root.Platform.characterImage(look.outfit), back=state.facing===1;
+      var bob=Math.sin(state.time*c.BREATH_HZ)*c.BREATH, leg=state.moving?Math.sin(state.step)*c.STRIDE:0;
+      scale*=c.HEIGHT/96;
+      ctx.save(); ctx.translate(x,y); ctx.scale(scale,scale);
+      ctx.fillStyle=c.SHADOW; ctx.beginPath(); ctx.ellipse(0,0,28,9,0,0,Math.PI*2); ctx.fill();
+      // 结束表现只改变显示高度；人物始终直立，不沿瞄准方向旋转。
+      if(state.end==='death') { ctx.globalAlpha *= .65; ctx.scale(1,.76); }
+      if(state.dash) ctx.transform(1,0,Math.cos(state.angle)*.09,1,0,0);
+      if(!back) { if(img)this.layer(ctx,img,state.facing,0,bob); }
+      if(back)this.drawWeapon(ctx,look,state);
+      if(img) {
+        this.layer(ctx,img,state.facing,1,leg);
+        this.layer(ctx,img,state.facing,2,-leg);
+        this.layer(ctx,img,state.facing,3,bob);
+        if(back)this.layer(ctx,img,state.facing,0,bob);
+        this.layer(ctx,img,state.facing,4,bob);
+      } else this.drawFallback(ctx,skin,state,leg);
+      // 缺少新版素材的老皮肤保留身体和独立身份标识。
+      if(!c.SKINS[look.outfit]) {
+        ctx.fillStyle=root.OutfitColors && root.OutfitColors[look.outfit] || skin.ACCENT;
+        ctx.fillRect(-22,-65,10,16); ctx.fillRect(-16,-90,32,5);
+      }
+      if(!back)this.drawWeapon(ctx,look,state);
+      if(state.hit) { ctx.globalAlpha *= .65; ctx.strokeStyle=c.HIT_COLOR; ctx.lineWidth=3; ctx.strokeRect(-23,-92,46,70); }
+      if(state.end==='extract') { ctx.strokeStyle=c.OUTLINE; ctx.lineWidth=2; ctx.beginPath();ctx.ellipse(0,0,34,12,0,0,Math.PI*2);ctx.stroke(); }
+      ctx.restore();
+    },
+    drawFallback: function (ctx,skin,state,leg) {
+      ctx.fillStyle=skin.COLOR; ctx.fillRect(-22,-66,44,42);
+      ctx.fillStyle=CONFIG.CHARACTER.GLOVE; ctx.fillRect(-18,-25+leg,14,25); ctx.fillRect(5,-25-leg,14,25);
+      ctx.fillStyle=skin.COLOR; ctx.beginPath();ctx.arc(0,-77,19,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=skin.ACCENT;ctx.fillRect(state.facing===2?-20:-15,-82,state.facing===1?8:30,7);
+    },
+    drawWeapon: function (ctx,look,s) {
+      var c=CONFIG.CHARACTER,d=this.weaponDef(look.weapon),t=c.TEMPLATES[d.TEMPLATE],g=this.grip(s),img=root.Platform.characterWeapons();
+      var flip=Math.cos(s.angle)<0?-1:1;
+      var reload=s.reload>0?Math.sin(s.reload*Math.PI)*t.RELOAD_TILT:0;
+      var angle=s.angle+reload*flip, recoil=s.recoil/c.RECOIL_TIME*t.RECOIL;
+      // 双臂从肩部接到实际握把/前托，不把整个躯干跟随枪械旋转。
+      ctx.save();ctx.strokeStyle=c.GLOVE;ctx.lineWidth=8;ctx.lineCap='round';
+      ctx.beginPath();ctx.moveTo(g.x<0?-23:23,-56);ctx.lineTo(g.x,g.y);ctx.stroke();
+      if(d.TEMPLATE!=='short') {
+        var support=(t.SUPPORT_X-t.GRIP_X)*t.WIDTH;
+        ctx.beginPath();ctx.moveTo(g.x<0?20:-20,-56);ctx.lineTo(g.x+Math.cos(angle)*support,g.y+Math.sin(angle)*support);ctx.stroke();
+      }
+      ctx.restore();
+      ctx.save();ctx.translate(g.x,g.y);ctx.rotate(angle);ctx.scale(1,flip);
+      ctx.translate(-recoil,0);
+      if(img)ctx.drawImage(img,0,d.ROW*64,128,64,-t.GRIP_X*t.WIDTH,-t.GRIP_Y*t.HEIGHT,t.WIDTH,t.HEIGHT);
+      else {ctx.fillStyle=c.WEAPON;ctx.fillRect(-12,-7,t.WIDTH*.8,13);ctx.fillRect(-6,4,9,13);}
+      if(c.PAINTS[look.paint]) {ctx.fillStyle=c.PAINTS[look.paint];ctx.fillRect(2,-7,t.WIDTH*.26,4);}
+      ctx.fillStyle=c.GLOVE;ctx.beginPath();ctx.arc(0,2,5,0,Math.PI*2);ctx.fill();
+      if(d.TEMPLATE!=='short') {ctx.beginPath();ctx.arc((t.SUPPORT_X-t.GRIP_X)*t.WIDTH,(t.SUPPORT_Y-t.GRIP_Y)*t.HEIGHT,5,0,Math.PI*2);ctx.fill();}
+      ctx.restore();
+      if(s.flash>0 && s.reload===0) {
+        var p=this._flashPoint || (this._flashPoint={x:0,y:0});
+        this.muzzle(0,0,s.angle,look.weapon,s.facing,p);
+        ctx.fillStyle=c.WEAPON_LIGHT;ctx.beginPath();ctx.arc(p.x,p.y,4+3*s.flash/c.FLASH_TIME,0,Math.PI*2);ctx.fill();
+      }
+    }
+  };
+  root.CharacterView=CharacterView;
+  Player.visual=CharacterView.makeState();
+
   root.Player = Player;
   root.G.player = Player;
 })();

@@ -735,8 +735,10 @@ var UI = {
       ctx.textAlign = 'right';
       ctx.fillText(CONFIG.TEXT.KILLS_HUD(RunStats.kills), CONFIG.VIEW.WIDTH - CONFIG.UI.HP_BAR_X, CONFIG.UI.HUD_STATS_Y);
       ctx.fillStyle = CONFIG.COLORS.TEXT;
-      if (root.WeaponProgress.selected === 'pistol') {
+      if (CONFIG.WEAPONS.FIREARMS[root.WeaponProgress.selected]) {
         ctx.textAlign = 'right';
+        var firearm = CONFIG.WEAPONS.FIREARMS[root.WeaponProgress.selected], icon = this.icon(firearm.ICON);
+        if (icon) ctx.drawImage(icon, CONFIG.VIEW.WIDTH - CONFIG.UI.HP_BAR_X - 125, CONFIG.UI.HUD_STATS_Y + 21, 26, 26);
         ctx.fillText('弹药 ' + Math.max(0, Math.ceil(root.PulseGun.ammo)) + '/' + root.PulseGun.getMagazineSize(), CONFIG.VIEW.WIDTH - CONFIG.UI.HP_BAR_X, CONFIG.UI.HUD_STATS_Y + 34);
       }
       if (Player.reviveCharges > 0 && !Enemy.getActiveBoss()) {
@@ -971,6 +973,10 @@ var UI = {
       if (isVictory || exitType === 'victory') title = CONFIG.TEXT.VICTORY;else if (exitType === 'quit') title = CONFIG.TEXT.SETTLEMENT_QUIT;else if (exitType === 'extract') title = CONFIG.TEXT.SETTLEMENT_EXTRACT;else title = CONFIG.TEXT.GAME_OVER;
       this.drawOverlay(ctx);
       this.drawCenteredText(ctx, title, CONFIG.UI.GAMEOVER_TITLE_Y + top, CONFIG.UI.GAMEOVER_TITLE_SIZE, true, CONFIG.COLORS.TEXT);
+      var character = root.CharacterView;
+      if(!this._resultPose)this._resultPose=character.makeState();
+      this._resultPose.end=exitType==='death'?'death':exitType==='extract'||isVictory?'extract':'';
+      character.draw(ctx, 96, CONFIG.UI.SETTLEMENT_START_Y + top + 40, CONFIG.CHARACTER.PREVIEW.END_SCALE, Player.runLook, this._resultPose);
       if (isVictory) {
         this.drawCenteredText(ctx, CONFIG.TEXT.VICTORY_SUBTITLE, CONFIG.UI.VICTORY_SUBTITLE_Y + top, CONFIG.UI.SETTLEMENT_TEXT_SIZE, false, CONFIG.COLORS.RARITY_EPIC);
       }
@@ -1486,7 +1492,9 @@ var UI = {
     getExtractionActivateRect: function () {
       var w = 150,
         h = 50;
-      var cx = CONFIG.UI.DASH_BUTTON_X - CONFIG.UI.DASH_BUTTON_RADIUS - 12 - w / 2;
+      var dashX = this.mirrorX(CONFIG.UI.DASH_BUTTON_X);
+      var direction = root.Settings && root.Settings.mirror ? 1 : -1;
+      var cx = dashX + direction * (CONFIG.UI.DASH_BUTTON_RADIUS + 12 + w / 2);
       var cy = this.getDashButtonY();
       return {
         x: cx - w / 2,
@@ -1618,6 +1626,19 @@ var UI = {
       ctx.lineTo(x, y + safeRadius);
       ctx.arcTo(x, y, x + safeRadius, y, safeRadius);
       ctx.closePath();
+    },
+    // 统一弹窗外框：只绘制遮罩、面板、标题栏与底部操作栏；内容调用方必须自行裁剪在 body 区内。
+    drawModalChrome: function (ctx, rect, title, footerLabel, overlayAlpha) {
+      ctx.fillStyle = 'rgba(0,0,0,' + (overlayAlpha == null ? 0.72 : overlayAlpha) + ')'; ctx.fillRect(0, 0, CONFIG.VIEW.WIDTH, CONFIG.VIEW.HEIGHT);
+      this.roundedRectPath(ctx, rect.x, rect.y, rect.w, rect.h, 26); ctx.fillStyle = 'rgba(9,17,20,.99)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#526b69'; ctx.stroke();
+      ctx.fillStyle = '#16272b'; this.roundedRectPath(ctx, rect.x + 2, rect.y + 2, rect.w - 4, Math.min(88, rect.h / 3), 24); ctx.fill();
+      var header = rect.header || 88, footer = rect.footer || 110;
+      ctx.fillStyle = '#34484b'; ctx.fillRect(rect.x + 18, rect.y + header, rect.w - 36, 1);
+      ctx.fillStyle = '#142327'; this.roundedRectPath(ctx, rect.x + 2, rect.y + rect.h - footer, rect.w - 4, footer - 2, 24); ctx.fill();
+      ctx.fillStyle = '#34484b'; ctx.fillRect(rect.x + 18, rect.y + rect.h - footer, rect.w - 36, 1);
+      this.drawCenteredText(ctx, title, rect.y + 44, 32, true, CONFIG.COLORS.COIN);
+      if (footerLabel) this.drawActionButton(ctx, rect.x + 36, rect.y + rect.h - footer + 20, rect.w - 72, 68, footerLabel, true, 22);
+      return rect;
     },
     // 由 BattleView 在世界绘制作用域内调用。
     applyWorldShake: function (ctx) {

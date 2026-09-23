@@ -191,6 +191,8 @@ var Metrics = {
     seconds: 0,
     frames: 0,
     fps: 0,
+    updateMs: 0,
+    drawMs: 0,
     lowSamples: 0,
     highSamples: 0,
     qualityCooldown: 0,
@@ -199,7 +201,7 @@ var Metrics = {
       this.seconds += dt;
       this.qualityCooldown = Math.max(0, this.qualityCooldown - dt);
       this.frames += 1;
-      if (this.seconds >= CONFIG.POLISH.FPS_SAMPLE) {
+      if (this.seconds >= CONFIG.RENDER_QUALITY.FPS_SAMPLE) {
         this.fps = Math.round(this.frames / this.seconds);
         this.updateAutoQuality();
         this.seconds = 0;
@@ -235,7 +237,8 @@ var Metrics = {
       for (var i = 0; i < Enemy.pool.length; i++) if (Enemy.pool[i].active && Camera.isVisible(Enemy.pool[i].x, Enemy.pool[i].y, Enemy.pool[i].radius)) visibleEnemy++;
       var pools = [root.Experience.pool, root.CoinDrops.pool, root.PowerUps.pool];
       for (var pi = 0; pi < pools.length; pi++) for (var di = 0; di < pools[pi].length; di++) if (pools[pi][di].active && Camera.isVisible(pools[pi][di].x, pools[pi][di].y, 20)) visibleDrops++;
-      ctx.fillText(CONFIG.TEXT.DEBUG_LINE(this.fps, Enemy.activeCount, Bullet.activeCount, this.count(FX.pool), this.count(root.DamageText.pool), visibleEnemy, visibleDrops), 32, debugY + 27);
+      ctx.font = '16px Arial, "Microsoft YaHei", sans-serif';
+      ctx.fillText(CONFIG.TEXT.DEBUG_LINE(this.fps, Enemy.activeCount, Bullet.activeCount, this.count(FX.pool), this.count(root.DamageText.pool), visibleEnemy, visibleDrops, this.updateMs, this.drawMs), 32, debugY + 27);
       ctx.restore();
     }
   };
@@ -281,8 +284,83 @@ var Spatial = {
         }
       }
     }
-  };
+};
 Spatial.heads = new Int32Array(Spatial.cols * Spatial.rows);
+// 离屏圆形精灵缓存：渐变/阴影只在第一次烘焙时创建，战斗帧只 drawImage。
+var SpriteCache = {
+  canvas: Object.create(null),
+  createCanvas: function (width, height) {
+    try {
+      if (typeof document !== 'undefined' && document.createElement) {
+        var canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height; return canvas;
+      }
+      if (typeof wx !== 'undefined' && wx.createCanvas) {
+        var offscreen = wx.createCanvas();
+        if (root.Platform && offscreen === root.Platform.canvas) return null;
+        offscreen.width = width; offscreen.height = height; return offscreen;
+      }
+    } catch (error) {}
+    return null;
+  },
+  getCircle: function (key, radius, fill, glow, outline, core) {
+    if (this.canvas[key]) return this.canvas[key];
+    var side = Math.ceil(radius * CONFIG.SPRITES.CACHE_SCALE), canvas = this.createCanvas(side, side);
+    if (!canvas) return null;
+    var ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    var center = side / 2;
+    ctx.save(); ctx.shadowColor = glow || fill; ctx.shadowBlur = radius;
+    ctx.beginPath(); ctx.arc(center, center, radius, 0, Math.PI * 2); ctx.fillStyle = fill; ctx.fill();
+    ctx.shadowBlur = 0; ctx.lineWidth = Math.max(1, radius * 0.12); ctx.strokeStyle = outline || fill; ctx.stroke();
+    if (core) { ctx.beginPath(); ctx.arc(center, center, radius * CONFIG.SPRITES.CIRCLE_CORE_RATIO, 0, Math.PI * 2); ctx.fillStyle = core; ctx.fill(); }
+    ctx.restore(); this.canvas[key] = canvas; return canvas;
+  },
+  getDiamond: function (key, halfWidth, halfHeight, fill, glow, outline, core) {
+    if (this.canvas[key]) return this.canvas[key];
+    var width = Math.ceil(halfWidth * CONFIG.SPRITES.CACHE_SCALE), height = Math.ceil(halfHeight * CONFIG.SPRITES.CACHE_SCALE), canvas = this.createCanvas(width, height);
+    if (!canvas) return null;
+    var ctx = canvas.getContext('2d'), x = width / 2, y = height / 2;
+    if (!ctx) return null;
+    ctx.save(); ctx.shadowColor = glow || fill; ctx.shadowBlur = halfWidth;
+    ctx.beginPath(); ctx.moveTo(x, y - halfHeight); ctx.lineTo(x + halfWidth, y); ctx.lineTo(x, y + halfHeight); ctx.lineTo(x - halfWidth, y); ctx.closePath();
+    ctx.fillStyle = fill; ctx.fill(); ctx.shadowBlur = 0; ctx.lineWidth = 2; ctx.strokeStyle = outline || fill; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, y - halfHeight * CONFIG.SPRITES.DIAMOND_CORE_TOP); ctx.lineTo(x, y + halfHeight * CONFIG.SPRITES.DIAMOND_CORE_BOTTOM); ctx.lineWidth = CONFIG.SPRITES.DIAMOND_LINE_WIDTH; ctx.strokeStyle = core || fill; ctx.stroke();
+    ctx.restore(); this.canvas[key] = canvas; return canvas;
+  },
+  getCrossbowArrow: function () {
+    var key = 'projectile_crossbow_arrow';
+    if (this.canvas[key]) return this.canvas[key];
+    var d = CONFIG.SPRITES.CROSSBOW_ARROW, canvas = this.createCanvas(d.WIDTH, d.HEIGHT);
+    if (!canvas) return null;
+    var ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.lineCap = 'round'; ctx.strokeStyle = d.SHAFT; ctx.lineWidth = d.SHAFT_W;
+    ctx.beginPath(); ctx.moveTo(4, d.HEIGHT / 2); ctx.lineTo(d.WIDTH - 8, d.HEIGHT / 2); ctx.stroke();
+    ctx.fillStyle = d.COLOR; ctx.beginPath(); ctx.moveTo(d.WIDTH - 3, d.HEIGHT / 2); ctx.lineTo(d.WIDTH - 13, 2); ctx.lineTo(d.WIDTH - 13, d.HEIGHT - 2); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = d.FEATHER; ctx.fillRect(5, d.HEIGHT / 2 - 2, d.WIDTH * 0.52, 4);
+    this.canvas[key] = canvas; return canvas;
+  },
+  drawCircle: function (ctx, key, x, y, radius, fill, glow, outline, core) {
+    var sprite = this.getCircle(key, radius, fill, glow, outline, core);
+    if (sprite) ctx.drawImage(sprite, x - sprite.width / 2, y - sprite.height / 2);
+    return !!sprite;
+  },
+  warm: function () {
+    this.getCircle('coin_' + CONFIG.COLORS.COIN, CONFIG.COIN.RADIUS, CONFIG.COLORS.COIN, CONFIG.COLORS.COIN_GLOW, CONFIG.COLORS.COIN_OUTLINE, CONFIG.COLORS.COIN_CORE);
+    this.getDiamond('gem_' + CONFIG.COLORS.GEM, CONFIG.EXPERIENCE.GEM_WIDTH / 2, CONFIG.EXPERIENCE.GEM_LENGTH / 2, CONFIG.COLORS.GEM, CONFIG.COLORS.GEM_GLOW, CONFIG.COLORS.GEM_OUTLINE, CONFIG.COLORS.GEM_CORE);
+    this.getCircle('bullet_' + CONFIG.COLORS.BULLET, CONFIG.WEAPONS.PULSE.DRAW_RADIUS, CONFIG.COLORS.BULLET, CONFIG.COLORS.BULLET_GLOW, CONFIG.COLORS.BULLET, CONFIG.COLORS.BULLET_CORE);
+    this.getDiamond('blade_default', CONFIG.WEAPONS.BLADE.WIDTH / 2, CONFIG.WEAPONS.BLADE.LENGTH / 2, CONFIG.COLORS.WEAPON_BLADE, CONFIG.COLORS.WEAPON_BLADE_GLOW, CONFIG.COLORS.BLADE_OUTLINE, CONFIG.COLORS.BLADE_CORE);
+    this.getCrossbowArrow();
+    for (var i = 0; i < CONFIG.ENEMY.TYPES.length; i++) {
+      var def = CONFIG.ENEMY.TYPES[i], tier = Math.ceil(def.RADIUS / 8) * 8;
+      this.getCircle('enemy_' + i + '_' + tier + '_' + CONFIG.COLORS[def.FILL_KEY], tier, CONFIG.COLORS[def.FILL_KEY], CONFIG.COLORS[def.GLOW_KEY], CONFIG.COLORS[def.OUTLINE_KEY]);
+    }
+    for (var d = 0; d <= CONFIG.POWERUPS.TYPE_MORTAR; d++) {
+      this.getCircle('drop_' + d + '_' + CONFIG.UI.WORLD_ITEM_RADIUS, CONFIG.UI.WORLD_ITEM_RADIUS, CONFIG.COLORS.ITEM_BASE, CONFIG.COLORS.ITEM_BORDER, CONFIG.COLORS.ITEM_BORDER);
+    }
+  },
+  clear: function () { this.canvas = Object.create(null); }
+};
 var ButtonUI = {
     pool: [],
     count: 0,
@@ -322,150 +400,122 @@ var ButtonUI = {
     }
   };
 var Panels = {
-    parent: CONFIG.GAME.STATE_MENU,
-    previous: CONFIG.GAME.STATE_PLAYING,
-    open: function (state) {
-      if (Ads.active) return;
-      this.parent = Game.state;
-      Game.state = state;
-      Input.reset();
-      Input.setMovementEnabled(false);
-      ButtonUI.pressed.active = false;
+    parent: CONFIG.GAME.STATE_MENU, previous: CONFIG.GAME.STATE_PLAYING, scroll: 0, drag: null,
+    layout: function () {
+      var h = CONFIG.VIEW.HEIGHT, top = Math.max(0, root.Platform && root.Platform.safeTop || 0), bottom = Math.max(0, root.Platform && root.Platform.safeBottom || 0);
+      var y = Math.max(12, top + 12), height = Math.max(360, h - y - bottom - 12);
+      // 暂停按菜单实际高度收紧，并在安全区内居中；小屏仍允许内容滚动。
+      if (Game.state === 'PAUSED') {
+        var menu = CONFIG.POLISH.PAUSE_MENU, available = Math.max(0, h - y - bottom - 12);
+        var width = Math.min(menu.PANEL_WIDTH, CONFIG.VIEW.WIDTH - 48);
+        height = Math.min(available, 88 + 110 + this.rows('PAUSED') * menu.STEP + menu.BODY_PADDING * 2);
+        y += (available - height) / 2;
+        return { x: (CONFIG.VIEW.WIDTH - width) / 2, y: y, w: width, h: height, header: 88, footer: 110, bodyY: y + 88, bodyH: Math.max(0, height - 198) };
+      }
+      return { x: 24, y: y, w: CONFIG.VIEW.WIDTH - 48, h: height, header: 88, footer: 110, bodyY: y + 88, bodyH: height - 198 };
     },
-    pause: function () {
-      if (Ads.active) return;
-      if (Game.state !== CONFIG.GAME.STATE_PLAYING && Game.state !== CONFIG.GAME.STATE_LEVELUP) return;
-      this.previous = Game.state;
-      this.open('PAUSED');
+    open: function (state) { if (Ads.active) return; this.parent = Game.state; Game.state = state; this.scroll = 0; Input.reset(); Input.setMovementEnabled(false); ButtonUI.pressed.active = false; },
+    pause: function () { if (Ads.active || (Game.state !== CONFIG.GAME.STATE_PLAYING && Game.state !== CONFIG.GAME.STATE_LEVELUP)) return; this.previous = Game.state; this.open('PAUSED'); },
+    resume: function () { Game.state = this.previous; Game.lastTimestamp = 0; this.scroll = 0; Input.reset(); Input.setMovementEnabled(Game.state === CONFIG.GAME.STATE_PLAYING); },
+    rows: function (state) {
+      if (state === 'PAUSED') return 4;
+      if (state === 'SETTINGS') return 7;
+      if (state === 'HELP') return CONFIG.TEXT.HELP_LINES.length;
+      if (state === 'BUILD') return 6 + CONFIG.UPGRADES.DEFINITIONS.filter(function (d) { return ExpLevelUp.levels[d.ID] > 0; }).length + (root.Armory ? root.Armory.perks.length : 0) + (root.Armory && root.Armory.ammoType ? 1 : 0) + (root.Armory && root.Armory.weaponLevel ? 1 : 0);
+      return 0;
     },
-    resume: function () {
-      Game.state = this.previous;
-      Game.lastTimestamp = 0;
-      Input.reset();
-      Input.setMovementEnabled(Game.state === CONFIG.GAME.STATE_PLAYING);
+    rowStep: function (frame) { return Game.state === 'PAUSED' ? CONFIG.POLISH.PAUSE_MENU.STEP : Game.state === 'BUILD' ? 62 : 94; },
+    // 绘制和点击共用同一矩形，按钮之间的留白不触发操作。
+    pauseButtonRect: function (f, index) {
+      var c = CONFIG.POLISH.PAUSE_MENU, width = Math.min(c.WIDTH, f.w - c.INSET * 2);
+      var top = Math.max(0, (f.bodyH - this.rows('PAUSED') * c.STEP) / 2);
+      return { x: f.x + (f.w - width) / 2, y: f.bodyY + top + index * c.STEP + (c.STEP - c.HEIGHT) / 2 - this.scroll, w: width, h: c.HEIGHT };
     },
-    button: function (ctx, row, label) {
-      var c = CONFIG.POLISH;
-      var compact = Game.state === 'SETTINGS';
-      var top = compact ? 265 : c.PANEL_TOP, step = compact ? 92 : c.PANEL_STEP, height = compact ? 66 : c.PANEL_H;
-      UI.drawActionButton(ctx, c.PANEL_X, top + row * step, c.PANEL_W, height, label, true, 27);
+    rowAt: function (p, frame) { return Math.floor((p.y - frame.bodyY + this.scroll) / this.rowStep(frame)); },
+    drawFrame: function (ctx, title, hasClose) {
+      var f = this.layout();
+      UI.drawModalChrome(ctx, f, title, Game.state === 'PAUSED' ? '结束本局' : '返回', CONFIG.POLISH.PAUSE_OVERLAY_ALPHA);
+      if (hasClose) { UI.drawActionButton(ctx, f.x + f.w - 70, f.y + 17, 48, 48, '×', true, 30); }
+      return f;
     },
+    drawRow: function (ctx, f, index, label, detail, active, color) {
+      var step = this.rowStep(f), height = Game.state === 'BUILD' ? 52 : Math.min(76, step - 12), y = f.bodyY + index * step + (step - height) / 2 - this.scroll;
+      if (y + height < f.bodyY || y > f.bodyY + f.bodyH) return;
+      UI.roundedRectPath(ctx, f.x + 18, y, f.w - 36, height, 13); ctx.fillStyle = active ? '#163340' : '#172224'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = color || (active ? '#35bce8' : '#34494a'); ctx.stroke();
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.font = 'bold 21px Arial,"Microsoft YaHei",sans-serif'; ctx.fillStyle = active ? '#fff4d6' : '#e1e9e5'; ctx.fillText(label, f.x + 36, y + (detail ? height * .38 : height / 2));
+      if (detail) { ctx.font = '16px Arial,"Microsoft YaHei",sans-serif'; ctx.fillStyle = '#a8bbb7'; ctx.fillText(detail, f.x + 36, y + height * .70); }
+      ctx.textAlign = 'start';
+    },
+    clampScroll: function (f) { var total = this.rows(Game.state) * this.rowStep(f); this.scroll = Math.max(0, Math.min(Math.max(0, total - f.bodyH), this.scroll)); },
     draw: function (ctx) {
-      var overBattle = Game.state === 'PAUSED' || this.parent === 'PAUSED';
-      ctx.fillStyle = overBattle ? 'rgba(0,0,0,' + CONFIG.POLISH.PAUSE_OVERLAY_ALPHA + ')' : CONFIG.COLORS.MENU_BACKGROUND;
-      ctx.fillRect(0, 0, CONFIG.VIEW.WIDTH, CONFIG.VIEW.HEIGHT);
-      var state = Game.state;
-      var text = CONFIG.TEXT;
-      var title = state === 'PAUSED' ? text.PAUSE_TITLE : state === 'SETTINGS' ? text.SETTINGS : state === 'BUILD' ? '当前构筑' : text.HELP;
-      var settingsIcon = UI.icon('nav_settings');
-      if (settingsIcon && state === 'SETTINGS') ctx.drawImage(settingsIcon, CONFIG.VIEW.WIDTH / 2 - 28, 105 + (CONFIG.UI.TOP_INSET || 0), 56, 56);
-      UI.drawCenteredText(ctx, title, 180 + (CONFIG.UI.TOP_INSET || 0), 54, true, CONFIG.COLORS.COIN);
+      var state = Game.state, f, text = CONFIG.TEXT, title = state === 'PAUSED' ? text.PAUSE_TITLE : state === 'SETTINGS' ? text.SETTINGS : state === 'BUILD' ? '当前构筑' : text.HELP;
+      f = this.drawFrame(ctx, title, state !== 'PAUSED'); this.clampScroll(f);
+      ctx.save(); ctx.beginPath(); ctx.rect(f.x + 8, f.bodyY, f.w - 16, f.bodyH); ctx.clip();
       if (state === 'PAUSED') {
-        this.button(ctx, 0, text.RESUME);
-        this.button(ctx, 1, text.SETTINGS);
-        this.button(ctx, 2, text.HELP);
-        this.button(ctx, 3, '当前构筑');
-        this.button(ctx, 4, text.ABANDON);
-        this.drawSummary(ctx);
-      } else if (state === 'BUILD') {
-        this.drawBuild(ctx); this.button(ctx, 5, text.BACK);
+        var labels = [text.RESUME, text.SETTINGS, text.HELP, '当前构筑'];
+        for (var i = 0; i < labels.length; i++) {
+          var button = this.pauseButtonRect(f, i);
+          UI.drawActionButton(ctx, button.x, button.y, button.w, button.h, labels[i], true, CONFIG.POLISH.PAUSE_MENU.FONT);
+        }
       } else if (state === 'SETTINGS') {
-        var rows = [{
-          key: 'sound',
-          label: text.SOUND
-        }, {
-          key: 'shake',
-          label: text.SHAKE
-        }, {
-          key: 'debug',
-          label: text.DEBUG
-        }, {
-          key: 'alwaysShowJoystick',
-          label: text.JOYSTICK_ALWAYS
-        }, {
-          key: 'mirror',
-          label: text.MIRROR
-        }, {
-          key: 'highFps',
-          label: text.HIGH_FPS
-        }];
-        for (var i = 0; i < rows.length; i++) {
-          var rk = rows[i].key;
-          this.button(ctx, i, rows[i].label + '：' + (Settings[rk] ? text.ON : text.OFF));
-        }
-        this.button(ctx, rows.length, text.QUALITY + '：' + text.QUALITY_NAMES[Settings.quality]);
-        this.button(ctx, rows.length + 1, text.BACK);
-      } else {
-        var helpTop = CONFIG.UI.TOP_INSET || 0;
-        for (var i = 0; i < text.HELP_LINES.length; i++) {
-          UI.drawCenteredText(ctx, text.HELP_LINES[i], 320 + helpTop + i * 70, 25, false, CONFIG.COLORS.TEXT);
-        }
-        this.button(ctx, 4, text.BACK);
+        var rows = [{key:'sound',label:text.SOUND},{key:'shake',label:text.SHAKE},{key:'debug',label:text.DEBUG},{key:'alwaysShowJoystick',label:text.JOYSTICK_ALWAYS},{key:'mirror',label:text.MIRROR},{key:'highFps',label:text.HIGH_FPS}];
+        for (var i = 0; i < rows.length; i++) this.drawRow(ctx, f, i, rows[i].label, Settings[rows[i].key] ? text.ON : text.OFF, true, Settings[rows[i].key] ? '#38b7df' : '#4a5958');
+        this.drawRow(ctx, f, rows.length, text.QUALITY, text.QUALITY_NAMES[Settings.quality], true, '#38b7df');
+      } else if (state === 'BUILD') this.drawBuildRows(ctx, f);
+      else for (var i = 0; i < text.HELP_LINES.length; i++) this.drawRow(ctx, f, i, text.HELP_LINES[i], '', false);
+      ctx.restore();
+      if (this.rows(state) * this.rowStep(f) > f.bodyH) {
+        var range = this.rows(state) * this.rowStep(f), barH = Math.max(32, f.bodyH * f.bodyH / range), track = f.bodyH - barH;
+        ctx.fillStyle = '#253539'; ctx.fillRect(f.x + f.w - 9, f.bodyY + 4, 3, f.bodyH - 8); ctx.fillStyle = '#668087'; ctx.fillRect(f.x + f.w - 9, f.bodyY + 4 + track * (this.scroll / Math.max(1, range - f.bodyH)), 3, barH);
       }
     },
-    drawSummary: function (ctx) {
-      var c = CONFIG.POLISH;
-      UI.drawCenteredText(ctx, CONFIG.TEXT.SUMMARY, c.SUMMARY_Y, 28, true, CONFIG.COLORS.COIN);
-      var n = 0;
-      for (var i = 0; i < CONFIG.UPGRADES.DEFINITIONS.length; i++) {
-        var d = CONFIG.UPGRADES.DEFINITIONS[i];
-        var lv = ExpLevelUp.levels[d.ID];
-        if (!lv) continue;
-        n += 1;
-        UI.drawCenteredText(ctx, CONFIG.TEXT.UPGRADES[d.TEXT_KEY].NAME + ' × ' + lv, c.SUMMARY_Y + n * c.SUMMARY_STEP, 23, false, CONFIG.COLORS.TEXT);
+    drawBuildRows: function (ctx, f) {
+      var s = root.FinalStats.get(), i = 0;
+      var stats = [['移速', s.speed.toFixed(0)], ['拾取半径', s.pickup.toFixed(0)], ['暴击率', Math.round(s.crit * 100) + '%'], ['暴击倍率', s.critMultiplier.toFixed(2) + '×'], ['贯穿', String(s.penetration)], ['弹道数', String(s.projectiles)], ['生命', String(s.maxHp)], ['护甲', String(Math.ceil(s.armor))], ['武器强化', 'Lv.' + s.weaponLevel], ['技能数', String(s.skills.length)]];
+      for (var a = 0; a < stats.length; a += 2) {
+        var step = this.rowStep(f), y = f.bodyY + i * step - this.scroll;
+        if (y + 52 >= f.bodyY && y <= f.bodyY + f.bodyH) {
+          UI.roundedRectPath(ctx, f.x + 18, y + 5, f.w - 36, 52, 12); ctx.fillStyle = '#172224'; ctx.fill(); ctx.strokeStyle = '#4a8b98'; ctx.stroke();
+          ctx.font = '14px Arial,"Microsoft YaHei",sans-serif'; ctx.fillStyle = '#91a9a6'; ctx.textAlign = 'left'; ctx.fillText(stats[a][0], f.x + 34, y + 25); ctx.fillText(stats[a + 1][0], f.x + f.w / 2 + 10, y + 25);
+          ctx.font = 'bold 18px Arial,"Microsoft YaHei",sans-serif'; ctx.fillStyle = '#f3f6e8'; ctx.fillText(stats[a][1], f.x + 34, y + 47); ctx.fillText(stats[a + 1][1], f.x + f.w / 2 + 10, y + 47); ctx.textAlign = 'start';
+        }
+        i++;
       }
-      if (!n) {
-        UI.drawCenteredText(ctx, CONFIG.TEXT.EMPTY_SUMMARY, c.SUMMARY_Y + c.SUMMARY_STEP, 23, false, CONFIG.COLORS.HINT_TEXT);
+      this.drawRow(ctx, f, i++, '当前武器', (root.WeaponProgress.selected || 'pistol') + ' · 伤害 ' + s.damage.toFixed(1) + ' · 射速 ' + s.fireRate.toFixed(2) + '/秒', false, '#c99340');
+      var defs = CONFIG.UPGRADES.DEFINITIONS;
+      for (var j = 0; j < defs.length; j++) { var d = defs[j], lv = ExpLevelUp.levels[d.ID] || 0; if (!lv) continue; var textDef = CONFIG.TEXT.UPGRADES[d.TEXT_KEY] || {}, name = textDef.NAME || d.ID, rarityKey = 'RARITY_' + (d.RARITY || 'COMMON'); this.drawRow(ctx, f, i++, name + '  Lv.' + lv, textDef.DESC || '已生效', false, CONFIG.COLORS[rarityKey] || '#75839a'); }
+      if (root.Armory) {
+        if (root.Armory.weaponLevel) this.drawRow(ctx, f, i++, '武器强化  Lv.' + root.Armory.weaponLevel, '伤害与弹匣容量 ×' + Math.pow(2, root.Armory.weaponLevel), false, '#e0ad44');
+        if (root.Armory.ammoType) { var ammo = root.Armory.ammoDef(root.Armory.ammoType); this.drawRow(ctx, f, i++, ammo ? ammo.NAME : root.Armory.ammoType, '特殊弹药', false, ammo && ammo.COLOR || '#58c7d7'); }
+        for (var p = 0; p < root.Armory.perks.length; p++) { var pd = CONFIG.ARMORY.PERKS.filter(function (q) { return q.ID === root.Armory.perks[p]; })[0]; if (pd) this.drawRow(ctx, f, i++, pd.NAME, '被动技能已激活', false, pd.COLOR); }
       }
-    },
-    drawBuild: function (ctx) {
-      var s = root.FinalStats.get(), y = 265, lines = [
-        '伤害 ' + s.damage.toFixed(1) + '    射速 ' + s.fireRate.toFixed(2) + '/秒',
-        '弹匣 ' + s.magazine + '    换弹 ' + s.reload.toFixed(2) + '秒',
-        '移速 ' + s.speed.toFixed(0) + '    拾取 ' + s.pickup.toFixed(0),
-        '暴击 ' + Math.round(s.crit * 100) + '%    倍率 ' + s.critMultiplier.toFixed(2),
-        '贯穿 ' + s.penetration + '    弹道 ' + s.projectiles,
-        '生命 ' + s.maxHp + '    护甲 ' + Math.ceil(s.armor),
-        '武器强化 Lv.' + s.weaponLevel + (s.ammo ? '    弹药 ' + s.ammo : ''),
-        '技能：' + (s.skills.length ? s.skills.map(function (id) { for (var i=0;i<CONFIG.ARMORY.PERKS.length;i++) if(CONFIG.ARMORY.PERKS[i].ID===id)return CONFIG.ARMORY.PERKS[i].NAME; return id; }).join('、') : '无')
-      ];
-      for (var i = 0; i < lines.length; i++) UI.drawCenteredText(ctx, lines[i], y + i * 52, 21, i === 0, i === 0 ? CONFIG.COLORS.COIN : CONFIG.COLORS.TEXT);
-      var yy = y + lines.length * 52 + 10, shown = 0;
-      for (var j = 0; j < CONFIG.UPGRADES.DEFINITIONS.length && shown < 5; j++) { var d = CONFIG.UPGRADES.DEFINITIONS[j], lv = ExpLevelUp.levels[d.ID]; if (!lv) continue; shown++; UI.drawCenteredText(ctx, CONFIG.TEXT.UPGRADES[d.TEXT_KEY].NAME + '  Lv.' + lv, yy + shown * 38, 18, false, CONFIG.COLORS.HINT_TEXT); }
     },
     update: function () {
       if (!Input.consumeTap(UI.tapPoint)) return;
-      var c = CONFIG.POLISH;
-      var p = UI.tapPoint;
-      if (p.x < c.PANEL_X || p.x > c.PANEL_X + c.PANEL_W) return;
-      var compact = Game.state === 'SETTINGS', panelTop = compact ? 265 : c.PANEL_TOP, panelStep = compact ? 92 : c.PANEL_STEP, panelHeight = compact ? 66 : c.PANEL_H;
-      var row = Math.floor((p.y - panelTop) / panelStep);
-      if (row < 0 || p.y > panelTop + row * panelStep + panelHeight) return;
-      if (Game.state === 'PAUSED') {
-        if (row === 0) this.resume();
-        if (row === 1) this.open('SETTINGS');
-        if (row === 2) this.open('HELP');
-        if (row === 3) {
-          this.open('BUILD');
+      var p = UI.tapPoint, f = this.layout();
+      if (p.x >= f.x + 36 && p.x <= f.x + f.w - 36 && p.y >= f.y + f.h - f.footer + 20 && p.y <= f.y + f.h - 22) {
+        if (Game.state === 'PAUSED') { Game.exitType = 'quit'; Game.state = CONFIG.GAME.STATE_GAMEOVER; Game.commitSettlement(false); }
+        else if (Game.state === 'BUILD') Game.state = 'PAUSED'; else Game.state = this.parent;
+      } else if ((Game.state === 'SETTINGS' || Game.state === 'BUILD' || Game.state === 'HELP') && p.x >= f.x + f.w - 70 && p.x <= f.x + f.w - 22 && p.y >= f.y + 17 && p.y <= f.y + 65) {
+        Game.state = Game.state === 'BUILD' || Game.state === 'HELP' ? 'PAUSED' : this.parent;
+      } else if (p.x >= f.x + 18 && p.x <= f.x + f.w - 18 && p.y >= f.bodyY && p.y < f.bodyY + f.bodyH) {
+        var row = this.rowAt(p, f);
+        if (Game.state === 'PAUSED') {
+          row = -1;
+          for (var i = 0; i < this.rows('PAUSED'); i++) {
+            var button = this.pauseButtonRect(f, i);
+            if (UI.isPointInRect(p, button.x, button.y, button.w, button.h)) { row = i; break; }
+          }
+          if (row === 0) this.resume(); else if (row === 1) this.open('SETTINGS'); else if (row === 2) this.open('HELP'); else if (row === 3) this.open('BUILD');
         }
-        if (row === 4) {
-          Game.exitType = 'quit';
-          Game.state = CONFIG.GAME.STATE_GAMEOVER;
-          Game.commitSettlement(false);
-        }
-      } else if (Game.state === 'SETTINGS') {
-        var settingKeys = ['sound', 'shake', 'debug', 'alwaysShowJoystick', 'mirror', 'highFps'];
-        if (row < settingKeys.length) Settings.toggle(settingKeys[row]);
-        if (row === settingKeys.length) Settings.cycleQuality();
-        if (row === settingKeys.length + 1) Game.state = this.parent;
-      } else if (Game.state === 'HELP' && row === 4) {
-        Game.state = this.parent;
-      } else if (Game.state === 'BUILD' && row === 5) {
-        Game.state = 'PAUSED';
+        else if (Game.state === 'SETTINGS') { var keys = ['sound','shake','debug','alwaysShowJoystick','mirror','highFps']; if (row < keys.length) Settings.toggle(keys[row]); else if (row === keys.length) Settings.cycleQuality(); }
       }
       Input.clearTap();
     }
   };
+Platform.onTouchStart(function (x, y, e, id) { if (Game.state === 'PAUSED' || Game.state === 'SETTINGS' || Game.state === 'HELP' || Game.state === 'BUILD') { var f = Panels.layout(); if (y >= f.bodyY && y < f.bodyY + f.bodyH) Panels.drag = { id: id, y: y, start: y, moved: false }; } });
+Platform.onTouchMove(function (x, y, e, id) { if (!Panels.drag || Panels.drag.id !== id) return; var dy = Panels.drag.y - y; Panels.scroll += dy; Panels.drag.y = y; if (Math.abs(y - Panels.drag.start) > 10) Panels.drag.moved = true; var f = Panels.layout(); Panels.clampScroll(f); });
+Platform.onTouchEnd(function (x, y, e, id) { if (Panels.drag && Panels.drag.id === id) { if (Panels.drag.moved) Input.clearTap(); Panels.drag = null; } });
 Platform.onKeyDown(function (event) {
     AudioFX.unlock();
     if (event.code === 'Escape' && !event.repeat && !Ads.active) {
@@ -476,6 +526,7 @@ Platform.onKeyDown(function (event) {
 root.FX = FX;
 root.Metrics = Metrics;
 root.Spatial = Spatial;
+root.SpriteCache = SpriteCache;
 root.ButtonUI = ButtonUI;
 root.Panels = Panels;
 UI.icon = function (key) {
@@ -686,7 +737,7 @@ root.MortarExplosionFX = MortarExplosionFX;
         ctx.globalAlpha = a;
         ctx.lineWidth = 3;
         ctx.shadowColor = CONFIG.COLORS.TESLA;
-        ctx.shadowBlur = 10;
+        ctx.shadowBlur = 0;
         ctx.beginPath();
         ctx.moveTo(e.x1 - Camera.x, e.y1 - Camera.y);
         var mx = (e.x1 + e.x2) / 2, my = (e.y1 + e.y2) / 2;

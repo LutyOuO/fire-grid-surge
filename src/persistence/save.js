@@ -34,6 +34,15 @@
         bestWave: 0,
         bestTime: 0,
         bestKills: 0,
+        bestDamage: 0,
+        totalKills: 0,
+        totalElites: 0,
+        totalBosses: 0,
+        totalSurvivorCoins: 0,
+        totalDiamonds: 0,
+        extractCount: 0,
+        recentRuns: [],
+        weaponMastery: { total: 0, pistol: 0, smg: 0, ar: 0, mg: 0, flamer: 0, crossbow: 0 },
         lastOfflineTs: Date.now(),
         speedupCdTs: 0,
         settings: {
@@ -55,6 +64,9 @@
             lv: 1,
             pts: 0
           },
+          smg: { lv: 0, pts: 0 },
+          ar: { lv: 0, pts: 0 },
+          mg: { lv: 0, pts: 0 },
           flamer: {
             lv: 0,
             pts: 0
@@ -71,12 +83,18 @@
         currentOutfit: 'default',
         ownedSkins: {
           pulse: ['default'],
+          smg: ['default'],
+          ar: ['default'],
+          mg: ['default'],
           blade: ['default'],
           flame: ['default'],
           crossbow: ['default']
         },
         equippedSkins: {
           pulse: 'default',
+          smg: 'default',
+          ar: 'default',
+          mg: 'default',
           blade: 'default',
           flame: 'default',
           crossbow: 'default'
@@ -128,6 +146,16 @@
       this.data.bestWave = this.safeInt(saved.bestWave, 0);
       this.data.bestTime = this.safeNumber(saved.bestTime, 0);
       this.data.bestKills = this.safeInt(saved.bestKills, 0);
+      this.data.bestDamage = this.safeNumber(saved.bestDamage, 0);
+      this.data.totalKills = this.safeInt(saved.totalKills, 0);
+      this.data.totalElites = this.safeInt(saved.totalElites, 0);
+      this.data.totalBosses = this.safeInt(saved.totalBosses, 0);
+      this.data.totalSurvivorCoins = this.safeInt(saved.totalSurvivorCoins, 0);
+      this.data.totalDiamonds = this.safeInt(saved.totalDiamonds, saved.achievements && saved.achievements.progress ? this.safeInt(saved.achievements.progress.diamondsTotal, 0) : 0);
+      this.data.extractCount = this.safeInt(saved.extractCount, 0);
+      if (Array.isArray(saved.recentRuns)) this.data.recentRuns = saved.recentRuns.slice(0, 30).filter(function (v) { return v && typeof v === 'object'; }).map(function (v) { return { date: typeof v.date === 'string' ? v.date : '', map: typeof v.map === 'string' ? v.map : '', wave: this.safeInt(v.wave, 0), kills: this.safeInt(v.kills, 0), damage: this.safeNumber(v.damage, 0), exit: v.exit === 'extract' ? 'extract' : 'death' }; }, this);
+      var mastery = saved.weaponMastery && typeof saved.weaponMastery === 'object' ? saved.weaponMastery : {};
+      for (var masteryId in this.data.weaponMastery) this.data.weaponMastery[masteryId] = this.safeInt(mastery[masteryId], 0);
       this.data.runs = this.safeInt(saved.runs, 0);
       // v012 #75 地图解锁进度：只信任 LAYOUTS 范围内的整数索引，永远保底解锁第 0 张。
       var maxMap = (CONFIG.FIELD.LAYOUTS || []).length - 1;
@@ -174,8 +202,8 @@
         return typeof v === 'string';
       });
       if (this.data.ownedOutfits.indexOf('default') < 0) this.data.ownedOutfits.unshift('default');
-      if (typeof saved.currentOutfit === 'string' && this.data.ownedOutfits.indexOf(saved.currentOutfit) >= 0) this.data.currentOutfit = saved.currentOutfit;
-      var weaponIds = ['pulse', 'blade', 'flame', 'crossbow'];
+      if (typeof saved.currentOutfit === 'string' && CONFIG.CHARACTER.LEGACY_IDS.indexOf(saved.currentOutfit) >= 0 && this.data.ownedOutfits.indexOf(saved.currentOutfit) >= 0) this.data.currentOutfit = saved.currentOutfit;
+      var weaponIds = ['pulse', 'blade', 'flame', 'crossbow', 'smg', 'ar', 'mg'];
       for (var wi = 0; wi < weaponIds.length; wi++) {
         var wid = weaponIds[wi],
           list = saved.ownedSkins && saved.ownedSkins[wid];
@@ -358,6 +386,17 @@
       this.data.bestKills = Math.max(this.data.bestKills, kills);
       this.data.bestWave = Math.max(this.data.bestWave, wave);
       if (countRun) this.data.runs = (this.data.runs || 0) + 1;
+      if (countRun) {
+        this.data.bestDamage = Math.max(this.data.bestDamage || 0, root.RunStats.damageDone || 0);
+        this.data.totalKills += kills;
+        this.data.totalElites += root.RunStats.killElite || 0;
+        this.data.totalBosses += (root.RunStats.killBoss || 0) + (root.RunStats.killSpecial || 0);
+        this.data.totalSurvivorCoins += Math.max(0, Math.floor(coins));
+        if (Game.exitType === 'extract') this.data.extractCount += 1;
+        var mapName = CONFIG.TEXT.MAP_NAMES[this.data.selectedMap || 0] || '—';
+        this.data.recentRuns.unshift({ date: new Date().toISOString(), map: mapName, wave: wave, kills: kills, damage: Math.floor(root.RunStats.damageDone || 0), exit: Game.exitType === 'extract' ? 'extract' : 'death' });
+        if (this.data.recentRuns.length > 30) this.data.recentRuns.length = 30;
+      }
       // 结算后再检查波次里程碑（如 ring_street 需到达第 10 波）。
       this.refreshMapUnlocks();
       this.save();
@@ -484,7 +523,7 @@
         }
       }
       var src = saved.weaponLevel,
-        ids = ['pistol', 'flamer', 'crossbow'];
+        ids = ['pistol', 'smg', 'ar', 'mg', 'flamer', 'crossbow'];
       for (var k = 0; k < ids.length; k++) {
         var id = ids[k],
           v = src && src[id];
@@ -493,7 +532,11 @@
           this.data.weaponLevel[id].pts = this.safeInt(v.pts, 0);
         }
       }
-      if (/^(pistol|flamer|crossbow)$/.test(saved.selectedWeapon || '')) this.data.selectedWeapon = saved.selectedWeapon;
+      if (/^(pistol|smg|ar|mg|flamer|crossbow)$/.test(saved.selectedWeapon || '')) {
+        var selected = saved.selectedWeapon, masteryData = this.data.weaponMastery;
+        var unlocked = selected === 'pistol' || selected === 'smg' && masteryData.total >= CONFIG.WEAPONS.UNLOCKS.SMG_TOTAL || selected === 'ar' && masteryData.smg >= CONFIG.WEAPONS.UNLOCKS.AR_SMG || selected === 'mg' && masteryData.ar >= CONFIG.WEAPONS.UNLOCKS.MG_AR || selected === 'flamer' && this.data.weaponLevel.pistol.lv >= 5 || selected === 'crossbow' && this.data.weaponLevel.pistol.lv >= 10;
+        this.data.selectedWeapon = unlocked ? selected : 'pistol';
+      }
     },
     // 结算后汇总永久成就。
     recordRunAchievements: function (sec, k, w, c) {
@@ -550,7 +593,7 @@
       Meta.save();
     },
     applyFrameRate: function () {
-      try { if (typeof wx !== 'undefined' && wx.setPreferredFramesPerSecond) wx.setPreferredFramesPerSecond(this.highFps ? 120 : 60); } catch (error) {}
+      try { if (typeof wx !== 'undefined' && wx.setPreferredFramesPerSecond) wx.setPreferredFramesPerSecond(this.highFps ? CONFIG.RENDER_QUALITY.HIGH_FPS_TARGET : CONFIG.RENDER_QUALITY.DEFAULT_FPS); } catch (error) {}
     },
     toggle: function (key) {
       this[key] = !this[key];

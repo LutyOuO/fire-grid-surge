@@ -226,6 +226,7 @@
         n = Math.max(0, Math.floor(n));
         if (!n) return;
         Meta.data.diamonds += n;
+        Meta.data.totalDiamonds = (Meta.data.totalDiamonds || 0) + n;
         var p = Meta.data.achievements && Meta.data.achievements.progress;
         if (p) p.diamondsTotal = (p.diamondsTotal || 0) + n;
         Meta.save();
@@ -488,6 +489,7 @@
           v = d[6];
         if (t === 'coins') Meta.data.survivorCoins += v;else if (t === 'diamonds') {
           Meta.data.diamonds += v;
+          Meta.data.totalDiamonds = (Meta.data.totalDiamonds || 0) + v;
           Meta.data.achievements.progress.diamondsTotal = (Meta.data.achievements.progress.diamondsTotal || 0) + v;
         } else if (t === 'outfit') Wardrobe.ownOutfit(v);else if (t === 'skin') Wardrobe.ownSkin(v);
       },
@@ -546,7 +548,7 @@
       open: false,
       mode: 'outfit',
       index: 0,
-      outfits: [['default', '默认幸存者', 'COMMON', 'free', 0], ['cowboy', '西部牛仔', 'COMMON', 'survivorCoins', 800], ['firefighter', '消防员', 'COMMON', 'survivorCoins', 1200], ['special', '特种兵', 'RARE', 'survivorCoins', 3000], ['medic', '战地医生', 'RARE', 'survivorCoins', 3500], ['ninja', '忍者', 'RARE', 'survivorCoins', 4000], ['punk', '朋克', 'RARE', 'survivorCoins', 5000], ['hunter', '荒野猎人', 'EPIC', 'diamonds', 80], ['mechanic', '机械师', 'EPIC', 'diamonds', 100], ['necromancer', '亡灵法师', 'EPIC', 'diamonds', 120], ['gold', '黄金幸存者', 'LEGENDARY', 'diamonds', 300], ['shadow', '暗影刺客', 'LEGENDARY', 'diamonds', 500]],
+      outfits: [['default', CONFIG.CHARACTER.SKINS.default.NAME, 'COMMON', 'free', 0], ['cowboy', '西部牛仔', 'COMMON', 'survivorCoins', 800], ['firefighter', '消防员', 'COMMON', 'survivorCoins', 1200], ['special', CONFIG.CHARACTER.SKINS.special.NAME, 'RARE', 'survivorCoins', 3000], ['medic', CONFIG.CHARACTER.SKINS.medic.NAME, 'RARE', 'survivorCoins', 3500], ['ninja', '忍者', 'RARE', 'survivorCoins', 4000], ['punk', '朋克', 'RARE', 'survivorCoins', 5000], ['hunter', '荒野猎人', 'EPIC', 'diamonds', 80], ['mechanic', '机械师', 'EPIC', 'diamonds', 100], ['necromancer', '亡灵法师', 'EPIC', 'diamonds', 120], ['gold', '黄金幸存者', 'LEGENDARY', 'diamonds', 300], ['shadow', '暗影刺客', 'LEGENDARY', 'diamonds', 500]],
       skins: [['default', '手枪默认', 'pulse', 'free', 0], ['pulse_silver', '银色杀手', 'pulse', 'survivorCoins', 2000], ['pulse_red', '烈焰红', 'pulse', 'survivorCoins', 3000], ['pulse_blue', '冰霜蓝', 'pulse', 'diamonds', 80], ['pulse_gold', '黄金沙鹰', 'pulse', 'achievement', 0], ['default', '飞刃默认', 'blade', 'free', 0], ['blade_blood', '血刃', 'blade', 'achievement', 0], ['blade_thunder', '雷霆刃', 'blade', 'achievement', 0], ['blade_void', '虚空刃', 'blade', 'achievement', 0], ['default', '喷火器默认', 'flame', 'free', 0], ['flame_green', '军用绿', 'flame', 'survivorCoins', 2500], ['flame_hell', '地狱火', 'flame', 'achievement', 0], ['flame_frost', '极寒喷射', 'flame', 'achievement', 0], ['default', '弩箭默认', 'crossbow', 'free', 0], ['bow_hunter', '猎人棕', 'crossbow', 'achievement', 0], ['bow_machine', '机械弩', 'crossbow', 'diamonds', 80], ['bow_holy', '圣光弩', 'crossbow', 'achievement', 0]],
       ownOutfit: function (id) {
         if (Meta.data.ownedOutfits.indexOf(id) < 0) Meta.data.ownedOutfits.push(id);
@@ -557,55 +559,6 @@
             a = Meta.data.ownedSkins[w];
           if (a.indexOf(id) < 0) a.push(id);
         }
-      },
-      buyOrEquip: function () {
-        if (this.mode === 'outfit') {
-          var d = this.outfits[this.index],
-            owned = Meta.data.ownedOutfits.indexOf(d[0]) >= 0;
-          if (owned) Meta.data.currentOutfit = d[0];else if (d[3] !== 'free' && Meta.data[d[3]] >= d[4]) {
-            Meta.data[d[3]] -= d[4];
-            this.ownOutfit(d[0]);
-            Meta.data.currentOutfit = d[0];
-          }
-        } else {
-          var s = this.skins[this.index],
-            list = Meta.data.ownedSkins[s[2]],
-            own = list.indexOf(s[0]) >= 0;
-          if (own) Meta.data.equippedSkins[s[2]] = s[0];else if (s[3] !== 'achievement' && Meta.data[s[3]] >= s[4]) {
-            Meta.data[s[3]] -= s[4];
-            this.ownSkin(s[0]);
-            Meta.data.equippedSkins[s[2]] = s[0];
-          }
-        }
-        applyEquippedLooks();
-        Meta.save();
-      },
-      draw: function (ctx) {
-        ctx.save();
-        ctx.fillStyle = 'rgba(0,0,0,.74)';
-        ctx.fillRect(0, 0, 750, CONFIG.VIEW.HEIGHT);
-        panel(ctx, 38, 150, 674, CONFIG.VIEW.HEIGHT - 190, 24, '#111d1a', '#4e8067');
-        text(ctx, '外观仓库', 75, 200, 34, '#f4fff7');
-        text(ctx, '×', 670, 200, 34, '#fff', 'center');
-        UI.drawActionButton(ctx, 85, 240, 270, 58, '角色服装', this.mode === 'outfit', 20);
-        UI.drawActionButton(ctx, 395, 240, 270, 58, '武器涂装', this.mode === 'skin', 20);
-        var list = this.mode === 'outfit' ? this.outfits : this.skins;
-        this.index = Math.max(0, Math.min(list.length - 1, this.index));
-        var d = list[this.index],
-          name = d[1];
-        text(ctx, '‹', 92, 530, 50, '#ffd166', 'center');
-        text(ctx, '›', 658, 530, 50, '#ffd166', 'center');
-        diamond(ctx, 375, 410, 50);
-        text(ctx, name, 375, 505, 30, '#fff', 'center');
-        text(ctx, this.index + 1 + ' / ' + list.length, 375, 552, 18, '#9fb1a8', 'center');
-        var own = this.mode === 'outfit' ? Meta.data.ownedOutfits.indexOf(d[0]) >= 0 : Meta.data.ownedSkins[d[2]].indexOf(d[0]) >= 0;
-        var equipped = this.mode === 'outfit' ? Meta.data.currentOutfit === d[0] : Meta.data.equippedSkins[d[2]] === d[0];
-        var currency = this.mode === 'outfit' ? d[3] : d[3],
-          price = this.mode === 'outfit' ? d[4] : d[4];
-        var label = equipped ? '已装备' : own ? '装备' : currency === 'achievement' ? '成就解锁' : currency === 'free' ? '拥有' : '购买 ' + price + (currency === 'diamonds' ? ' 钻石' : ' 幸存者硬币');
-        UI.drawActionButton(ctx, 170, 620, 410, 78, label, !equipped && currency !== 'achievement', 24);
-        text(ctx, '服装与涂装只改变外观，不提供属性加成', 375, 735, 17, '#aebdb6', 'center');
-        ctx.restore();
       }
     };
 
@@ -641,46 +594,7 @@
     }
     // 供后续界面在购买或装备后立即刷新外观。
     root.applyEquippedLooks = applyEquippedLooks;
-    root.CostumeView = {
-      draw: function (ctx) {
-        var id = Meta.data && Meta.data.currentOutfit;
-        if (!id || id === 'default') return;
-        var x = this.x - Camera.x + this.renderOffsetX + this.recoilX,
-          y = this.y - Camera.y + this.renderOffsetY + this.recoilY + this.bobOffset;
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate(this.facingAngle);
-        if (id === 'cowboy') {
-          ctx.fillStyle = '#6b421f';
-          ctx.fillRect(-8, -18, 16, 5);
-          ctx.fillRect(-13, -15, 26, 4);
-        } else if (id === 'firefighter') {
-          ctx.fillStyle = '#e74c3c';
-          ctx.fillRect(-9, -18, 18, 7);
-          ctx.fillStyle = '#ffd54a';
-          ctx.fillRect(-7, -15, 14, 2);
-        } else if (id === 'ninja' || id === 'shadow') {
-          ctx.fillStyle = id === 'shadow' ? '#513080' : '#111';
-          ctx.beginPath();
-          ctx.moveTo(-9, -4);
-          ctx.lineTo(-22, -10);
-          ctx.lineTo(-15, 2);
-          ctx.fill();
-        } else if (id === 'gold' || id === 'necromancer') {
-          ctx.globalAlpha = .55 + .2 * Math.sin(Date.now() / 180);
-          ctx.strokeStyle = id === 'gold' ? '#ffd54a' : '#b86bff';
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.arc(0, 0, 27, 0, Math.PI * 2);
-          ctx.stroke();
-        } else {
-          ctx.fillStyle = OutfitColors[id] || '#fff';
-          ctx.fillRect(-10, -16, 20, 4);
-        }
-        ctx.restore();
-      }
-    };
-
+    root.OutfitColors = OutfitColors;
     // ---------- 生命周期、统计与渲染接入 ----------
 
     // 基地第三个“服装”Tab：保留原两页逻辑，同时按文档提供独立外观入口。

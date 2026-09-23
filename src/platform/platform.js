@@ -411,6 +411,31 @@
     },
     // ---------- 图片资源（#57 UI 切图） ----------
     images: {},
+    characterKeys: [],
+    // 角色图集按需读取，最多保留当前/预览两套；淘汰时解除异步回调。
+    characterImage: function (id) {
+      var cfg = root.CONFIG.CHARACTER, def = cfg.SKINS[id] || cfg.SKINS.default;
+      var key = 'character_' + (cfg.SKINS[id] ? id : 'default');
+      if (!this.imageSources[key]) {
+        while (this.characterKeys.length >= 2) {
+          var old = this.characterKeys.shift(), image = this.images[old];
+          if (image) { image.onload = null; image.onerror = null; }
+          delete this.images[old]; delete this.imageSources[old]; delete this.imageReady[old]; delete this.imageLoading[old]; delete this.imageFailed[old];
+        }
+        this.characterKeys.push(key); this.loadImage(key, def.ATLAS);
+      }
+      return this.imageReady[key] ? this.images[key] : null;
+    },
+    characterWeapons: function () {
+      var key = 'character_weapons';
+      if (!this.imageSources[key]) this.loadImage(key, root.CONFIG.CHARACTER.WEAPON_ATLAS);
+      return this.imageReady[key] ? this.images[key] : null;
+    },
+    characterPortraits: function () {
+      var key='character_portraits';
+      if(!this.imageSources[key])this.loadImage(key,root.CONFIG.CHARACTER.PORTRAITS);
+      return this.imageReady[key]?this.images[key]:null;
+    },
     imageReady: {},
     imageLoading: {},
     imageFailed: {},
