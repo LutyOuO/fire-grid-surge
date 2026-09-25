@@ -16,6 +16,7 @@
     activeCount: 0,
     nextSpawnId: 1,
     bossProjectiles: [],
+    frostTrails: [],
     pendingBlasts: [],
     initPool: function () {
       this.pool.length = 0;
@@ -40,6 +41,8 @@
         });
       }
       this.bossProjectiles.length = 0;
+      this.frostTrails.length = 0;
+      for(var ft=0;ft<CONFIG.V20.FROST_TRAIL_POOL;ft++)this.frostTrails.push({active:false,x:0,y:0,life:0});
       for (var j = 0; j < CONFIG.BOSS_RANGED.PROJECTILE_POOL; j++) {
         this.bossProjectiles.push({
           active: false,
@@ -58,6 +61,7 @@
       this.nextSpawnId = 1;
       for (var i = 0; i < this.pool.length; i++) this.pool[i].active = false;
       for (var j = 0; j < this.bossProjectiles.length; j++) this.bossProjectiles[j].active = false;
+      for (var k = 0; k < this.frostTrails.length; k++) this.frostTrails[k].active = false;
       this.pendingBlasts.length = 0;
     },
     spawn: function (x, y, typeIndex, hpMultiplier) {
@@ -69,6 +73,20 @@
           enemy.x = x;
           enemy.y = y;
           enemy.typeIndex = typeIndex;
+          enemy.family = typeIndex === CONFIG.ENEMY.TYPE_ELITE ? 'elite' : typeIndex >= CONFIG.ENEMY.TYPE_BOSS ? 'boss' : 'normal';
+          enemy.archetypeId = type.ID.toLowerCase();
+          enemy.archetype = null;
+          enemy.waveId = 0;
+          enemy.attackState = 'move';
+          enemy.tellTimer = 0;
+          enemy.animTime = 0;
+          enemy.skillTimer = 0;
+          enemy.lostTime = 0;
+          enemy.specialSpeedTime = 0;
+          enemy.specialSpeedBuff = 1;
+          enemy.frostTrailTime = 0;
+          enemy.frostDropTimer = 0;
+          enemy.fireRingTime = 0;
           enemy.radius = type.RADIUS;
           enemy.speed = type.SPEED;
           enemy.contactDamage = type.DAMAGE;
@@ -117,6 +135,26 @@
       for (var i = 0; i < this.pool.length; i++) {
         var enemy = this.pool[i];
         if (!enemy.active) continue;
+        enemy.animTime += dt;
+        if(enemy.fireRingTime>0){
+          enemy.fireRingTime=Math.max(0,enemy.fireRingTime-dt);
+          var ring=enemy.archetype;
+          if(ring && Math.hypot(Player.x-enemy.fireRingX,Player.y-enemy.fireRingY)<ring.RADIUS && !root.WallCollision.segment(enemy.fireRingX,enemy.fireRingY,Player.x,Player.y,CONFIG.PLAYER.RADIUS))Player.takeDamage(ring.RING_DPS*dt,'boss',true);
+        }
+        if (enemy.specialSpeedTime > 0) enemy.specialSpeedTime = Math.max(0, enemy.specialSpeedTime-dt);
+        if (enemy.frostTrailTime > 0) {
+          enemy.frostTrailTime = Math.max(0,enemy.frostTrailTime-dt);
+          enemy.frostDropTimer -=dt;
+          if(enemy.frostDropTimer<=0){
+            for(var fi=0;fi<this.frostTrails.length;fi++)if(!this.frostTrails[fi].active){var trail=this.frostTrails[fi];trail.active=true;trail.x=enemy.x;trail.y=enemy.y;trail.life=enemy.archetype.DURATION;break;}
+            enemy.frostDropTimer+=CONFIG.V20.FROST_TRAIL_INTERVAL;
+          }
+        }
+        if (enemy.waveId && enemy.family === 'normal') {
+          var far = !Camera.isVisible(enemy.x, enemy.y, CONFIG.V20.LOST_VIEW_MARGIN);
+          enemy.lostTime = far ? enemy.lostTime + dt : 0;
+          if (far && enemy.lostTime >= CONFIG.V20.LOST_CLEAN_TIME) { enemy.active = false; this.activeCount--; continue; }
+        }
         this.updateMortarBurn(enemy, dt);
         if (!enemy.active) continue;
         enemy.stunTimer = Math.max(0, (enemy.stunTimer || 0) - dt);
@@ -134,15 +172,15 @@
         if (!PowerUps.isFrozen()) {
           if (enemy.isSummonTurret) {
             this.updateBossRanged(enemy, dt * Player.enemySpeedMultiplier);
-          } else if (enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS) {
-            if (!this.updateBossMelee(enemy, dt * Player.enemySpeedMultiplier)) this.moveTowardPlayer(enemy, dt);
+          } else if (enemy.family === 'boss' && enemy.archetypeId !== 'artillery' && enemy.archetypeId !== 'melt') {
+            if (!this.updateArchetype(enemy,dt) && (enemy.archetypeId==='stalker' || !this.updateBossMelee(enemy, dt * Player.enemySpeedMultiplier))) this.moveTowardPlayer(enemy, dt);
           } else {
-            this.moveTowardPlayer(enemy, dt);
-            if (enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED) {
+            if (!this.updateArchetype(enemy, dt)) this.moveTowardPlayer(enemy, dt);
+            if (enemy.family === 'boss' && enemy.archetypeId === 'artillery') {
               this.updateBossRanged(enemy, dt * Player.enemySpeedMultiplier);
             }
           }
-          if (enemy.affixes && enemy.affixes.indexOf('gunner') >= 0) this.updateGunner(enemy, dt);
+          if (enemy.archetypeId!=='gunner' && enemy.affixes && enemy.affixes.indexOf('gunner') >= 0) this.updateGunner(enemy, dt);
         }
         if (enemy.bladeCooldown > 0) {
           enemy.bladeCooldown = Math.max(0, enemy.bladeCooldown - dt);
@@ -152,7 +190,16 @@
         }
       }
       this.updateBlasts(dt);
+      this.updateFrostTrails(dt);
       if (root.Spatial) root.Spatial.rebuild();
+    },
+    updateFrostTrails: function(dt){
+      var d=CONFIG.V20.ELITES[5];
+      for(var i=0;i<this.frostTrails.length;i++){
+        var t=this.frostTrails[i];if(!t.active)continue;
+        t.life-=dt;if(t.life<=0){t.active=false;continue;}
+        if(Math.hypot(Player.x-t.x,Player.y-t.y)<d.RADIUS)Player.slowTimer=Math.max(Player.slowTimer||0,CONFIG.V20.FROST_TRAIL_INTERVAL);
+      }
     },
     // 重复命中刷新持续时间，保留较强燃烧；击杀归属迫击炮。
     applyMortarBurn: function (e, dps) {
@@ -179,6 +226,10 @@
         dy = Player.y - e.y,
         base = Math.atan2(dy, dx),
         angle = e.avoidTime > 0 ? e.avoidAngle : base;
+      if(e.archetypeId==='swarm') {
+        base += (e.spawnId%2?1:-1)*Math.atan2(e.archetype.FLANK,Math.hypot(dx,dy)+e.archetype.FLANK);
+        if(e.avoidTime<=0)angle=base;
+      }
       e.avoidCheck -= dt;
       e.avoidTime = Math.max(0, e.avoidTime - dt);
       if (e.avoidCheck <= 0) {
@@ -235,7 +286,7 @@
           }
         });
       }
-      var speed = e.speed * Player.enemySpeedMultiplier * (e.slowMul || 1);
+      var speed = e.speed * Player.enemySpeedMultiplier * (e.slowMul || 1) * (e.specialSpeedTime>0?e.specialSpeedBuff:1) * (e.lostTime >= CONFIG.V20.LOST_HINT_TIME ? CONFIG.V20.LOST_SPEED : 1);
       e.x += (Math.cos(angle) + sepX * .45) * speed * dt;
       e.y += (Math.sin(angle) + sepY * .45) * speed * dt;
       e.x = Math.max(e.radius, Math.min(CONFIG.WORLD.WIDTH - e.radius, e.x));
@@ -331,8 +382,10 @@
         }
         if (root.Field && Field.collideWalls) {
           var p = Field.collideWalls(enemy.x, enemy.y, enemy.radius);
+          var blocked = Math.hypot(p.x-enemy.x,p.y-enemy.y)>1;
           enemy.x = p.x;
           enemy.y = p.y;
+          if(blocked){enemy.meleePhase='idle';enemy.meleeTimer=cfg.CHARGE_COOLDOWN;enemy.stunTimer=cfg.WALL_STUN;enemy.contactDamage=enemy.baseContact;return true;}
         }
         enemy.x = Math.max(enemy.radius, Math.min(CONFIG.WORLD.WIDTH - enemy.radius, enemy.x));
         enemy.y = Math.max(enemy.radius, Math.min(CONFIG.WORLD.HEIGHT - enemy.radius, enemy.y));
@@ -404,18 +457,20 @@
         dist = 1;
       }
       var speed = CONFIG.BOSS_RANGED.PROJECTILE_SPEED;
-      for (var i = 0; i < this.bossProjectiles.length; i++) {
-        var p = this.bossProjectiles[i];
-        if (p.active) continue;
-        p.active = true;
-        p.x = enemy.x;
-        p.y = enemy.y;
-        p.vx = dx / dist * speed;
-        p.vy = dy / dist * speed;
-        p.tx = tx;
-        p.ty = ty;
-        p.life = 0;
-        return;
+      var count=enemy.archetypeId==='artillery'?CONFIG.BOSS_RANGED.BURST_COUNT:1;
+      for(var shot=0;shot<count;shot++){
+        var offset=(shot-(count-1)/2)*CONFIG.BOSS_RANGED.BURST_SPACING;
+        for (var i = 0; i < this.bossProjectiles.length; i++) {
+          var p = this.bossProjectiles[i];
+          if (p.active) continue;
+          p.active = true;p.x = enemy.x;p.y = enemy.y;
+          p.vx = dx / dist * speed;p.vy = dy / dist * speed;
+          p.tx = tx-dy/dist*offset;p.ty = ty+dx/dist*offset;
+          p.life = 0;
+          p.damage = enemy.archetype && enemy.archetype.DAMAGE || CONFIG.BOSS_RANGED.PROJECTILE_DAMAGE;
+          p.radius = enemy.archetype && enemy.archetype.PROJECTILE_RADIUS || CONFIG.BOSS_RANGED.PROJECTILE_RADIUS;
+          break;
+        }
       }
     },
     updateBossProjectiles: function (dt) {
@@ -442,77 +497,38 @@
         }
         // 严格世界边界回收（飞出地图即爆炸消散）
         if (p.x < 0 || p.x > CONFIG.WORLD.WIDTH || p.y < 0 || p.y > CONFIG.WORLD.HEIGHT) {
-          this.explodeBossProjectile(p.x, p.y, true);
+          this.explodeBossProjectile(p.x, p.y, true, p);
           p.active = false;
           continue;
         }
         // 命中玩家
-        var hitR = CONFIG.BOSS_RANGED.PROJECTILE_RADIUS + CONFIG.PLAYER.RADIUS;
+        var hitR = (p.radius || CONFIG.BOSS_RANGED.PROJECTILE_RADIUS) + CONFIG.PLAYER.RADIUS;
         var pdx = Player.x - p.x,
           pdy = Player.y - p.y;
         var directHit = pdx * pdx + pdy * pdy <= hitR * hitR;
         if (directHit) {
           // 直接命中：30 伤害，爆炸不再重复伤害命中者
-          Player.takeDamage(CONFIG.BOSS_RANGED.PROJECTILE_DAMAGE, 'boss');
-          this.explodeBossProjectile(p.x, p.y, false);
+          Player.takeDamage(p.damage || CONFIG.BOSS_RANGED.PROJECTILE_DAMAGE, 'boss');
+          this.explodeBossProjectile(p.x, p.y, false, p);
           p.active = false;
           continue;
         }
         // 到达目标点：范围爆炸
         if (reached) {
-          this.explodeBossProjectile(p.x, p.y, true);
+          this.explodeBossProjectile(p.x, p.y, true, p);
           p.active = false;
         }
       }
     },
-    explodeBossProjectile: function (x, y, damagePlayer) {
+    explodeBossProjectile: function (x, y, damagePlayer, projectile) {
       if (root.FX && root.FX.burst) root.FX.burst(x, y, CONFIG.COLORS.BOSS_RANGED_PROJECTILE_GLOW);
       if (damagePlayer) {
-        var r = CONFIG.BOSS_RANGED.EXPLOSION_RADIUS;
+        var r = projectile && projectile.radius < CONFIG.BOSS_RANGED.PROJECTILE_RADIUS ? projectile.radius * 2 : CONFIG.BOSS_RANGED.EXPLOSION_RADIUS;
         var dx = Player.x - x,
           dy = Player.y - y;
         if (dx * dx + dy * dy <= r * r) {
-          Player.takeDamage(CONFIG.BOSS_RANGED.EXPLOSION_DAMAGE, 'boss');
+          Player.takeDamage(projectile && projectile.damage || CONFIG.BOSS_RANGED.EXPLOSION_DAMAGE, 'boss');
         }
-      }
-    },
-    drawRangedBossDetails: function (ctx, enemy, sx, sy) {
-      // 背部酸性肿瘤炮台（深紫）
-      var turretR = CONFIG.BOSS_RANGED.TURRET_RADIUS;
-      var now = typeof performance !== 'undefined' ? performance.now() / 1000 : 0;
-      var breathe = Math.sin(now * 2.5) * 3;
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(sx, sy - enemy.radius * 0.5 + breathe, turretR, 0, Math.PI * 2);
-      ctx.fillStyle = CONFIG.COLORS.BOSS_RANGED_CORE;
-      ctx.fill();
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = CONFIG.COLORS.BOSS_RANGED_OUTLINE;
-      ctx.stroke();
-      // 荧光绿脉动光点（蓄力时变亮）
-      var chargeRatio = this.isCharging(enemy) ? 1 - enemy.bossChargeTimer / this.bossRangedCharge(enemy) : 0;
-      var glow = 0.5 + chargeRatio * 1.0 + Math.sin(now * 6) * 0.15;
-      ctx.beginPath();
-      ctx.arc(sx, sy - enemy.radius * 0.5 + breathe, 7, 0, Math.PI * 2);
-      ctx.fillStyle = CONFIG.COLORS.BOSS_RANGED_PROJECTILE_GLOW;
-      ctx.shadowColor = CONFIG.COLORS.BOSS_RANGED_PROJECTILE_GLOW;
-      ctx.shadowBlur = 0;
-      ctx.fill();
-      ctx.restore();
-      // 蓄力红色虚线瞄准线
-      if (this.isCharging(enemy)) {
-        var ax = enemy.bossTargetX - Camera.x;
-        var ay = enemy.bossTargetY - Camera.y;
-        ctx.save();
-        ctx.strokeStyle = CONFIG.COLORS.AIM_LINE;
-        ctx.lineWidth = CONFIG.BOSS_RANGED.AIM_LINE_WIDTH;
-        ctx.setLineDash([CONFIG.BOSS_RANGED.AIM_DASH, CONFIG.BOSS_RANGED.AIM_DASH]);
-        ctx.globalAlpha = 0.65;
-        ctx.beginPath();
-        ctx.moveTo(sx, sy - enemy.radius * 0.5);
-        ctx.lineTo(ax, ay);
-        ctx.stroke();
-        ctx.restore();
       }
     },
     drawBossProjectiles: function (ctx) {
@@ -585,9 +601,9 @@
     },
     // v014 #96 击杀反馈分级：普通=小粒子，精英=大粒子+强音+震屏，BOSS/远程BOSS=超大爆炸+最强音+震屏+慢动作。
     killFeedback: function (e, typeIndex) {
-      if (typeIndex === CONFIG.ENEMY.TYPE_BOSS || (typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED && !e.isSummonTurret)) {
+      if (e.family === 'boss' && !e.isSummonTurret) {
         root.FX.feedbackBossKill(e.x, e.y);
-      } else if (typeIndex === CONFIG.ENEMY.TYPE_ELITE) {
+      } else if (e.family === 'elite') {
         root.FX.feedbackEliteKill(e.x, e.y);
       } else {
         root.FX.burst(e.x, e.y);
@@ -597,6 +613,7 @@
       if (!enemy.active) return;
       var blast = enemy.affixBlast, split = enemy.affixSplit, dropX = enemy.x, dropY = enemy.y;
       var typeIndex = enemy.typeIndex;
+      var family=enemy.family, archetypeId=enemy.archetypeId, summon=enemy.isSummonTurret;
       this.killFeedback(enemy, typeIndex);
       this.recordKill(enemy);
       var type = CONFIG.ENEMY.TYPES[typeIndex];
@@ -604,9 +621,8 @@
       this.activeCount -= 1;
       RunStats.kills += 1;
       // v012 #73 按类型击杀计数（仅累加，不改 AI/伤害）：普通=walker/runner/tank，精英，BOSS=近战大Boss，特殊=远程Boss（召唤炮台不计特殊）。
-      if (typeIndex === CONFIG.ENEMY.TYPE_ELITE) RunStats.killElite += 1;
-      else if (typeIndex === CONFIG.ENEMY.TYPE_BOSS) RunStats.killBoss += 1;
-      else if (typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED && !enemy.isSummonTurret) RunStats.killSpecial += 1;
+      if (family === 'elite') RunStats.killElite += 1;
+      else if (family === 'boss' && !summon) RunStats.killBoss += 1;
       else RunStats.killNormal += 1;
       if (Player.killHeal > 0) Player.hp = Math.min(Player.maxHp, Player.hp + Player.killHeal);
       if (blast) this.queueBlast(dropX, dropY);
@@ -630,22 +646,22 @@
         }
       };
       // 远程Boss（特殊）：经验 20 个，金币 5 枚 + 必掉主动道具，不触发近战Boss胜利
-      if (typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED && !enemy.isSummonTurret) {
+      if (summon) {
+        Experience.dropGem(dropX, dropY, 2);
+        return;
+      }
+      if (family === 'boss' && archetypeId === 'artillery') {
         dropXp(KD.EXP_SPECIAL_COUNT);
         dropGold(KD.GOLD_SPECIAL_COUNT);
         PowerUps.dropRandom(dropX, dropY);
         if (root.BossSystem) root.BossSystem.onRangedBossDefeated();
         return;
       }
-      if (enemy.isSummonTurret) {
-        Experience.dropGem(dropX, dropY, 2);
-        return;
-      }
       // 近战 BOSS：经验 20 个，金币 100 枚；精英：经验 5 个，金币 5 枚；普通：经验 1 个，金币 20% 掉 1 枚。
-      if (typeIndex === CONFIG.ENEMY.TYPE_BOSS) {
+      if (family === 'boss' && !summon) {
         dropXp(KD.EXP_BOSS_COUNT);
         dropGold(KD.GOLD_BOSS_COUNT);
-      } else if (typeIndex === CONFIG.ENEMY.TYPE_ELITE) {
+      } else if (family === 'elite') {
         dropXp(KD.EXP_ELITE_COUNT);
         dropGold(KD.GOLD_ELITE_COUNT);
       } else {
@@ -653,7 +669,7 @@
         if (Math.random() < KD.GOLD_NORMAL_CHANCE) dropGold(KD.GOLD_NORMAL_COUNT);
       }
       PowerUps.rollDrop(dropX, dropY, typeIndex);
-      if (typeIndex === CONFIG.ENEMY.TYPE_BOSS) BossSystem.onBossDefeated();
+      if (family === 'boss' && !summon) BossSystem.onBossDefeated();
     },
     queueBlast: function (x, y) {
       this.pendingBlasts.push({ x: x, y: y, t: CONFIG.AFFIXES.DEFS.blast.DELAY });
@@ -695,7 +711,7 @@
     recycleOneNonBoss: function () {
       for (var i = 0; i < this.pool.length; i++) {
         var enemy = this.pool[i];
-        if (enemy.active && enemy.typeIndex !== CONFIG.ENEMY.TYPE_BOSS && !(enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED && !enemy.isSummonTurret)) {
+        if (enemy.active && (enemy.family !== 'boss' || enemy.isSummonTurret)) {
           enemy.active = false;
           this.activeCount -= 1;
           return true;
@@ -710,7 +726,7 @@
         bottom = Camera.y + CONFIG.VIEW.HEIGHT;
       for (var i = 0; i < this.pool.length; i++) {
         var enemy = this.pool[i];
-        if (!enemy.active || enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS) continue;
+        if (!enemy.active || (enemy.family === 'boss' && !enemy.isSummonTurret)) continue;
         if (enemy.x + enemy.radius < left || enemy.x - enemy.radius > right || enemy.y + enemy.radius < top || enemy.y - enemy.radius > bottom) continue;
         enemy.active = false;
         this.activeCount -= 1;
@@ -732,7 +748,7 @@
     getActiveBoss: function () {
       for (var i = 0; i < this.pool.length; i++) {
         var enemy = this.pool[i];
-        if (enemy.active && enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS) return enemy;
+        if (enemy.active && enemy.family === 'boss' && !enemy.isSummonTurret) return enemy;
       }
       return null;
     },
@@ -743,7 +759,7 @@
       var list = [];
       for (var i = 0; i < this.pool.length; i++) {
         var e = this.pool[i];
-        if (e.active && (e.typeIndex === CONFIG.ENEMY.TYPE_BOSS || e.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED) && !e.isSummonTurret) list.push(e);
+        if (e.active && e.family === 'boss' && !e.isSummonTurret) list.push(e);
       }
       return list;
     },
@@ -784,6 +800,10 @@
       return false;
     },
     draw: function (ctx) {
+      for(var f=0;f<this.frostTrails.length;f++){
+        var trail=this.frostTrails[f];if(!trail.active||!Camera.isVisible(trail.x,trail.y,CONFIG.V20.ELITES[5].RADIUS))continue;
+        ctx.save();ctx.globalAlpha=.28*trail.life/CONFIG.V20.ELITES[5].DURATION;ctx.fillStyle=CONFIG.V20.ELITES[5].COLOR;ctx.beginPath();ctx.arc(trail.x-Camera.x,trail.y-Camera.y,CONFIG.V20.ELITES[5].RADIUS,0,Math.PI*2);ctx.fill();ctx.restore();
+      }
       for (var i = 0; i < this.pool.length; i++) {
         var enemy = this.pool[i];
         if (enemy.active) this.drawOne(ctx, enemy);
@@ -805,8 +825,10 @@
       ctx.fill();
       ctx.restore();
       ctx.save();
-      ctx.translate(x, y);
-      ctx.scale(1, .85);
+      if(e.archetypeId==='stalker' && e.attackState==='fade')ctx.globalAlpha=.28;
+      ctx.translate(x, y + Math.sin(e.animTime*CONFIG.V20.ANIM_RATE)*CONFIG.V20.ANIM_BOB);
+      var tell=e.attackState==='tell'?CONFIG.V20.TELL_SCALE:1;
+      ctx.scale(tell, .85*tell);
       ctx.translate(-x, -y);
       this.drawBody(ctx, e);
       ctx.restore();
@@ -824,38 +846,6 @@
         ctx.fillText(CONFIG.TEXT.PRODUCT.BURN, x, y - e.radius - 8);
         ctx.restore();
       }
-      if ((e.typeIndex === CONFIG.ENEMY.TYPE_BOSS || e.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED) && !e.isSummonTurret) {
-        var bw = Math.max(100, e.radius * 2.4), bh = 9, bx = x - bw / 2, by = y - e.radius - 28;
-        var name = e.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED ? CONFIG.TEXT.BOSS_RANGED_NAME : CONFIG.TEXT.BOSS_MELEE_NAME;
-        ctx.save(); ctx.fillStyle = 'rgba(20,5,20,.9)'; ctx.fillRect(bx, by, bw, bh);
-        ctx.fillStyle = e.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED ? '#a55be8' : '#e5533d'; ctx.fillRect(bx, by, bw * Math.max(0, e.hp / e.maxHp), bh);
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(bx, by, bw, bh);
-        ctx.fillStyle = '#fff'; ctx.font = 'bold 12px Arial,"Microsoft YaHei"'; ctx.textAlign = 'center'; ctx.fillText(name, x, by - 4); ctx.restore();
-      }
-    },
-    drawTypeMark: function (ctx, enemy, x, y, type) {
-      ctx.strokeStyle = CONFIG.COLORS[type.OUTLINE_KEY];
-      ctx.fillStyle = CONFIG.COLORS[type.OUTLINE_KEY];
-      ctx.lineWidth = CONFIG.ENEMY.OUTLINE_WIDTH;
-      if (enemy.typeIndex === CONFIG.ENEMY.TYPE_RUNNER) {
-        ctx.beginPath();
-        ctx.moveTo(x - enemy.radius * 0.45, y);
-        ctx.lineTo(x + enemy.radius * 0.5, y - enemy.radius * 0.45);
-        ctx.lineTo(x + enemy.radius * 0.5, y + enemy.radius * 0.45);
-        ctx.closePath();
-        ctx.fill();
-      } else if (enemy.typeIndex === CONFIG.ENEMY.TYPE_TANK) {
-        ctx.beginPath();
-        ctx.arc(x, y, enemy.radius * 0.52, 0, Math.PI * 2);
-        ctx.stroke();
-      } else if (enemy.typeIndex === CONFIG.ENEMY.TYPE_ELITE || enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS) {
-        ctx.beginPath();
-        ctx.arc(x, y, enemy.radius * 0.58, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.arc(x, y, enemy.radius * 0.18, 0, Math.PI * 2);
-        ctx.fill();
-      }
     },
     // 对象池每次借出时完整重置波次/眩晕/避障字段，避免继承上一只Boss状态。
     applyWaveStats: function (e, type) {
@@ -863,15 +853,15 @@
         c = CONFIG.BALANCE,
         dm = 1 + w * c.DAMAGE_PER_WAVE;
       if (w >= c.LATE_WAVE) dm *= c.LATE_DAMAGE;
-      if (type === CONFIG.ENEMY.TYPE_ELITE) {
+      if (e.family === 'elite') {
         e.maxHp = Math.ceil(e.maxHp * c.ELITE_HP);
         e.hp = e.maxHp;
         dm *= c.ELITE_DAMAGE;
       }
-      e.isWaveBoss = type === CONFIG.ENEMY.TYPE_BOSS;
+      e.isWaveBoss = type === CONFIG.ENEMY.TYPE_BOSS || type === CONFIG.ENEMY.TYPE_BOSS_RANGED;
       e.waveBoss = e.isWaveBoss ? root.Spawner.waveIndex : 0;
       if (e.isWaveBoss) {
-        e.maxHp = Math.ceil(c.BOSS_HP * (1 + w * .05));
+        e.maxHp = Math.ceil(c.BOSS_HP * (1 + w * CONFIG.V20.BOSS_HP_PER_WAVE));
         e.hp = e.maxHp;
         e.contactDamage = c.BOSS_DAMAGE;
       } else e.contactDamage = Math.ceil(CONFIG.ENEMY.TYPES[type].DAMAGE * dm);
@@ -890,6 +880,157 @@
       e.avoidAngle = 0;
       e.stuckTime = 0;
       if (type === CONFIG.ENEMY.TYPE_ELITE) this.rollAffixes(e);
+    },
+    applyArchetype: function (e) {
+      var list = e.family === 'boss' ? CONFIG.V20.BOSSES : e.family === 'elite' ? CONFIG.V20.ELITES : CONFIG.V20.NORMALS;
+      var def = null;
+      for (var i=0;i<list.length;i++) if (list[i].ID === e.archetypeId) { def=list[i]; break; }
+      if (!def) return;
+      e.archetype = def;
+      if (def.RADIUS) e.radius = def.RADIUS;
+      if (def.SPEED) e.speed = def.SPEED;
+      if (e.family === 'normal' && def.HP) e.hp=e.maxHp=Math.ceil(def.HP * root.Spawner.getHpMultiplier() * (Player.nextEnemyHp || 1));
+      if (e.family === 'boss') {
+        var w=root.Spawner.waveIndex, late=CONFIG.V20.BOSS_LATE[w>=40?3:w>=30?2:w>=20?1:0];
+        e.hp=e.maxHp=Math.ceil(CONFIG.BALANCE.BOSS_HP*def.HP*(1+CONFIG.V20.BOSS_HP_PER_WAVE*w)*late);
+      }
+      if (e.family === 'elite') {
+        e.speed = CONFIG.ENEMY.TYPES[e.typeIndex].SPEED;
+        e.affixShield=0;
+        e.affixes=[];
+        if (def.SKILL) e.affixes.push(def.SKILL);
+        if (Math.random()<CONFIG.V20.ELITE_AFFIX_CHANCE) {
+          var options=CONFIG.AFFIXES.POOL;
+          var pick=options[Math.floor(Math.random()*options.length)];
+          if(e.affixes.indexOf(pick)<0 && pick!=='gunner')e.affixes.push(pick);
+        }
+        this.applyAffixEffects(e);
+      }
+      e.skillTimer=def.COOLDOWN || 0;
+    },
+    updateArchetype: function (e, dt) {
+      var d=e.archetype;
+      if (!d) return false;
+      if(e.archetypeId==='artillery' && Math.hypot(Player.x-e.x,Player.y-e.y)<d.RANGE_MIN){
+        var dx=e.x-Player.x,dy=e.y-Player.y,len=Math.hypot(dx,dy)||1;
+        var p=Field.collideWalls(e.x+dx/len*e.speed*dt,e.y+dy/len*e.speed*dt,e.radius);e.x=p.x;e.y=p.y;return true;
+      }
+      if (e.archetypeId==='runner') {
+        if(e.attackState==='tell') {
+          e.tellTimer-=dt;
+          if(e.tellTimer<=0){e.attackState='lunge';e.tellTimer=d.RANGE/(e.speed*d.POUNCE_SPEED);}
+          return true;
+        }
+        if(e.attackState==='lunge') {
+          e.tellTimer-=dt;
+          var dx=Player.x-e.x,dy=Player.y-e.y,dist=Math.hypot(dx,dy)||1;
+          var p=Field.collideWalls(e.x+dx/dist*e.speed*d.POUNCE_SPEED*dt,e.y+dy/dist*e.speed*d.POUNCE_SPEED*dt,e.radius);
+          e.x=p.x;e.y=p.y;
+          if(e.tellTimer<=0){e.attackState='move';e.skillTimer=d.COOLDOWN;}
+          return true;
+        }
+        e.skillTimer-=dt;
+        if(e.skillTimer<=0 && Math.hypot(Player.x-e.x,Player.y-e.y)<d.RANGE){e.attackState='tell';e.tellTimer=d.POUNCE_WARN;return true;}
+        return false;
+      }
+      if (e.archetypeId==='stalker') {
+        if(e.attackState==='fade'){
+          e.tellTimer-=dt;
+          if(e.tellTimer<=0){e.x=e.fadeX;e.y=e.fadeY;e.bossTargetX=Player.x;e.bossTargetY=Player.y;e.attackState='tell';e.tellTimer=d.WARN;}
+          return true;
+        }
+        if(e.attackState==='tell') {
+          e.tellTimer-=dt;
+          if(e.tellTimer<=0){
+            if(Math.hypot(Player.x-e.bossTargetX,Player.y-e.bossTargetY)<d.STRIKE_RADIUS && !root.WallCollision.segment(e.bossTargetX,e.bossTargetY,Player.x,Player.y,e.radius))Player.takeDamage(d.DAMAGE,'boss');
+            e.attackState='move';e.skillTimer=d.COOLDOWN;
+          }
+          return true;
+        }
+        e.skillTimer-=dt;
+        if(e.skillTimer<=0){
+          var dx=Player.lastMoveDirX||1,dy=Player.lastMoveDirY||0;
+          var bx=Player.x-dx*d.BACK_OFFSET,by=Player.y-dy*d.BACK_OFFSET;
+          if(!root.WallCollision.inside(bx,by,e.radius)) {e.fadeX=bx;e.fadeY=by;e.attackState='fade';e.tellTimer=d.FADE_TIME;return true;}
+          e.skillTimer=d.COOLDOWN;
+        }
+        return false;
+      }
+      if(e.archetypeId==='melt') {
+        if(e.attackState==='tell'){
+          e.tellTimer-=dt;
+          if(e.tellTimer<=0){
+            if(Math.hypot(Player.x-e.bossTargetX,Player.y-e.bossTargetY)<d.RADIUS && !root.WallCollision.segment(e.bossTargetX,e.bossTargetY,Player.x,Player.y,CONFIG.PLAYER.RADIUS))Player.takeDamage(d.DAMAGE,'boss');
+            e.fireRingX=e.bossTargetX;e.fireRingY=e.bossTargetY;e.fireRingTime=d.RING_DURATION;
+            e.attackState='move';e.skillTimer=d.COOLDOWN;
+          }
+          return true;
+        }
+        e.skillTimer-=dt;
+        if(e.skillTimer<=0 && !root.WallCollision.segment(e.x,e.y,Player.x,Player.y,e.radius)){e.bossTargetX=Player.x;e.bossTargetY=Player.y;e.attackState='tell';e.tellTimer=d.WARN;return true;}
+        return false;
+      }
+      if(e.archetypeId==='shade' && e.attackState==='move') {
+        var a=Math.atan2(Player.y-e.y,Player.x-e.x)+Math.PI/2, step=e.speed*dt*.5;
+        var p=Field.collideWalls(e.x+Math.cos(a)*step,e.y+Math.sin(a)*step,e.radius);e.x=p.x;e.y=p.y;
+      }
+      if (e.archetypeId==='spitter') {
+        var range=Math.hypot(Player.x-e.x,Player.y-e.y);
+        if (e.attackState==='tell') {
+          e.tellTimer-=dt;
+          if (e.tellTimer<=0) {
+            if (!root.WallCollision.segment(e.x,e.y,Player.x,Player.y,e.radius)) this.fireBossProjectile({x:e.x,y:e.y,bossTargetX:Player.x,bossTargetY:Player.y,archetype:d});
+            e.attackState='move'; e.skillTimer=d.COOLDOWN;
+          }
+          return true;
+        }
+        e.skillTimer-=dt;
+        if (range>=d.RANGE_MIN && range<=d.RANGE_MAX && e.skillTimer<=0 && !root.WallCollision.segment(e.x,e.y,Player.x,Player.y,e.radius)) {e.attackState='tell';e.tellTimer=d.WARN;return true;}
+        if(range<d.RANGE_MIN){
+          var nx=(e.x-Player.x)/(range||1),ny=(e.y-Player.y)/(range||1);
+          var retreat=Field.collideWalls(e.x+nx*e.speed*dt,e.y+ny*e.speed*dt,e.radius);
+          e.x=retreat.x;e.y=retreat.y;return true;
+        }
+        return false;
+      }
+      if (e.family!=='elite') return false;
+      e.skillTimer-=dt;
+      if (e.attackState==='tell') {
+        e.tellTimer-=dt;
+        if (e.tellTimer<=0) {this.executeEliteSkill(e,d);e.attackState='move';e.skillTimer=d.COOLDOWN;}
+        return true;
+      }
+      if (e.skillTimer<=0) {e.attackState='tell';e.tellTimer=d.WARN;return true;}
+      return false;
+    },
+    executeEliteSkill: function (e,d) {
+      if (d.ID==='dash' || d.ID==='leap') {
+        var dx=Player.x-e.x,dy=Player.y-e.y,dist=Math.hypot(dx,dy)||1;
+        var step=d.RANGE || e.speed*d.COOLDOWN*.4;
+        var p=Field.collideWalls(e.x+dx/dist*step,e.y+dy/dist*step,e.radius);
+        e.x=p.x;e.y=p.y;
+      } else if(d.ID==='shield') {
+        e.affixShield=Math.max(e.affixShield,e.maxHp*CONFIG.AFFIXES.DEFS.shield.RATIO);
+      } else if(d.ID==='blast') {
+        this.queueBlast(e.x,e.y);
+      } else if(d.ID==='split') {
+        this.trySplit(e.x,e.y,e.maxHp);
+      } else if(d.ID==='gunner') {
+        if(!root.WallCollision.segment(e.x,e.y,Player.x,Player.y,e.radius))this.fireBossProjectile({x:e.x,y:e.y,bossTargetX:Player.x,bossTargetY:Player.y,archetype:d});
+      } else if(d.ID==='healer' || d.ID==='commander') {
+        for(var i=0;i<this.pool.length;i++){var o=this.pool[i];if(!o.active||o.family!=='normal'||Math.hypot(o.x-e.x,o.y-e.y)>d.RANGE)continue;
+          if(d.ID==='healer')o.hp=Math.min(o.maxHp,o.hp+d.HEAL);else{o.specialSpeedBuff=d.BUFF;o.specialSpeedTime=d.DURATION;}}
+      } else if(d.ID==='pull') {
+        var dx=Player.x-e.x,dy=Player.y-e.y,dist=Math.hypot(dx,dy)||1;
+        if(dist<d.RANGE && !root.WallCollision.segment(e.x,e.y,Player.x,Player.y,e.radius)) {var p=Field.collideWalls(Player.x-dx/dist*d.STRENGTH,Player.y-dy/dist*d.STRENGTH,CONFIG.PLAYER.RADIUS);Player.x=p.x;Player.y=p.y;}
+      } else if(d.ID==='frost') {e.frostTrailTime=d.DURATION;}
+    },
+    applyAffixEffects: function(e) {
+      var d=CONFIG.AFFIXES.DEFS;
+      if(e.affixes.indexOf('swift')>=0)e.speed*=d.swift.SPEED;
+      if(e.affixes.indexOf('shield')>=0)e.affixShield=e.maxHp*d.shield.RATIO;
+      e.affixBlast=e.affixes.indexOf('blast')>=0;
+      e.affixSplit=e.affixes.indexOf('split')>=0;
     },
     rollAffixes: function (e) {
       var pool = CONFIG.AFFIXES.POOL.slice();
@@ -959,29 +1100,30 @@
       if (!Camera.isVisible(enemy.x, enemy.y, margin)) return;
       var radiusTier = Math.ceil(enemy.radius / 8) * 8;
       var frozen = PowerUps.isFrozen() || (enemy.freezeTimer || 0) > 0;
-      var fillColor = enemy.hitFlash > 0 ? CONFIG.COLORS.ENEMY_HIT : frozen ? CONFIG.COLORS.ENEMY_FROZEN : CONFIG.COLORS[type.FILL_KEY];
-      var cacheKey = 'enemy_' + enemy.typeIndex + '_' + radiusTier + '_' + fillColor;
+      var fillColor = enemy.hitFlash > 0 ? CONFIG.COLORS.ENEMY_HIT : frozen ? CONFIG.COLORS.ENEMY_FROZEN : enemy.archetype ? enemy.archetype.COLOR : CONFIG.COLORS[type.FILL_KEY];
+      var cacheKey = 'enemy_art_' + this.artId(enemy) + '_' + enemy.radius + '_' + fillColor;
       ctx.save();
-      var cached = root.SpriteCache && root.SpriteCache.drawCircle(ctx, cacheKey, screenX, screenY, radiusTier, fillColor,
-        CONFIG.COLORS[type.GLOW_KEY], CONFIG.COLORS[type.OUTLINE_KEY]);
+      this.drawArchetypeLimbs(ctx,enemy,screenX,screenY,fillColor,frozen);
+      var cached = root.SpriteCache && root.SpriteCache.drawShape(ctx,cacheKey,screenX,screenY,enemy.radius,fillColor,CONFIG.ENEMY.ART.COLORS.ink,this.traceArchetype,enemy,this.paintArchetype);
       if (!cached) {
         ctx.beginPath();
-        ctx.arc(screenX, screenY, enemy.radius, 0, Math.PI * 2);
+        if(enemy.archetype)this.traceArchetype(ctx,enemy,screenX,screenY);
+        else ctx.arc(screenX, screenY, enemy.radius, 0, Math.PI * 2);
         ctx.fillStyle = fillColor;
         ctx.fill();
         ctx.lineWidth = CONFIG.ENEMY.OUTLINE_WIDTH;
-        ctx.strokeStyle = CONFIG.COLORS[type.OUTLINE_KEY];
+        ctx.strokeStyle = enemy.archetype ? '#21302d' : CONFIG.COLORS[type.OUTLINE_KEY];
         ctx.stroke();
+        this.paintArchetype(ctx,enemy,screenX,screenY,fillColor);
       }
-      this.drawTypeMark(ctx, enemy, screenX, screenY, type);
-      if (enemy.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED) {
-        this.drawRangedBossDetails(ctx, enemy, screenX, screenY);
-      }
+      this.drawArchetypeDetail(ctx,enemy,screenX,screenY);
       if (PowerUps.isFrozen() || (enemy.freezeTimer || 0) > 0) {
         ctx.beginPath();
         ctx.arc(screenX, screenY, enemy.radius * 0.82, 0, Math.PI * 2);
         ctx.fillStyle = CONFIG.COLORS.ENEMY_FROZEN;
+        ctx.save();ctx.globalAlpha*=CONFIG.ENEMY.ART.FROZEN_ALPHA;
         ctx.fill();
+        ctx.restore();
       }
       if (enemy.affixes && enemy.affixes.length) {
         var label = CONFIG.AFFIXES.DEFS[enemy.affixes[0]] ? CONFIG.AFFIXES.DEFS[enemy.affixes[0]].NAME : enemy.affixes[0];
@@ -995,11 +1137,83 @@
       }
       ctx.restore();
     },
+    traceArchetype: function(ctx,e,x,y) {
+      var r=e.radius,id=e.archetypeId,n=0;
+      if(e.family==='elite')for(var ei=0;ei<CONFIG.V20.ELITES.length;ei++)if(CONFIG.V20.ELITES[ei].ID===id){n=4+ei;break;}
+      if(id==='runner'||id==='shade'){ctx.moveTo(x,y-r*1.2);ctx.lineTo(x+r*.65,y+r*.9);ctx.lineTo(x-r*.65,y+r*.9);ctx.closePath();return;}
+      if(id==='shell'||id==='charger'){ctx.moveTo(x-r,y-r*.55);ctx.lineTo(x-r*.65,y-r);ctx.lineTo(x+r*.65,y-r);ctx.lineTo(x+r,y-r*.55);ctx.lineTo(x+r,y+r*.7);ctx.lineTo(x-r,y+r*.7);ctx.closePath();return;}
+      if(id==='spitter'){ctx.ellipse(x,y,r*.9,r*1.1,0,0,Math.PI*2);return;}
+      if(id==='swarm'){ctx.ellipse(x,y,r*.8,r*.65,0,0,Math.PI*2);return;}
+      if(id==='artillery'){ctx.moveTo(x-r,y-r*.5);ctx.lineTo(x+r*.9,y-r*.8);ctx.lineTo(x+r,y+r*.4);ctx.lineTo(x-r*.4,y+r);ctx.closePath();return;}
+      if(id==='stalker'){ctx.arc(x,y,r,-Math.PI*.65,Math.PI*.65);ctx.arc(x+r*.4,y,r*.75,Math.PI*.65,-Math.PI*.65,true);ctx.closePath();return;}
+      if(id==='melt')n=10;
+      if(n){for(var i=0;i<n*2;i++){var a=i*Math.PI/n,rr=r*(i%2?.72:1.05);if(i)ctx.lineTo(x+Math.cos(a)*rr,y+Math.sin(a)*rr);else ctx.moveTo(x+Math.cos(a)*rr,y+Math.sin(a)*rr);}ctx.closePath();return;}
+      ctx.arc(x,y,r,0,Math.PI*2);
+    },
+    artId: function(e) {
+      if(e.archetypeId && CONFIG.ENEMY.ART.MODELS[e.archetypeId])return e.archetypeId;
+      if(e.family==='boss')return e.typeIndex===CONFIG.ENEMY.TYPE_BOSS_RANGED?'artillery':'charger';
+      if(e.family==='elite')return 'dash';
+      return e.typeIndex===CONFIG.ENEMY.TYPE_RUNNER?'runner':e.typeIndex===CONFIG.ENEMY.TYPE_TANK?'shell':'walker';
+    },
+    paintArchetype: function(ctx,e,x,y,fill) {
+      var art=CONFIG.ENEMY.ART,id=root.Enemy.artId(e),sets=art.MODELS[id],r=e.radius;
+      ctx.save();ctx.translate(x,y);ctx.scale(r,r);ctx.lineJoin='round';ctx.lineCap='round';
+      for(var layer=0;layer<2;layer++) {
+        var commands=layer?sets:art.BASE;
+        if(id==='melt'&&!layer)continue;
+        for(var i=0;i<commands.length;i++) {
+          var c=commands[i],color=c[1]==='body'?fill:art.COLORS[c[1]];
+          ctx.fillStyle=color;ctx.strokeStyle=art.COLORS.ink;ctx.lineWidth=art.OUTLINE;
+          ctx.beginPath();
+          if(c[0]==='e')ctx.ellipse(c[2],c[3],c[4],c[5],0,0,Math.PI*2);
+          else if(c[0]==='r')ctx.rect(c[2],c[3],c[4],c[5]);
+          else {
+            var points=c[0]==='l'?c[3]:c[2];
+            for(var j=0;j<points.length;j+=2){if(j)ctx.lineTo(points[j],points[j+1]);else ctx.moveTo(points[j],points[j+1]);}
+            if(c[0]==='l'){ctx.strokeStyle=color;ctx.lineWidth=c[2];ctx.stroke();continue;}
+            ctx.closePath();
+          }
+          ctx.fill();ctx.stroke();
+        }
+      }
+      ctx.restore();
+    },
+    drawArchetypeLimbs: function(ctx,e,x,y,color,frozen) {
+      var art=CONFIG.ENEMY.ART,r=e.radius,id=this.artId(e);
+      if(id==='melt'||id==='artillery'||id==='stalker')return;
+      var step=frozen?0:Math.sin(e.animTime*art.STEP_RATE)*art.STEP_SWING;
+      ctx.save();ctx.fillStyle=color;ctx.strokeStyle=art.COLORS.ink;ctx.lineWidth=r*art.OUTLINE;
+      for(var side=-1;side<=1;side+=2){
+        ctx.beginPath();ctx.ellipse(x+side*r*art.FOOT_X,y+r*(art.FOOT_Y+step*side),r*art.FOOT_W,r*art.FOOT_H,step*side,0,Math.PI*2);ctx.fill();ctx.stroke();
+      }
+      ctx.restore();
+    },
+    drawArchetypeDetail: function(ctx,e,x,y) {
+      var art=CONFIG.ENEMY.ART,r=e.radius;
+      if(e.attackState!=='tell'&&this.artId(e)!=='melt')return;
+      ctx.save();ctx.globalAlpha*=art.GLOW_ALPHA*(1+Math.sin(e.animTime*art.GLOW_HZ));
+      ctx.fillStyle=art.COLORS.eye;ctx.beginPath();ctx.arc(x,y,r*art.GLOW_RADIUS,0,Math.PI*2);ctx.fill();ctx.restore();
+    },
     // 友方爆炸绘制完毕后再叠加敌方关键预警。
     drawThreats: function (ctx) {
       for (var i = 0; i < this.pool.length; i++) {
         var e = this.pool[i];
         if (e.active && e.typeIndex === CONFIG.ENEMY.TYPE_BOSS && e.meleePhase === 'warn') this.drawMeleeChargeTelegraph(ctx, e, e.x - Camera.x, e.y - Camera.y);
+        if (!e.active) continue;
+        if (e.attackState==='tell' && (e.archetypeId==='melt'||e.archetypeId==='stalker')) {
+          ctx.save();ctx.strokeStyle=e.archetype.COLOR;ctx.fillStyle=e.archetype.COLOR;ctx.globalAlpha=.55;
+          ctx.beginPath();ctx.arc(e.bossTargetX-Camera.x,e.bossTargetY-Camera.y,e.archetype.RADIUS||e.archetype.STRIKE_RADIUS,0,Math.PI*2);ctx.stroke();ctx.restore();
+        }
+        if(e.archetypeId==='stalker' && e.attackState==='fade'){
+          ctx.save();ctx.strokeStyle=e.archetype.COLOR;ctx.globalAlpha=.5;ctx.beginPath();ctx.arc(e.x-Camera.x,e.y-Camera.y,e.radius*.6,0,Math.PI*2);ctx.stroke();ctx.restore();
+        }
+        if(e.fireRingTime>0){ctx.save();ctx.strokeStyle=e.archetype.COLOR;ctx.lineWidth=12;ctx.globalAlpha=.55;ctx.beginPath();ctx.arc(e.fireRingX-Camera.x,e.fireRingY-Camera.y,e.archetype.RADIUS,0,Math.PI*2);ctx.stroke();ctx.restore();}
+        if (e.waveId && e.family==='normal' && e.lostTime>=CONFIG.V20.LOST_HINT_TIME) {
+          var dx=e.x-Player.x,dy=e.y-Player.y,len=Math.hypot(dx,dy)||1;
+          var px=CONFIG.VIEW.WIDTH/2+dx/len*(CONFIG.VIEW.WIDTH/2-48),py=CONFIG.VIEW.HEIGHT/2+dy/len*(CONFIG.VIEW.HEIGHT/2-80);
+          ctx.save();ctx.fillStyle='#ffc66d';ctx.beginPath();ctx.arc(px,py,16,0,Math.PI*2);ctx.fill();ctx.fillStyle='#26302a';ctx.font='bold 17px Arial';ctx.textAlign='center';ctx.fillText('!',px,py+6);ctx.restore();
+        }
       }
       // v014 #95 远程 BOSS 攻击前红圈预警：蓄力期间在锁定落点画危险范围（召唤炮台不算）。
       for (var j = 0; j < this.pool.length; j++) {
@@ -1026,6 +1240,9 @@
       ctx.lineWidth = 3;
       ctx.strokeStyle = CONFIG.COLORS.AIM_LINE;
       ctx.stroke();
+      ctx.lineWidth=CONFIG.BOSS_RANGED.AIM_LINE_WIDTH;
+      ctx.setLineDash([CONFIG.BOSS_RANGED.AIM_DASH,CONFIG.BOSS_RANGED.AIM_DASH]);
+      ctx.beginPath();ctx.moveTo(enemy.x-Camera.x,enemy.y-Camera.y);ctx.lineTo(wx,wy);ctx.stroke();
       ctx.restore();
     },
     drawMeleeChargeTelegraph: function (ctx, enemy, sx, sy) {
@@ -1116,12 +1333,12 @@
           a.add(source === 'flame' ? 'flameRun' : source === 'bow' ? 'bowRun' : source, 1);
         }
       }
-      if (type === CONFIG.ENEMY.TYPE_ELITE) {
+      if (e.family === 'elite') {
         o.add('elite', 1);
         a.add('elite', 1);
         if (e.affixes && e.affixes.length) a.add('affixElite', 1);
       }
-      if ((type === CONFIG.ENEMY.TYPE_BOSS || type === CONFIG.ENEMY.TYPE_BOSS_RANGED) && !e.isSummonTurret) {
+      if (e.family === 'boss' && !e.isSummonTurret) {
         o.add('boss', 1);
         a.add('boss', 1);
       }

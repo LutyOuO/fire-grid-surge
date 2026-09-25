@@ -16,7 +16,7 @@ global.Image = function () { var self = this; Object.defineProperty(this, 'src',
 require('../../game.js');
 
 var C = global.CONFIG, E = global.Enemy, S = global.Spawner, P = global.Player;
-assert(C.BOSS_MELEE && C.BOSS_MELEE.CHARGE_WARN === 1.2, '近战冲锋配置缺失');
+assert(C.BOSS_MELEE && C.BOSS_MELEE.CHARGE_WARN === 0.9, '近战冲锋配置缺失');
 assert(C.BOSS_SUMMON && C.BOSS_SUMMON.COUNT === 2, '召唤炮台配置缺失');
 assert.deepEqual(C.WAVE_THEMES.WAVES, [4, 7, 11, 14], '主题波次不是 4/7/11/14');
 assert.strictEqual(C.BALANCE.DUAL_BOSS_WAVE, 20);
@@ -49,14 +49,17 @@ S.reset();
 S.waveIndex = 19;
 S.beginWave();
 assert.strictEqual(S.waveIndex, 20);
-assert(S.bossPending && S.rangedPending, '第20波应同时待生成近战和远程Boss');
+assert.strictEqual(S.bossQueue.length, 3, '第20波应有三只分批 Boss');
 E.reset();
 S.update(0.05, 600);
-assert(E.getActiveMeleeBoss(), '第20波没有近战Boss');
-var dualRanged = E.pool.filter(function (e) { return e.active && e.typeIndex === C.ENEMY.TYPE_BOSS_RANGED && !e.isSummonTurret; })[0];
-assert(dualRanged, '第20波没有远程Boss');
-var unscaled = Math.ceil(C.ENEMY.TYPES[C.ENEMY.TYPE_BOSS_RANGED].HP * S.getHpMultiplier() * (P.nextEnemyHp || 1));
-assert(dualRanged.maxHp <= Math.ceil(unscaled * C.BALANCE.DUAL_RANGED_HP) + 1, '远程Boss生命未按0.7缩放');
+var firstBoss = E.getActiveBoss();
+assert(firstBoss, '第20波没有生成首只 Boss');
+var bossDef = C.V20.BOSSES.filter(function(d){return d.ID===firstBoss.archetypeId;})[0];
+assert.strictEqual(firstBoss.maxHp,Math.ceil(C.BALANCE.BOSS_HP*bossDef.HP*(1+20*C.V20.BOSS_HP_PER_WAVE)*2),'Boss 生命公式错误');
+assert.strictEqual(S.bossQueue.length,2,'首只 Boss 出生后队列错误');
+S.update(C.V20.BOSS_GAP+0.01,600);
+assert.strictEqual(S.activeFamilyCount('boss'),2,'第二只 Boss 未错峰出生');
+assert.strictEqual(S.bossQueue.length,1,'场上已有两只 Boss 时应保留最后一只');
 
 S.reset();
 S.waveIndex = 3;
@@ -74,4 +77,4 @@ var burn = S.normalWeights();
 assert(burn.runner > iron.runner, '燃烧夜快跑者权重应更高');
 assert(iron.tank > burn.tank, '铁壁潮坦克权重应更高');
 
-console.log('PASS: Boss冲锋/半血召唤/第20波双Boss/波次主题权重');
+console.log('PASS: Boss冲锋/半血召唤/第20波分批 Boss/波次主题权重');

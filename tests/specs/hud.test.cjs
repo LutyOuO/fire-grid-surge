@@ -125,4 +125,19 @@ Game.draw();
 assert(!Game.runtimeError, '小目标展开绘制异常: ' + Game.runtimeError);
 console.log('8) 各状态绘制无异常 OK');
 
+// 微信胶囊会把暂停/金币下推；所有统计必须处于下一行，重排不能累加偏移。
+var platform=global.Platform,oldRect=platform.getMenuButtonRect,oldConvert=platform.screenToCanvas,oldTop=platform.safeTop;
+platform.screenToCanvas=function(x,y){return{x:x,y:y};};
+for(var safe of [0,44,90])for(var capsuleBottom of [0,84,140]) {
+  platform.safeTop=safe;
+  platform.getMenuButtonRect=function(){return capsuleBottom?{left:570,bottom:capsuleBottom}:null;};
+  UI.relayout();
+  var u=CONFIG.UI,half=CONFIG.V20.HUD.H/2;
+  assert(u.HUD_STATS_Y-half>=u.PAUSE_Y+u.PAUSE_SIZE+u.COMPACT_HUD.ROW_GAP,'胶囊下方统计与暂停/金币重叠');
+  assert.strictEqual(u.WAVE_CHIP_Y,u.HUD_STATS_Y-half,'波次与统计行不一致');
+  assert(u.BOSS_BAR_Y>u.HUD_STATS_Y+half);assert(u.OBJ_TOP>u.HUD_STATS_Y+half);
+  var y=u.HUD_STATS_Y;UI.relayout();assert.strictEqual(u.HUD_STATS_Y,y,'重排累加了偏移');
+}
+platform.getMenuButtonRect=oldRect;platform.screenToCanvas=oldConvert;platform.safeTop=oldTop;UI.relayout();
+
 console.log('PASS: #56/#57 HUD 布局、槽位固定、磁铁主动吸附、点击命中全部通过');

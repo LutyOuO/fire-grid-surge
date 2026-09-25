@@ -17,6 +17,70 @@
     var ExpLevelUp = root.ExpLevelUp,
       RunStats = root.RunStats,
       Weapons = root.Weapons;
+    // 新手教学只观察公开战斗状态；实际操作完成后推进，永远不替玩家点按钮。
+    var Tutorial={running:false,distance:0,dashes:0,uses:0,tip:null,tipTime:0,gap:0,lastX:0,lastY:0,
+      data:function(){return Meta.data.tutorial;},
+      start:function(){var d=this.data();this.running=!!d.enabled;this.distance=0;this.dashes=0;this.uses=0;this.tip=null;this.tipTime=0;this.gap=0;this.lastX=Player.x;this.lastY=Player.y;},
+      stop:function(){this.running=false;this.tip=null;},
+      replay:function(){var d=this.data();d.enabled=true;d.done=false;d.step=0;d.enemies={};d.items={};Meta.save(false);this.start();},
+      notify:function(kind){if(!this.running)return;if(kind==='dash')this.dashes++;if(kind==='item')this.uses++;},
+      step:function(){var d=this.data();return !d.done?CONFIG.TEXT.TUTORIAL.STEPS[d.step]:null;},
+      visible:function(){return this.running&&(Game.state===CONFIG.GAME.STATE_PLAYING||Game.state===CONFIG.GAME.STATE_LEVELUP)&&!(root.SupplyPoint&&root.SupplyPoint.open)&&(!!this.tip||!!this.step());},
+      advance:function(){var d=this.data();d.step++;if(d.step>=CONFIG.TEXT.TUTORIAL.STEPS.length)d.done=true;Meta.save(false);},
+      showTip:function(title,body){this.tip={title:title,body:body};this.tipTime=CONFIG.TUTORIAL.TIP_TIME;this.gap=CONFIG.TUTORIAL.TIP_GAP;Meta.save(false);},
+      update:function(dt){
+        if(!this.running||(Game.state!==CONFIG.GAME.STATE_PLAYING&&Game.state!==CONFIG.GAME.STATE_LEVELUP))return;
+        var c=CONFIG.TUTORIAL,d=this.data(),step=this.step();
+        this.distance+=Math.hypot(Player.x-this.lastX,Player.y-this.lastY);this.lastX=Player.x;this.lastY=Player.y;
+        this.gap=Math.max(0,this.gap-dt);this.tipTime=Math.max(0,this.tipTime-dt);if(!this.tipTime)this.tip=null;
+        if(step){
+          var ready=step.ID==='move'?this.distance>=c.MOVE_DISTANCE:step.ID==='fire'?RunStats.kills>0:step.ID==='xp'?ExpLevelUp.exp>0||ExpLevelUp.level>1:step.ID==='upgrade'?RunStats.choicesTaken>0:step.ID==='dash'?this.dashes>0:step.ID==='item'?this.uses>0:step.ID==='turret'?root.Field.turrets.some(function(t){return t.active;}):step.ID==='shop'?root.SupplyPoint.open:false;
+          if(ready){this.advance();step=this.step();}
+          if(step&&step.ID==='item'&&!d.gift){
+            var type=c.GIFT_TYPE;root.PowerUps.inventory[type]=Math.min(root.PowerUps.maxFor(type),root.PowerUps.inventory[type]+1);d.gift=true;Meta.save(false);
+          }
+        }
+        if(this.tip||this.gap>0||Game.state!==CONFIG.GAME.STATE_PLAYING||root.SupplyPoint.open||step&&(step.ID==='move'||step.ID==='upgrade'))return;
+        for(var i=0;i<root.PowerUps.inventory.length;i++)if(root.PowerUps.inventory[i]>0&&!d.items[i]&&CONFIG.TEXT.TUTORIAL.ITEMS[i]){
+          var info=CONFIG.TEXT.TUTORIAL.ITEMS[i];d.items[i]=true;this.showTip(info[0],info.slice(1).join(''));return;
+        }
+        for(var j=0;j<Enemy.pool.length;j++){
+          var e=Enemy.pool[j],id=e.archetypeId||Enemy.artId(e);
+          if(!e.active||d.enemies[id]||!CONFIG.TEXT.TUTORIAL.ENEMIES[id]||Math.hypot(e.x-Player.x,e.y-Player.y)>c.ENEMY_DISTANCE||!Camera.isVisible(e.x,e.y,e.radius))continue;
+          d.enemies[id]=true;this.showTip(e.archetype?e.archetype.NAME:CONFIG.TEXT.TUTORIAL.TITLE,CONFIG.TEXT.TUTORIAL.ENEMIES[id]);return;
+        }
+      },
+      layout:function(){var c=CONFIG.TUTORIAL;return{x:c.X,y:Game.state===CONFIG.GAME.STATE_LEVELUP?(CONFIG.UI.TOP_INSET||0)+c.LEVEL_Y:CONFIG.UI.OBJ_TOP,w:c.WIDTH,h:Game.state===CONFIG.GAME.STATE_LEVELUP?c.LEVEL_HEIGHT:c.HEIGHT};},
+      handleInput:function(){
+        if(!this.visible()||!Input.pendingTap.active)return false;
+        var f=this.layout(),c=CONFIG.TUTORIAL,p=Input.pendingTap;
+        if(!UI.isPointInRect(p,f.x,f.y+f.h-c.BUTTON_H-c.PADDING,f.w,c.BUTTON_H+c.PADDING))return false;
+        Input.clearTap();
+        if(this.tip){this.tip=null;this.tipTime=0;}
+        else if(this.step().ID==='extract'&&root.Spawner.waveIndex>=5)this.advance();
+        else{this.data().enabled=false;this.data().done=true;Meta.save(false);this.stop();}
+        return true;
+      },
+      draw:function(ctx){
+        if(!this.visible())return;
+        var c=CONFIG.TUTORIAL,t=CONFIG.TEXT.TUTORIAL,f=this.layout(),step=this.step(),title=this.tip?this.tip.title:step.TITLE;
+        var body=this.tip?this.tip.body:step.LINES.join('');
+        if(step&&step.ID==='item'&&!this.tip&&root.PowerUps.inventory[c.GIFT_TYPE]===0)body=t.ITEM_EMPTY;
+        ctx.save();UI.roundedRectPath(ctx,f.x,f.y,f.w,f.h,c.PADDING);ctx.fillStyle='rgba(7,24,31,.96)';ctx.fill();ctx.strokeStyle='#6fdce8';ctx.lineWidth=2;ctx.stroke();
+        ctx.textAlign='left';ctx.textBaseline='top';ctx.fillStyle='#ffe39a';ctx.font='bold '+c.TITLE_FONT+'px Arial,"Microsoft YaHei"';ctx.fillText(title,f.x+c.PADDING,f.y+c.PADDING);
+        ctx.font=c.FONT+'px Arial,"Microsoft YaHei"';ctx.fillStyle='#e1eff2';var line='',row=0;
+        for(var i=0;i<body.length;i++){if(ctx.measureText(line+body[i]).width>f.w-c.PADDING*2){ctx.fillText(line,f.x+c.PADDING,f.y+c.PADDING+c.LINE_H+row*c.LINE_H);line='';row++;}line+=body[i];}
+        ctx.fillText(line,f.x+c.PADDING,f.y+c.PADDING+c.LINE_H+row*c.LINE_H);ctx.restore();
+        UI.drawActionButton(ctx,f.x+c.PADDING,f.y+f.h-c.PADDING-c.BUTTON_H,f.w-c.PADDING*2,c.BUTTON_H,this.tip||step.ID==='extract'&&root.Spawner.waveIndex>=5?t.NEXT:t.SKIP,true,c.FONT);
+        if(!this.tip&&step&&Game.state===CONFIG.GAME.STATE_PLAYING){
+          var x,y,r;
+          if(step.ID==='dash'){x=UI.mirrorX(CONFIG.UI.DASH_CX);y=UI.getDashButtonY();r=CONFIG.UI.DASH_BUTTON_RADIUS;}
+          if(step.ID==='item'){var slot=UI.getSlotRect(UI.ITEM_SLOTS.indexOf(c.GIFT_TYPE));x=slot.cx;y=slot.cy;r=slot.w/2;}
+          if(x!=null){ctx.save();ctx.strokeStyle='#ffe39a';ctx.lineWidth=3;ctx.beginPath();ctx.arc(x,y,r+c.HIGHLIGHT,0,Math.PI*2);ctx.stroke();ctx.restore();}
+        }
+      }
+    };
+    root.Tutorial=Tutorial;
     root.Combat.killSource = '';
     // 可调数值统一挂在全局 CONFIG，后续平衡时无需搜索业务函数。
 
@@ -188,7 +252,11 @@
       MAX_LEVEL: 1,
       weapon: 'crossbow'
     }];
-    for (var ai = 0; ai < additions.length; ai++) CONFIG.UPGRADES.DEFINITIONS.push(additions[ai]);
+    for (var ai = 0; ai < additions.length; ai++) {
+      additions[ai].weaponScope = additions[ai].weapon === 'flamer' ? 'flamethrower' : additions[ai].weapon;
+      if (!additions[ai].RARITY) additions[ai].RARITY = 'COMMON';
+      CONFIG.UPGRADES.DEFINITIONS.push(additions[ai]);
+    }
     var names = {
       UNLOCK_FLAME: ['解锁喷火器', '新增自动扇形喷火武器'],
       FLAME_DAMAGE: ['烈焰强化', '喷火器伤害 +20%'],
@@ -456,8 +524,9 @@
       toast: '',
       toastTime: 0,
       init: function () {
-        var rows = [['A1', '初出茅庐', '累计击杀50', 'kills', 50, 'coins', 50], ['A2', '百人斩', '累计击杀100', 'kills', 100, 'skin', 'pulse_silver'], ['A3', '千人斩', '累计击杀1000', 'kills', 1000, 'diamonds', 100], ['A4', '万人斩', '累计击杀10000', 'kills', 10000, 'diamonds', 200], ['A5', '精英猎人', '击杀50精英', 'elite', 50, 'diamonds', 100], ['A6', '精英克星', '击杀200精英', 'elite', 200, 'skin', 'blade_blood'], ['A7', 'Boss终结者', '击杀10 Boss', 'boss', 10, 'skin', 'pulse_gold'], ['A8', '炮火洗礼', '炮台击杀500', 'mortar', 500, 'skin', 'flame_hell'], ['A9', '幸存者', '累计存活1小时', 'time', 3600, 'coins', 100], ['A10', '坚韧不拔', '累计存活10小时', 'time', 36000, 'outfit', 'special'], ['A11', '马拉松', '单局存活600秒', 'bestTime', 600, 'diamonds', 100], ['A12', '毫发无伤', '连续60秒不受伤', 'safe', 60, 'diamonds', 50], ['A13', '不死鸟', '单局复活3次', 'revives', 3, 'outfit', 'ninja'], ['A14', '小富翁', '累计获得10000金币', 'coinsTotal', 10000, 'coins', 200], ['A15', '大富翁', '累计获得100000金币', 'coinsTotal', 100000, 'skin', 'blade_thunder'], ['A16', '钻石收藏家', '累计获得100钻石', 'diamondsTotal', 100, 'diamonds', 50], ['A17', '道具猎人', '拾取100道具', 'items', 100, 'skin', 'bow_hunter'], ['A18', '经验大师', '拾取10000经验', 'exp', 10000, 'diamonds', 100], ['A19', '等级突破', '单局20级', 'bestLevel', 20, 'coins', 50], ['A20', '满级大佬', '单局50级', 'bestLevel', 50, 'diamonds', 200], ['A21', '波次征服者', '单局第10波', 'bestWave', 10, 'outfit', 'mechanic'], ['A22', '终极挑战', '单局第20波', 'bestWave', 20, 'outfit', 'gold'], ['A23', '词条收藏家', '单局5史诗', 'epicRun', 5, 'diamonds', 100], ['A24', '天选之人', '单局3传说', 'legendRun', 3, 'skin', 'bow_holy'], ['A25', '战略家', '撤退10次', 'extract', 10, 'skin', 'flame_frost'], ['A26', '神枪手', '弩箭单局击杀100', 'bowRun', 100, 'diamonds', 50], ['A27', '烈焰法师', '喷火器单局击杀200', 'flameRun', 200, 'diamonds', 100], ['A28', '服装收藏家', '拥有5套服装', 'outfits', 5, 'diamonds', 100], ['A29', '涂装收藏家', '拥有5个涂装', 'skins', 5, 'skin', 'blade_void'], ['A30', '电弧杀手', '电塔击杀200', 'tesla', 200, 'diamonds', 80], ['A31', '霜冻掌控', '霜塔击杀200', 'frost', 200, 'diamonds', 80], ['A32', '喷火大师', '喷火累计击杀500', 'flameRun', 500, 'diamonds', 120], ['A33', '神射手', '弩箭累计击杀500', 'bowRun', 500, 'diamonds', 120], ['A34', '战场建筑师', '启动炮台100次', 'turretOn', 100, 'diamonds', 80], ['A35', '词缀猎手', '击杀带词缀精英100', 'affixElite', 100, 'diamonds', 100]];
+        var rows = [['A1', '初出茅庐', '累计击杀50', 'kills', 50, 'coins', 50], ['A2', '百人斩', '累计击杀100', 'kills', 100, 'skin', 'pulse_silver'], ['A3', '千人斩', '累计击杀1000', 'kills', 1000, 'diamonds', 100], ['A4', '万人斩', '累计击杀10000', 'kills', 10000, 'diamonds', 200], ['A5', '精英猎人', '击杀50精英', 'elite', 50, 'diamonds', 100], ['A6', '精英克星', '击杀200精英', 'elite', 200, 'skin', 'blade_blood'], ['A7', 'Boss终结者', '击杀10 Boss', 'boss', 10, 'skin', 'pulse_gold'], ['A8', '炮火洗礼', '炮台击杀500', 'mortar', 500, 'skin', 'flame_hell'], ['A9', '幸存者', '累计存活1小时', 'time', 3600, 'coins', 100], ['A10', '坚韧不拔', '累计存活10小时', 'time', 36000, 'outfit', 'special'], ['A11', '马拉松', '单局存活600秒', 'bestTime', 600, 'diamonds', 100], ['A12', '毫发无伤', '连续60秒不受伤', 'safe', 60, 'diamonds', 50], ['A13', '不死鸟', '单局复活3次', 'revives', 3, 'outfit', 'ninja'], ['A14', '小富翁', '累计获得10000金币', 'coinsTotal', 10000, 'coins', 200], ['A15', '大富翁', '累计获得100000金币', 'coinsTotal', 100000, 'skin', 'blade_thunder'], ['A16', '钻石收藏家', '累计获得100钻石', 'diamondsTotal', 100, 'diamonds', 50], ['A17', '道具猎人', '拾取100道具', 'items', 100, 'skin', 'bow_hunter'], ['A18', '经验大师', '拾取10000经验', 'exp', 10000, 'diamonds', 100], ['A19', '等级突破', '单局20级', 'bestLevel', 20, 'coins', 50], ['A20', '满级大佬', '单局50级', 'bestLevel', 50, 'diamonds', 200], ['A21', '波次征服者', '单局第10波', 'bestWave', 10, 'outfit', 'mechanic'], ['A22', '终极挑战', '单局第20波', 'bestWave', 20, 'outfit', 'gold'], ['A23', '词条收藏家', '单局5史诗', 'epicRun', 5, 'diamonds', 100], ['A24', '天选之人', '单局3传说', 'legendRun', 3, 'skin', 'bow_holy'], ['A25', '战略家', '撤退10次', 'extract', 10, 'skin', 'flame_frost'], ['A26', '神枪手', '弩箭单局击杀100', 'bowRun', 100, 'diamonds', 50], ['A27', '烈焰法师', '喷火器单局击杀200', 'flameRun', 200, 'diamonds', 100], ['A28', '服装收藏家', '拥有5套服装', 'outfits', 5, 'diamonds', 100], ['A29', '涂装收藏家', '拥有5个涂装', 'skins', 5, 'skin', 'blade_void'], ['A30', '电弧杀手', '电塔击杀200', 'tesla', 200, 'diamonds', 80], ['A31', '霜冻掌控', '霜塔击杀200', 'frost', 200, 'diamonds', 80], ['A32', '喷火大师', '喷火累计击杀500', 'flameRun', 500, 'diamonds', 120], ['A33', '神射手', '弩箭累计击杀500', 'bowRun', 500, 'diamonds', 120], ['A34', '战场建筑师', '启动炮台100次', 'turretOn', 100, 'diamonds', 80], ['A35', '词缀猎手', '击杀带词缀精英100', 'affixElite', 100, 'diamonds', 100], ['A36', '彩虹小马', '单局到达第20波并成功撤离', 'rainbowExtract', 1, 'outfit', 'rainbow_pony']];
         for (var i = 0; i < rows.length; i++) this.defs.push(rows[i]);
+        CONFIG.CONTENT.ACHIEVEMENT_COUNT = rows.length;
       },
       add: function (k, n) {
         var p = Meta.data.achievements.progress;
@@ -498,6 +567,12 @@
         panel(ctx, 145, 285, 460, 75, 18, 'rgba(45,34,12,.95)', '#ffd54a');
         text(ctx, '🏆 ' + this.toast, 375, 322, 23, '#ffe49a', 'center');
       },
+      recordRun: function (exitType, wave) {
+        if (exitType === 'extract' && wave >= 20) {
+          Meta.data.achievements.progress.rainbowExtract = 1;
+          this.check();
+        }
+      },
       draw: function (ctx) {
         ctx.save();
         ctx.fillStyle = 'rgba(0,0,0,.72)';
@@ -520,7 +595,7 @@
           text(ctx, done ? '✓' : '◇', 74, yy + 40, 24, done ? '#ffd54a' : '#71837b', 'center');
           text(ctx, d[1], 103, yy + 25, 19, done ? '#ffe49a' : '#fff');
           text(ctx, d[2] + '  ' + val + '/' + d[4], 103, yy + 54, 14, '#afbeb7');
-          text(ctx, done ? '已完成' : '进行中', 650, yy + 40, 15, done ? '#59e58a' : '#9eaaa4', 'right');
+          text(ctx, d[5] === 'outfit' && d[6] === 'rainbow_pony' ? '奖励：彩虹小马' : done ? '已完成' : '进行中', 650, yy + 40, 15, done ? '#59e58a' : '#9eaaa4', 'right');
         }
         ctx.restore();
       },
@@ -548,7 +623,7 @@
       open: false,
       mode: 'outfit',
       index: 0,
-      outfits: [['default', CONFIG.CHARACTER.SKINS.default.NAME, 'COMMON', 'free', 0], ['cowboy', '西部牛仔', 'COMMON', 'survivorCoins', 800], ['firefighter', '消防员', 'COMMON', 'survivorCoins', 1200], ['special', CONFIG.CHARACTER.SKINS.special.NAME, 'RARE', 'survivorCoins', 3000], ['medic', CONFIG.CHARACTER.SKINS.medic.NAME, 'RARE', 'survivorCoins', 3500], ['ninja', '忍者', 'RARE', 'survivorCoins', 4000], ['punk', '朋克', 'RARE', 'survivorCoins', 5000], ['hunter', '荒野猎人', 'EPIC', 'diamonds', 80], ['mechanic', '机械师', 'EPIC', 'diamonds', 100], ['necromancer', '亡灵法师', 'EPIC', 'diamonds', 120], ['gold', '黄金幸存者', 'LEGENDARY', 'diamonds', 300], ['shadow', '暗影刺客', 'LEGENDARY', 'diamonds', 500]],
+      outfits: [['default', CONFIG.CHARACTER.SKINS.default.NAME, 'COMMON', 'free', 0], ['rainbow_pony', '彩虹小马', 'LEGENDARY', 'achievement', 0], ['frog_raincoat', '青蛙雨衣', 'RARE', 'survivorCoins', 1600], ['box_robot', '纸箱机器人', 'EPIC', 'survivorCoins', 2400], ['cowboy', '西部牛仔', 'COMMON', 'survivorCoins', 800], ['firefighter', '消防员', 'COMMON', 'survivorCoins', 1200], ['special', CONFIG.CHARACTER.SKINS.special.NAME, 'RARE', 'survivorCoins', 3000], ['medic', CONFIG.CHARACTER.SKINS.medic.NAME, 'RARE', 'survivorCoins', 3500], ['ninja', '忍者', 'RARE', 'survivorCoins', 4000], ['punk', '朋克', 'RARE', 'survivorCoins', 5000], ['hunter', '荒野猎人', 'EPIC', 'diamonds', 80], ['mechanic', '机械师', 'EPIC', 'diamonds', 100], ['necromancer', '亡灵法师', 'EPIC', 'diamonds', 120], ['gold', '黄金幸存者', 'LEGENDARY', 'diamonds', 300], ['shadow', '暗影刺客', 'LEGENDARY', 'diamonds', 500]],
       skins: [['default', '手枪默认', 'pulse', 'free', 0], ['pulse_silver', '银色杀手', 'pulse', 'survivorCoins', 2000], ['pulse_red', '烈焰红', 'pulse', 'survivorCoins', 3000], ['pulse_blue', '冰霜蓝', 'pulse', 'diamonds', 80], ['pulse_gold', '黄金沙鹰', 'pulse', 'achievement', 0], ['default', '飞刃默认', 'blade', 'free', 0], ['blade_blood', '血刃', 'blade', 'achievement', 0], ['blade_thunder', '雷霆刃', 'blade', 'achievement', 0], ['blade_void', '虚空刃', 'blade', 'achievement', 0], ['default', '喷火器默认', 'flame', 'free', 0], ['flame_green', '军用绿', 'flame', 'survivorCoins', 2500], ['flame_hell', '地狱火', 'flame', 'achievement', 0], ['flame_frost', '极寒喷射', 'flame', 'achievement', 0], ['default', '弩箭默认', 'crossbow', 'free', 0], ['bow_hunter', '猎人棕', 'crossbow', 'achievement', 0], ['bow_machine', '机械弩', 'crossbow', 'diamonds', 80], ['bow_holy', '圣光弩', 'crossbow', 'achievement', 0]],
       ownOutfit: function (id) {
         if (Meta.data.ownedOutfits.indexOf(id) < 0) Meta.data.ownedOutfits.push(id);
@@ -564,6 +639,7 @@
 
     // 已装备外观仅改变 Canvas 绘制颜色和装饰，不参与任何数值计算。
     var OutfitColors = {
+      rainbow_pony: '#ec83cf', frog_raincoat: '#63c85c', box_robot: '#b78552',
       default: '#4a5d4e',
       cowboy: '#8b5a2b',
       firefighter: '#c94b36',

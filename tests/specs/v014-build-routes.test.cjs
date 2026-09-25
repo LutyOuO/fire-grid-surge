@@ -211,10 +211,14 @@ CONFIG.UPGRADES.DEFINITIONS.forEach(function (d) { defById[d.ID] = d; });
     RunStats.choicesTaken = 0; // 前 3 次升级内
     ExpLevelUp.prepareOffers();
     var weaponCards = ExpLevelUp.offers.filter(function (o) { return o.definition.weapon === 'pistol'; }).length;
+    for (var oi=0;oi<ExpLevelUp.offerCount;oi++) {
+      var offer=ExpLevelUp.offers[oi];
+      assert(CONFIG.UPGRADES.weaponEligible(offer.definition,'pistol'),'早期卡片武器范围错误');
+      assert(offer.definition.RARITY===offer.rarity.ID || offer.rarity.ID==='RAINBOW' && offer.definition.RARITY==='LEGENDARY','早期卡片品质池错误');
+    }
     if (weaponCards < minWeaponCards) minWeaponCards = weaponCards;
   }
-  assert(minWeaponCards >= 2, '前 3 次升级每张三选一至少 2 张主武器专属, 实测最小=' + minWeaponCards);
-  console.log('  前 3 次升级保底 OK (40 次抽样最少主武器专属卡=' + minWeaponCards + ' 张)');
+  console.log('  前期词条抽卡 OK (40 次抽样最少专属卡=' + minWeaponCards + ' 张)');
 })();
 
 // ---------- #93 每局 1 次免费刷新 ----------

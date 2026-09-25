@@ -371,6 +371,8 @@
     damageFlat: 0,
     fireRateBonus: 0,
     speedFlat: 0,
+    magazineBonus: 0,
+    reloadMultiplier: 1,
     projectileCount: CONFIG.WEAPONS.PULSE.BASE_PROJECTILES,
     penetration: CONFIG.WEAPONS.PULSE.BASE_PENETRATION,
     muzzleFlashTimer: 0,
@@ -391,6 +393,8 @@
       this.damageFlat = 0;
       this.fireRateBonus = 0;
       this.speedFlat = 0;
+      this.magazineBonus = 0;
+      this.reloadMultiplier = 1;
       this.muzzleFlashTimer = 0;
       this.cooldownMultiplier = 1;
       this.projectileMultiplier = 1;
@@ -426,23 +430,31 @@
       return (this.getSpec().DAMAGE + this.damageFlat) * (1 + this.damageBonus) * this.damageMultiplier * Armory.damageMultiplier();
     },
     getSpec: function () { return CONFIG.WEAPONS.FIREARMS[root.WeaponProgress.selected || 'pistol'] || CONFIG.WEAPONS.FIREARMS.pistol; },
-    getMagazineSize: function () { return this.getSpec().MAGAZINE * Armory.magazineMultiplier(); },
-    getReloadDuration: function () { return this.getSpec().RELOAD * (Armory.hasPerk('reload') ? .7 : 1); },
+    getMagazineSize: function () { return Math.ceil((this.getSpec().MAGAZINE + this.magazineBonus) * Armory.magazineMultiplier()); },
+    getReloadDuration: function () { return this.getSpec().RELOAD * this.reloadMultiplier * (Armory.hasPerk('reload') ? .7 : 1); },
     startReload: function () { this.reloading = true; this.reloadTimer = this.getReloadDuration(); },
     drawReload: function (ctx) {
-      if (!this.reloading || Player.hp <= 0) return;
+      if (!CONFIG.WEAPONS.FIREARMS[root.WeaponProgress.selected] || Player.hp <= 0) return;
       var duration = this.getReloadDuration();
       var progress = 1 - Math.max(0, this.reloadTimer) / duration;
       var anchor = CONFIG.CHARACTER.ANCHORS.RELOAD;
       var scale=CONFIG.CHARACTER.HEIGHT/96;
-      var x = Player.x - Camera.x + anchor.x*scale;
-      var y = Player.y - Camera.y + anchor.y*scale;
+      var radius=CONFIG.CHARACTER.RELOAD_RADIUS,c=CONFIG.CHARACTER.AMMO_DISPLAY;
+      var busy=this.reloading||this.ammo<=0,half=busy?radius:c.WIDTH/2;
+      var x = Math.max(half+c.INSET, Math.min(CONFIG.VIEW.WIDTH-half-c.INSET, Player.x - Camera.x + anchor.x*scale));
+      var y = Math.max(radius+c.INSET, Math.min(CONFIG.VIEW.HEIGHT-radius-c.INSET, Player.y - Camera.y + anchor.y*scale));
       ctx.save();
-      ctx.fillStyle = 'rgba(8,14,16,.82)'; ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.fill();
+      if(!busy) {
+        root.UI.roundedRectPath(ctx,x-c.WIDTH/2,y-c.HEIGHT/2,c.WIDTH,c.HEIGHT,c.HEIGHT/2);
+        ctx.fillStyle=c.BACKGROUND;ctx.fill();ctx.fillStyle=c.COLOR;
+        ctx.font='bold '+c.FONT+'px Arial';ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText(String(Math.ceil(this.ammo)),x,y);ctx.restore();return;
+      }
+      ctx.fillStyle = c.BACKGROUND; ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
       var img = root.UI && root.UI.icon ? root.UI.icon('ammo_normal') : null;
-      if (img) ctx.drawImage(img, x - 11, y - 11, 22, 22);
-      ctx.strokeStyle = '#ffd166'; ctx.lineWidth = 5; ctx.lineCap = 'round';
-      ctx.beginPath(); ctx.arc(x, y, 18, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress); ctx.stroke();
+      if (img) ctx.drawImage(img, x-c.ICON/2,y-c.ICON/2,c.ICON,c.ICON);
+      ctx.strokeStyle = c.COLOR; ctx.lineWidth = c.RING_WIDTH; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.arc(x, y, radius-c.RING_WIDTH/2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (this.reloading?progress:0)); ctx.stroke();
       ctx.restore();
     },
     getInterval: function () {
@@ -603,7 +615,8 @@
     },
     getMuzzle: function (angle,id) {
       var p=this.muzzlePoint;
-      root.CharacterView.muzzle(Player.x,Player.y,angle,id,Player.visual.facing,p);
+      if(id===root.WeaponProgress.selected)root.CharacterView.syncWeaponCycle(Player.visual);
+      root.CharacterView.muzzle(Player.x,Player.y,angle,id,Player.visual.facing,p,id===root.WeaponProgress.selected?Player.visual:null);
       p.blocked=!!root.WallCollision.segment(Player.x,Player.y,p.x,p.y,CONFIG.AI_TARGETING.WALL_RADIUS);
       var dx=p.x-Player.x,dy=p.y-Player.y;
       if(root.WallCollision.rayDistance(Player.x,Player.y,Math.atan2(dy,dx))+2 < Math.hypot(dx,dy))p.blocked=true;
@@ -1307,6 +1320,7 @@
       var opts=this._shotOrigin || (this._shotOrigin={x:0,y:0});opts.x=muzzle.x;opts.y=muzzle.y;
       for (var n = 0; n < this.count; n++) this.spawn(a + (n - (this.count - 1) / 2) * .08,opts);
       Weapons.shot('crossbow');
+      return true;
     },
     update: function (dt) {
       if (!this._aimCache) this._aimCache = Targeting.makeCache();
@@ -1315,8 +1329,8 @@
         this.aimTarget = Targeting.acquire(this._aimCache, dt);
         Weapons.aimAt(this.aimTarget,'crossbow');
         if (this.timer <= 0) {
-          this.timer = CONFIG.CONTENT.CROSSBOW.COOLDOWN / (this.rate * (1 + (root.W8 && root.W8.rateBonusFor ? root.W8.rateBonusFor('crossbow') : 0)));
-          this.fire();
+          if(this.fire())this.timer = CONFIG.CONTENT.CROSSBOW.COOLDOWN / (this.rate * (1 + (root.W8 && root.W8.rateBonusFor ? root.W8.rateBonusFor('crossbow') : 0)));
+          else this.timer=0;
         }
       }
       for (var i = 0; i < this.arrows.length; i++) {

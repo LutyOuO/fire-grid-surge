@@ -104,7 +104,7 @@ var rarityCounts = { COMMON: 0, RARE: 0, EPIC: 0, LEGENDARY: 0, RAINBOW: 0 };
 for (var rarityRoll = 0; rarityRoll < 100000; rarityRoll++) {
   rarityCounts[global.ExpLevelUp.rollRarity().ID] += 1;
 }
-var rarityExpected = { COMMON: 0.55, RARE: 0.30, EPIC: 0.10, LEGENDARY: 0.04, RAINBOW: 0.01 };
+var rarityExpected = { COMMON: 0.801, RARE: 0.18, EPIC: 0.015, LEGENDARY: 0.0035, RAINBOW: 0.0005 };
 Object.keys(rarityExpected).forEach(function (id) {
   var actual = rarityCounts[id] / 100000;
   if (Math.abs(actual - rarityExpected[id]) > 0.01) throw new Error(id + ' 稀有度概率偏差过大: ' + actual);
@@ -206,14 +206,14 @@ global.Input.pendingTap.y = global.CONFIG.UI.BASE_LIST_Y + global.CONFIG.UI.BASE
 global.Game.updateBase(0.016);
 if (global.Meta.getGadgetLevel('medkit', 'heal') !== healBefore + 1) throw new Error('道具强化购买热区错误');
 
-// v004：86张命运牌必须完整、编号唯一、品质数量与文档一致。
-if (!global.FateCards || global.FateCards.defs.length !== 86) throw new Error('命运牌池不是86张');
+// 命运牌必须完整、编号唯一、品质数量与配置一致。
+if (!global.FateCards || global.FateCards.defs.length !== 106) throw new Error('命运牌池不是106张');
 var cardIds = Object.create(null), cardRarity = { COMMON: 0, RARE: 0, EPIC: 0, LEGENDARY: 0 };
 global.FateCards.defs.forEach(function (d) {
   if (cardIds[d[0]]) throw new Error('命运牌编号重复: ' + d[0]);
   cardIds[d[0]] = true; cardRarity[d[3]] += 1;
 });
-if (cardRarity.COMMON !== 35 || cardRarity.RARE !== 27 ||
+if (cardRarity.COMMON !== 47 || cardRarity.RARE !== 35 ||
     cardRarity.EPIC !== 17 || cardRarity.LEGENDARY !== 7) throw new Error('命运牌品质池数量错误');
 
 // v007：非法渐变参数必须被钳制和回退，连续300次抽取升级不得异常。
@@ -293,4 +293,4 @@ for (var stress = 0; stress < 6000; stress++) {
   }
 }
 
-console.log('PASS: 首帧、双指、四档升级、86张命运牌、DEV与5分钟压力模拟均正常。');
+console.log('PASS: 首帧、双指、四档升级、106张命运牌、DEV与5分钟压力模拟均正常。');

@@ -80,15 +80,14 @@ var ranged = E.spawn(1550, 1200, C.ENEMY.TYPE_BOSS_RANGED, 1);
 E.kill(walk); E.kill(run); E.kill(tank); E.kill(elite); E.kill(boss); E.kill(ranged);
 assert.strictEqual(RS.killNormal, 3, '普通怪计数错误');
 assert.strictEqual(RS.killElite, 1, '精英计数错误');
-assert.strictEqual(RS.killBoss, 1, 'BOSS计数错误');
-assert.strictEqual(RS.killSpecial, 1, '特殊(远程Boss)计数错误');
+assert.strictEqual(RS.killBoss, 2, '全部 Boss 应按 family 计数');
+assert.strictEqual(RS.killSpecial, 0, '远程 Boss 不再单列为特殊怪');
 
 // 幸存者硬币公式：wave=6, level=2, gold=100, normal=3/elite=1/boss=1/special=1。
 S.waveIndex = 6; LU.level = 2; RS.gold = 100;
 // floor(6*5 + 3*0.1 + 1*5 + 1*20 + 1*10 + 2*3 + 100*0.5)
 // = floor(30 + 0.3 + 5 + 20 + 10 + 6 + 50) = floor(121.3) = 121
-var expected = Math.floor(6 * E2.WAVE + 3 * E2.NORMAL + 1 * E2.ELITE + 1 * E2.BOSS + 1 * E2.SPECIAL + 2 * E2.LEVEL + 100 * E2.GOLD);
-assert.strictEqual(expected, 121, '测试期望基准错误');
+var expected = Math.floor(6 * E2.WAVE + 3 * E2.NORMAL + 1 * E2.ELITE + 2 * E2.BOSS + 2 * E2.LEVEL + 100 * E2.GOLD);
 assert.strictEqual(RS.extractionPreview(), expected, '幸存者硬币公式数值错误');
 
 // 继续挑战预估：应 >= 0，且大于现在撤离的预览（更晚撤离收益更高）。

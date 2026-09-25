@@ -40,8 +40,8 @@ var UI = {
       CONFIG.UI.HP_BAR_Y = 28 + topInset;
       CONFIG.UI.EXP_BAR_Y = 78 + topInset;
       CONFIG.UI.LEVEL_Y = 72 + topInset;
-      CONFIG.UI.HUD_STATS_Y = 137 + topInset;
-      CONFIG.UI.BOSS_BAR_Y = 174 + topInset;
+      CONFIG.UI.HUD_STATS_Y = CONFIG.UI.COMPACT_HUD.STATS_Y + topInset;
+      CONFIG.UI.BOSS_BAR_Y = CONFIG.UI.COMPACT_HUD.BOSS_Y + topInset;
 
       // === 菜单 ===
       // 按钮组起始位置：必须在历史记录(405+top)下方，短屏上移但不低于 470+top
@@ -107,9 +107,14 @@ var UI = {
       // 异常安全区数据也不能把暂停键推到可视范围之外。
       s.PAUSE_X = Math.max(12, Math.min(CONFIG.VIEW.WIDTH - s.PAUSE_SIZE - 12, s.PAUSE_X));
       s.PAUSE_Y = Math.max(topInset + 8, Math.min(topInset + 150, s.PAUSE_Y));
-
-      // === #56 小目标：血条/经验条/boss 行下方，左上角，不遮挡战斗信息 ===
-      s.OBJ_TOP = 168 + topInset;
+      // 金币与暂停共用第一行；统计整行排在按钮底部之后。
+      // 微信胶囊会下推第一行，后续波次、Boss 和目标也必须一起下推。
+      var hud=s.COMPACT_HUD,statsBase=topInset+hud.STATS_Y;
+      s.HUD_STATS_Y=Math.max(statsBase,s.PAUSE_Y+s.PAUSE_SIZE+hud.ROW_GAP+CONFIG.V20.HUD.H/2);
+      s.WAVE_CHIP_Y=s.HUD_STATS_Y-CONFIG.V20.HUD.H/2;
+      var hudShift=s.HUD_STATS_Y-statsBase;
+      s.BOSS_BAR_Y=topInset+hud.BOSS_Y+hudShift;
+      s.OBJ_TOP=topInset+hud.OBJECTIVE_Y+hudShift;
 
       // === #57 道具栏：右下角竖排 4 固定槽（固定屏幕空间，不随相机） ===
       var slot = s.SLOT_SIZE,
@@ -250,7 +255,7 @@ var UI = {
       this.drawActionButton(ctx, x + 12, navY, CONFIG.UI.BASE_NAV_WIDTH, CONFIG.UI.BASE_NAV_HEIGHT, CONFIG.TEXT.BASE_PREV, index > 0, 38);
       this.drawActionButton(ctx, x + w - CONFIG.UI.BASE_NAV_WIDTH - 12, navY, CONFIG.UI.BASE_NAV_WIDTH, CONFIG.UI.BASE_NAV_HEIGHT, CONFIG.TEXT.BASE_NEXT, index < total - 1, 38);
       this.drawCenteredText(ctx, group.NAME, y + 31, 26, true, CONFIG.COLORS.TEXT);
-      this.drawCenteredText(ctx, CONFIG.TEXT.BASE_GADGET_HINT, y + 64, 16, false, CONFIG.COLORS.HINT_TEXT);
+      this.drawCenteredText(ctx, (this.baseGadgetFilter==='item'?CONFIG.TEXT.BASE_ITEM_HINT:CONFIG.TEXT.BASE_GADGET_HINT), y + 64, 16, false, CONFIG.COLORS.HINT_TEXT);
     },
     drawBaseUpgradeRow: function (ctx, rowIndex, definition, isGadget, gadgetId) {
       var x = CONFIG.UI.BASE_CARD_X;
@@ -652,48 +657,6 @@ var UI = {
     },
     // ---------- HUD ----------
 
-    drawHpBar: function (ctx) {
-      var x = CONFIG.UI.HP_BAR_X,
-        y = CONFIG.UI.HP_BAR_Y;
-      var width = CONFIG.UI.HP_BAR_WIDTH,
-        height = CONFIG.UI.HP_BAR_HEIGHT;
-      var ratio = Player.hp / Player.maxHp;
-      this.drawBarBackground(ctx, x, y, width, height, CONFIG.UI.HP_BAR_RADIUS, CONFIG.COLORS.HP_BACKGROUND);
-      this.drawBarFill(ctx, x, y, width, height, ratio, CONFIG.UI.HP_BAR_RADIUS, ratio <= 0.3 ? CONFIG.COLORS.HP_LOW : CONFIG.COLORS.HP_FILL);
-      this.drawBarBorder(ctx, x, y, width, height, CONFIG.UI.HP_BAR_RADIUS, CONFIG.UI.HP_BAR_BORDER, CONFIG.COLORS.HP_BORDER);
-      this.drawBarText(ctx, CONFIG.TEXT.HP + '  ' + Math.ceil(Player.hp) + ' / ' + Math.ceil(Player.maxHp), x + width / 2, y + height / 2, CONFIG.UI.HP_TEXT_SIZE);
-      // v015 #107：护甲覆盖在生命条上沿；为零时保留灰色轨道。
-      var armorMax = Math.max(Player.armorMax || 0, Player.upgradeShieldMax || 0, Player.shield || 0);
-      var armorRatio = armorMax > 0 ? Player.shield / armorMax : 0;
-      ctx.fillStyle = armorMax > 0 ? 'rgba(17,45,54,.92)' : 'rgba(70,76,78,.75)';
-      ctx.fillRect(x, y - 9, width, 6);
-      if (armorRatio > 0) { ctx.fillStyle = '#59d8f3'; ctx.fillRect(x, y - 9, width * Math.min(1, armorRatio), 6); }
-      ctx.strokeStyle = armorMax > 0 ? '#9af2ff' : '#777'; ctx.lineWidth = 1; ctx.strokeRect(x, y - 9, width, 6);
-    },
-    drawExpBar: function (ctx) {
-      var x = CONFIG.UI.EXP_BAR_X,
-        y = CONFIG.UI.EXP_BAR_Y;
-      var width = CONFIG.UI.EXP_BAR_WIDTH,
-        height = CONFIG.UI.EXP_BAR_HEIGHT;
-      var ratio = ExpLevelUp.need > 0 ? ExpLevelUp.exp / ExpLevelUp.need : 0;
-      this.drawBarBackground(ctx, x, y, width, height, CONFIG.UI.EXP_BAR_RADIUS, CONFIG.COLORS.EXP_BACKGROUND);
-      this.drawBarFill(ctx, x, y, width, height, ratio, CONFIG.UI.EXP_BAR_RADIUS, CONFIG.COLORS.EXP_FILL);
-      this.drawBarBorder(ctx, x, y, width, height, CONFIG.UI.EXP_BAR_RADIUS, CONFIG.UI.EXP_BAR_BORDER, CONFIG.COLORS.EXP_BORDER);
-      this.drawBarText(ctx, CONFIG.TEXT.EXP + '  ' + Math.round(ExpLevelUp.exp * 10) / 10 + ' / ' + ExpLevelUp.need, x + width / 2, y + height / 2, CONFIG.UI.EXP_TEXT_SIZE);
-    },
-    drawLevelBadge: function (ctx) {
-      var x = CONFIG.UI.LEVEL_X,
-        y = CONFIG.UI.LEVEL_Y;
-      var width = CONFIG.UI.LEVEL_WIDTH,
-        height = CONFIG.UI.LEVEL_HEIGHT;
-      this.roundedRectPath(ctx, x, y, width, height, CONFIG.UI.LEVEL_RADIUS);
-      ctx.fillStyle = CONFIG.COLORS.LEVEL_BACKGROUND;
-      ctx.fill();
-      ctx.lineWidth = CONFIG.UI.EXP_BAR_BORDER;
-      ctx.strokeStyle = CONFIG.COLORS.LEVEL_BORDER;
-      ctx.stroke();
-      this.drawBarText(ctx, CONFIG.TEXT.LEVEL(ExpLevelUp.level), x + width / 2, y + height / 2, CONFIG.UI.LEVEL_TEXT_SIZE);
-    },
     drawBarBackground: function (ctx, x, y, width, height, radius, color) {
       this.roundedRectPath(ctx, x, y, width, height, radius);
       ctx.fillStyle = color;
@@ -734,13 +697,16 @@ var UI = {
       ctx.fillText(CONFIG.TEXT.SURVIVAL_HUD(this.formatTime(Game.survivedSeconds)), CONFIG.UI.HP_BAR_X, CONFIG.UI.HUD_STATS_Y);
       ctx.textAlign = 'right';
       ctx.fillText(CONFIG.TEXT.KILLS_HUD(RunStats.kills), CONFIG.VIEW.WIDTH - CONFIG.UI.HP_BAR_X, CONFIG.UI.HUD_STATS_Y);
-      ctx.fillStyle = CONFIG.COLORS.TEXT;
-      if (CONFIG.WEAPONS.FIREARMS[root.WeaponProgress.selected]) {
-        ctx.textAlign = 'right';
-        var firearm = CONFIG.WEAPONS.FIREARMS[root.WeaponProgress.selected], icon = this.icon(firearm.ICON);
-        if (icon) ctx.drawImage(icon, CONFIG.VIEW.WIDTH - CONFIG.UI.HP_BAR_X - 125, CONFIG.UI.HUD_STATS_Y + 21, 26, 26);
-        ctx.fillText('弹药 ' + Math.max(0, Math.ceil(root.PulseGun.ammo)) + '/' + root.PulseGun.getMagazineSize(), CONFIG.VIEW.WIDTH - CONFIG.UI.HP_BAR_X, CONFIG.UI.HUD_STATS_Y + 34);
+      if (root.Spawner && root.Spawner.waveIndex > 0) {
+        var wc=CONFIG.V20.HUD, remain=root.Spawner.remaining(), by=CONFIG.UI.WAVE_CHIP_Y;
+        this.roundedRectPath(ctx,wc.X,by,wc.W,wc.H,wc.H/2);
+        ctx.fillStyle='rgba(22,30,28,.86)';ctx.fill();
+        ctx.strokeStyle=remain<=wc.LOW?'#eab858':'#739ca2';ctx.lineWidth=2;ctx.stroke();
+        ctx.font='bold '+wc.FONT+'px Arial, "Microsoft YaHei", sans-serif';ctx.textAlign='center';
+        ctx.fillStyle=remain<=wc.LOW?'#ffd278':CONFIG.COLORS.TEXT;
+        ctx.fillText(CONFIG.V20.TEXT.WAVE_REMAINING(root.Spawner.waveIndex,remain),wc.X+wc.W/2,by+wc.H/2);
       }
+      ctx.fillStyle = CONFIG.COLORS.TEXT;
       if (Player.reviveCharges > 0 && !Enemy.getActiveBoss()) {
         ctx.textAlign = 'center';
         ctx.font = 'bold 18px Arial, "Microsoft YaHei", sans-serif';
@@ -904,12 +870,13 @@ var UI = {
       // 未触摸时：仅"始终显示摇杆"开启才淡显；WASD/方向键移动时不显示摇杆
       if (!joystick.active) {
         var kbMoving = Input.keys.KeyA || Input.keys.KeyD || Input.keys.KeyW || Input.keys.KeyS || Input.keys.ArrowLeft || Input.keys.ArrowRight || Input.keys.ArrowUp || Input.keys.ArrowDown;
-        if (!root.Settings || !root.Settings.alwaysShowJoystick || kbMoving) return;
+        var teaching=root.Tutorial&&root.Tutorial.running&&root.Tutorial.step()&&root.Tutorial.step().ID==='move';
+        if ((!root.Settings || !root.Settings.alwaysShowJoystick) && !teaching || kbMoving) return;
         // 固定在左下角淡显底座
-        var bx = 120,
-          by = CONFIG.VIEW.HEIGHT - 140;
+        var bx = this.mirrorX(CONFIG.TUTORIAL.JOYSTICK_X),
+          by = CONFIG.VIEW.HEIGHT-(CONFIG.UI.BOTTOM_INSET||0)-CONFIG.TUTORIAL.JOYSTICK_BOTTOM;
         ctx.save();
-        ctx.globalAlpha = 0.1;
+        ctx.globalAlpha = teaching?CONFIG.TUTORIAL.JOYSTICK_ALPHA:0.1;
         ctx.beginPath();
         ctx.arc(bx, by, CONFIG.INPUT.JOYSTICK_BASE_RADIUS, 0, Math.PI * 2);
         ctx.fillStyle = CONFIG.COLORS.JOYSTICK_BASE_INNER;
@@ -1132,7 +1099,7 @@ var UI = {
     drawLevelUp: function (ctx) {
       var top = CONFIG.UI.TOP_INSET || 0;
       this.drawOverlay(ctx);
-      this.drawCenteredText(ctx, CONFIG.TEXT.LEVEL_UP, CONFIG.UI.LEVELUP_TITLE_Y + top, CONFIG.UI.LEVELUP_TITLE_SIZE, true, CONFIG.COLORS.TEXT);
+      if (!(root.Tutorial && root.Tutorial.visible())) this.drawCenteredText(ctx, CONFIG.TEXT.LEVEL_UP, CONFIG.UI.LEVELUP_TITLE_Y + top, CONFIG.UI.LEVELUP_TITLE_SIZE, true, CONFIG.COLORS.TEXT);
       this.drawCenteredText(ctx, CONFIG.TEXT.PRODUCT.PENDING(ExpLevelUp.pendingChoices), CONFIG.UI.LEVELUP_SUBTITLE_Y + top, CONFIG.UI.LEVELUP_SUBTITLE_SIZE, false, CONFIG.COLORS.HINT_TEXT);
       for (var i = 0; i < ExpLevelUp.offerCount; i++) {
         this.drawUpgradeCard(ctx, i, ExpLevelUp.offers[i]);
@@ -1632,10 +1599,10 @@ var UI = {
       ctx.fillStyle = 'rgba(0,0,0,' + (overlayAlpha == null ? 0.72 : overlayAlpha) + ')'; ctx.fillRect(0, 0, CONFIG.VIEW.WIDTH, CONFIG.VIEW.HEIGHT);
       this.roundedRectPath(ctx, rect.x, rect.y, rect.w, rect.h, 26); ctx.fillStyle = 'rgba(9,17,20,.99)'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = '#526b69'; ctx.stroke();
       ctx.fillStyle = '#16272b'; this.roundedRectPath(ctx, rect.x + 2, rect.y + 2, rect.w - 4, Math.min(88, rect.h / 3), 24); ctx.fill();
-      var header = rect.header || 88, footer = rect.footer || 110;
+      var header = rect.header || 88, footer = rect.footer == null ? 110 : rect.footer;
       ctx.fillStyle = '#34484b'; ctx.fillRect(rect.x + 18, rect.y + header, rect.w - 36, 1);
-      ctx.fillStyle = '#142327'; this.roundedRectPath(ctx, rect.x + 2, rect.y + rect.h - footer, rect.w - 4, footer - 2, 24); ctx.fill();
-      ctx.fillStyle = '#34484b'; ctx.fillRect(rect.x + 18, rect.y + rect.h - footer, rect.w - 36, 1);
+      if(footer>0){ctx.fillStyle = '#142327'; this.roundedRectPath(ctx, rect.x + 2, rect.y + rect.h - footer, rect.w - 4, footer - 2, 24); ctx.fill();
+      ctx.fillStyle = '#34484b'; ctx.fillRect(rect.x + 18, rect.y + rect.h - footer, rect.w - 36, 1);}
       this.drawCenteredText(ctx, title, rect.y + 44, 32, true, CONFIG.COLORS.COIN);
       if (footerLabel) this.drawActionButton(ctx, rect.x + 36, rect.y + rect.h - footer + 20, rect.w - 72, 68, footerLabel, true, 22);
       return rect;

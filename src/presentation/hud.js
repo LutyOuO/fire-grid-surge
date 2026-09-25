@@ -990,7 +990,7 @@
       }
       if (this.state === 'extractable') {
         if (this.playerInZone) {
-          var waveClear = root.Enemy.activeCount === 0 && root.Spawner.waveQuota <= 0 && root.Spawner.eliteQuota <= 0;
+          var waveClear = root.Spawner.remaining() === 0;
           if (!waveClear) {
             this.extractHoldTimer = 0;
             if (this.blockedNoticeTimer <= 0) { root.Meta.showToast(CONFIG.TEXT.EXTRACTION_CLEAR_FIRST); this.blockedNoticeTimer = 1.5; }
@@ -1025,7 +1025,7 @@
     },
     startExtraction: function () {
       if (this.state !== 'extractable') return;
-      if (root.Enemy.activeCount > 0 || root.Spawner.waveQuota > 0 || root.Spawner.eliteQuota > 0) {
+      if (root.Spawner.remaining() > 0) {
         root.Meta.showToast(CONFIG.TEXT.EXTRACTION_CLEAR_FIRST);
         return;
       }
@@ -1711,6 +1711,7 @@
       }
 
       // 顶层界面：命运抽牌与开发者控制台。
+      if(root.Tutorial&&!Ads.active)root.Tutorial.draw(ctx);
       if (root.MenuOverlay) root.MenuOverlay.draw(ctx);
     }
   };

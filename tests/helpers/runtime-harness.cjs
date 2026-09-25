@@ -37,7 +37,8 @@ function createRuntime(mode, options = {}) {
       this._src = src;
       const absolute = path.resolve(directory, mode === 'h5' ? 'h5' : '', src);
       assert(fs.existsSync(absolute), '资源文件不存在: ' + absolute);
-      imageQueue.push(() => { img.width = img.height = 128; img._decoded = true; if (img.onload) img.onload(); });
+      const bytes=fs.readFileSync(absolute),png=bytes.length>24&&bytes.toString('ascii',1,4)==='PNG';
+      imageQueue.push(() => { img.width=png?bytes.readUInt32BE(16):128;img.height=png?bytes.readUInt32BE(20):128;img._decoded = true; if (img.onload) img.onload(); });
     } });
     images.push(img);
     return img;

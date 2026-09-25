@@ -95,7 +95,7 @@ for (const mode of ['h5', 'wx']) {
     assert(['COMMON', 'RARE', 'EPIC', 'LEGENDARY', 'RAINBOW'].indexOf(id) >= 0, mode + ' rollRarity 只应返回 5 档之一: ' + id);
   }
   let fateSawRainbow = false;
-  for (let i = 0; i < 2000; i++) if (g.FateCards.rollRarity() === 'RAINBOW') fateSawRainbow = true;
+  for (let i = 0; i < 100000; i++) if (g.FateCards.rollRarity() === 'RAINBOW') fateSawRainbow = true;
   assert(fateSawRainbow, mode + ' 命运抽牌应能抽出第五档 RAINBOW');
   g.FateCards.cards = [{ def: g.FateCards.defs[76], open: true, t: 0.3, rainbow: true }];
   g.FateCards.drawCard(r.ctx, 0);

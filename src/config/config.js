@@ -60,7 +60,7 @@
       MAX_CRIT_CHANCE: 0.5,
       CRIT_MULTIPLIER: 1.5,
       // 受击反馈
-      HIT_SCALE_TIME: 0.2,
+      HIT_SCALE_TIME: 0.12,
       HIT_SCALE_X: 1.15,
       HIT_SCALE_Y: 0.7,
       HIT_SHAKE_TIME: 0.15,
@@ -190,7 +190,7 @@
     // 远程Boss——畸变炮台者
     BOSS_RANGED: {
       ATTACK_INTERVAL: 5,
-      CHARGE_TIME: 1.5,
+      CHARGE_TIME: 0.8,
       PROJECTILE_RADIUS: 20,
       PROJECTILE_SPEED: 160,
       PROJECTILE_DAMAGE: 30,
@@ -198,6 +198,8 @@
       EXPLOSION_DAMAGE: 30,
       EXPLOSION_TIME: 0.3,
       PROJECTILE_POOL: 24,
+      BURST_COUNT: 3,
+      BURST_SPACING: 42,
       AIM_LINE_WIDTH: 3,
       AIM_DASH: 8,
       DROP_GEMS: 8,
@@ -206,17 +208,17 @@
     WEAPONS: {
       // #136 主武器数据：通用手枪逻辑驱动四种弹匣枪，特殊武器仍走独立系统。
       FIREARMS: {
-        pistol: { MAGAZINE: 7, RELOAD: 1.5, RATE: 4, DAMAGE: 10, RANGE: 10, SPEED: 560, PIERCE: 0, SPREAD: 0, MOVE: 1.00, LIFE: 1.1, ICON: 'weapon_pistol' },
-        smg: { MAGAZINE: 28, RELOAD: 1.7, RATE: 11, DAMAGE: 5, RANGE: 5, SPEED: 520, PIERCE: 0, SPREAD: 0.1745, MOVE: 1.05, LIFE: 0.55, ICON: 'weapon_smg' },
-        ar: { MAGAZINE: 30, RELOAD: 2.3, RATE: 7, DAMAGE: 13, RANGE: 13, SPEED: 760, PIERCE: 1, SPREAD: 0.0524, MOVE: 1.00, LIFE: 1.1, ICON: 'weapon_ar' },
-        mg: { MAGAZINE: 120, RELOAD: 3.8, RATE: 13, DAMAGE: 8, RANGE: 8, SPEED: 650, PIERCE: 1, SPREAD: 0.035, MOVE: 0.82, LIFE: 0.85, SUSTAIN_SPREAD: 0.22, ICON: 'weapon_mg' }
+        pistol: { MAGAZINE: 7, RELOAD: 1.5, RATE: 4, DAMAGE: 8, RANGE: 10, SPEED: 560, PIERCE: 0, SPREAD: 0, MOVE: 1.00, LIFE: 1.1, ICON: 'weapon_pistol' },
+        smg: { MAGAZINE: 28, RELOAD: 1.7, RATE: 11, DAMAGE: 4, RANGE: 5, SPEED: 520, PIERCE: 0, SPREAD: 0.1745, MOVE: 1.05, LIFE: 0.55, ICON: 'weapon_smg' },
+        ar: { MAGAZINE: 30, RELOAD: 2.3, RATE: 7, DAMAGE: 10.4, RANGE: 13, SPEED: 760, PIERCE: 1, SPREAD: 0.0524, MOVE: 1.00, LIFE: 1.1, ICON: 'weapon_ar' },
+        mg: { MAGAZINE: 120, RELOAD: 3.8, RATE: 13, DAMAGE: 6.4, RANGE: 8, SPEED: 650, PIERCE: 1, SPREAD: 0.035, MOVE: 0.82, LIFE: 0.85, SUSTAIN_SPREAD: 0.22, ICON: 'weapon_mg' }
       },
       MASTERY: { ELITE: 5, BOSS: 20 },
       UNLOCKS: { SMG_TOTAL: 500, AR_SMG: 1000, MG_AR: 2500 },
       PULSE: {
         INTERVAL: 0.75,
         MIN_INTERVAL: 0.035,
-        DAMAGE: 12,
+        DAMAGE: 8,
         SPEED: 460,
         MAX_SPEED: 900,
         LIFE: 1.1,
@@ -235,7 +237,7 @@
         POOL_SIZE: 180
       },
       BLADE: {
-        DAMAGE: 8,
+        DAMAGE: 6.4,
         HIT_COOLDOWN: 0.4,
         COUNT: 1,
         MAX_COUNT: 9,
@@ -285,11 +287,11 @@
     // 精英/特殊敌人：金币 100% 掉 5 枚；经验掉 5 个。
     // BOSS：金币 100% 掉 100 枚；经验掉 20 个。
     KILL_DROPS: {
-      GOLD_NORMAL_CHANCE: 0.20,
+      GOLD_NORMAL_CHANCE: 0.12,
       GOLD_NORMAL_COUNT: 1,
-      GOLD_ELITE_COUNT: 5,
-      GOLD_SPECIAL_COUNT: 5,
-      GOLD_BOSS_COUNT: 100,
+      GOLD_ELITE_COUNT: 4,
+      GOLD_SPECIAL_COUNT: 60,
+      GOLD_BOSS_COUNT: 60,
       EXP_NORMAL_COUNT: 1,
       EXP_ELITE_COUNT: 5,
       EXP_SPECIAL_COUNT: 20,
@@ -724,10 +726,10 @@
       OFFER_COUNT: 3,
       // #74 局内三选一升级品质抽取权重（顺序：白/蓝/紫/金/彩，合计必须为100）。
       // #84 引擎拆成 5 档：白=COMMON 蓝=RARE 紫=EPIC 金=LEGENDARY 彩=RAINBOW。
-      RARITY_WEIGHTS_INRUN: [55, 30, 10, 4, 1],
+      RARITY_WEIGHTS_INRUN: [80.1, 18, 1.5, 0.35, 0.05],
       // #74 结算命运抽牌品质抽取权重（顺序：白/蓝/紫/金/彩，合计必须为100）。
       // #84 同步拆成 5 档，第五档“彩”=RAINBOW（彩虹炫彩）。
-      RARITY_WEIGHTS_FATE: [50, 30, 12, 6, 2],
+      RARITY_WEIGHTS_FATE: [83.8, 15, 1, 0.18, 0.02],
       RARITIES: [{
         ID: 'COMMON',
         WEIGHT: 55,
@@ -1665,7 +1667,7 @@
       ON: '开启',
       OFF: '关闭',
       BACK_TO_GAME: '返回暂停页',
-      ABANDON: '结束本局并结算',
+      ABANDON: '结束本局',
       SUMMARY: '本局强化记录',
       EMPTY_SUMMARY: '尚未选择单局强化',
       SAVE_WARNING: '本地存储不可用，进度仅保留在本次页面',
@@ -1946,7 +1948,7 @@
     BOSS_DAMAGE: 80,
     BOSS_NORMAL_QUOTA_RATIO: .55,
     DUAL_BOSS_WAVE: 20,
-    DUAL_RANGED_HP: .7,
+    DUAL_RANGED_HP: 1,
     BOMB_RADIUS: 200,
     BOMB_ELITE_MULTIPLIER: 80,
     BOMB_BOSS_CURRENT_HP_RATIO: .15,
@@ -1960,6 +1962,119 @@
     FATE_SHOW_TIME: 1.25,
     FATE_FLY_TIME: .65
   };
+  CONFIG.V20 = {
+    NORMAL_QUOTA: { EARLY_BASE: 8, EARLY_STEP: 4, WAVE_TEN: 44, LATE_START: 44, LATE_STEP: 2, LATE_FLOOR: 26, ENDGAME: 24 },
+    ELITE_MAX: 4, ELITE_GAP: 1.5, ELITE_AFFIX_CHANCE: .3,
+    BOSS_GAP: 3, BOSS_ACTIVE_MAX: 2, BOSS_MIN_DISTANCE: 400, BOSS_PAIR_DISTANCE: 450, BOSS_PAIR_ANGLE: Math.PI / 3,
+    BOSS_SPAWN_TRIES: 32, BOSS_SPAWN_MARGIN: 40, BOSS_HP_PER_WAVE: .05, BOSS_LATE: [1, 2, 5, 8],
+    LOST_HINT_TIME: 12, LOST_CLEAN_TIME: 20, LOST_SPEED: 1.7, LOST_VIEW_MARGIN: 160,
+    FROST_TRAIL_POOL: 48, FROST_TRAIL_INTERVAL: .2,
+    ANIM_RATE: 7, ANIM_BOB: 2, TELL_SCALE: 1.08,
+    NORMALS: [
+      { ID:'walker', NAME:'行尸', BASE:0, COLOR:'#819879', WEIGHT:7, UNLOCK:1 },
+      { ID:'runner', NAME:'疾奔者', BASE:1, COLOR:'#e78a4c', WEIGHT:2, UNLOCK:2, POUNCE_WARN:.45, POUNCE_SPEED:2.1, COOLDOWN:3, RANGE:190 },
+      { ID:'shell', NAME:'铁壳', BASE:2, COLOR:'#af935c', WEIGHT:1, UNLOCK:3 },
+      { ID:'spitter', NAME:'吐弹怪', BASE:0, COLOR:'#60b9a2', WEIGHT:1, UNLOCK:5, HP:38, SPEED:66, RADIUS:25, RANGE_MIN:240, RANGE_MAX:450, WARN:.6, COOLDOWN:3.4, DAMAGE:12, PROJECTILE_RADIUS:10 },
+      { ID:'swarm', NAME:'群聚怪', BASE:1, COLOR:'#dbe76d', WEIGHT:2, UNLOCK:4, HP:12, SPEED:125, RADIUS:14, GROUP:3, FLANK:120, GROUP_SPACING:32 }
+    ],
+    ELITES: [
+      {ID:'dash',NAME:'疾冲',COLOR:'#ed7257',UNLOCK:3,SKILL:'swift',COOLDOWN:4,WARN:.55},
+      {ID:'shield',NAME:'护盾',COLOR:'#e5c86e',UNLOCK:4,SKILL:'shield',COOLDOWN:5,WARN:.5},
+      {ID:'blast',NAME:'爆裂',COLOR:'#ee635f',UNLOCK:5,SKILL:'blast',COOLDOWN:4,WARN:.6},
+      {ID:'split',NAME:'分裂',COLOR:'#bb8cde',UNLOCK:6,SKILL:'split',COOLDOWN:5,WARN:.5},
+      {ID:'gunner',NAME:'射手',COLOR:'#92c46b',UNLOCK:7,SKILL:'gunner',COOLDOWN:4,WARN:.6,DAMAGE:14,PROJECTILE_RADIUS:10},
+      {ID:'frost',NAME:'冰痕',COLOR:'#81d7ed',UNLOCK:8,COOLDOWN:3,WARN:.5,RADIUS:45,SLOW:.6,DURATION:1.5},
+      {ID:'pull',NAME:'牵引',COLOR:'#b893f1',UNLOCK:9,COOLDOWN:5,WARN:.7,RANGE:280,STRENGTH:135},
+      {ID:'leap',NAME:'跳跃',COLOR:'#efad5b',UNLOCK:10,COOLDOWN:4,WARN:.75,RANGE:200},
+      {ID:'healer',NAME:'治疗',COLOR:'#6bd99c',UNLOCK:11,COOLDOWN:5,WARN:.6,RANGE:220,HEAL:24},
+      {ID:'commander',NAME:'号令',COLOR:'#e1a0c2',UNLOCK:12,COOLDOWN:6,WARN:.7,RANGE:240,BUFF:1.35,DURATION:3}
+    ],
+    BOSSES: [
+      {ID:'charger',NAME:'重甲冲撞者',BASE:4,COLOR:'#df603d',HP:1.3,UNLOCK:10},
+      {ID:'artillery',NAME:'远程炮手',BASE:5,COLOR:'#75b753',HP:.9,UNLOCK:20,RANGE_MIN:350},
+      {ID:'shade',NAME:'迅影',BASE:4,COLOR:'#59cfdf',HP:.6,UNLOCK:20,SPEED:120,RADIUS:48},
+      {ID:'stalker',NAME:'潜行绕后者',BASE:4,COLOR:'#4d68ad',HP:.8,UNLOCK:30,WARN:.8,COOLDOWN:5,FADE_TIME:.35,BACK_OFFSET:180,STRIKE_RADIUS:80,DAMAGE:28},
+      {ID:'melt',NAME:'熔环核心',BASE:5,COLOR:'#eab847',HP:1.1,UNLOCK:40,WARN:1.2,COOLDOWN:5,RADIUS:120,DAMAGE:24,RING_DURATION:3,RING_DPS:9}
+    ],
+    HUD: { X:260, Y:119, W:230, H:34, FONT:19, LOW:5 },
+    TEXT: { WAVE_REMAINING:function(w,n){return '第 '+w+' 波 · 剩余 '+n;}, LOST:'远处散兵' }
+  };
+  CONFIG.UPGRADES.WEAPON_IDS = { pistol:'pistol', smg:'smg', ar:'rifle', mg:'machinegun', flamer:'flamethrower', crossbow:'crossbow' };
+  CONFIG.UPGRADES.MUTEX = [['FAN_SPRAY','PIERCE_INFINITE'],['NAPALM','CLOSE_BURST'],['LONG_SHOT','SCATTER_BOLT']];
+  CONFIG.UPGRADES.FIREARM_IDS = ['pistol','smg','rifle','machinegun'];
+  CONFIG.UPGRADES.FIREARM_LEGACY = ['POWER','RAPID','MULTI','PIERCE','PULSE_TUNE','BARRAGE'];
+  CONFIG.UPGRADES.weaponEligible = function(def, weapon) {
+    var scope=def.weaponScope || def.weapon || 'all';
+    var id=this.WEAPON_IDS[weapon] || weapon || 'pistol';
+    return scope==='all' || scope==='blade' || scope==='firearm' && this.FIREARM_IDS.indexOf(id)>=0 || scope===id;
+  };
+  for (var vi=0;vi<CONFIG.UPGRADES.DEFINITIONS.length;vi++) {
+    var vd=CONFIG.UPGRADES.DEFINITIONS[vi];
+    vd.weaponScope=CONFIG.UPGRADES.FIREARM_LEGACY.indexOf(vd.ID)>=0?'firearm':vd.weapon==='flamer'?'flamethrower':vd.weapon==='ar'?'rifle':vd.weapon==='mg'?'machinegun':vd.weapon||'all';
+    if(!vd.RARITY)vd.RARITY='COMMON';
+  }
+  CONFIG.TEXT.UPGRADES.POWER.DESC=function(p){return '弹匣枪子弹伤害 +'+p+'%';};
+  CONFIG.TEXT.UPGRADES.RAPID.DESC=function(p){return '弹匣枪射速 +'+p+'%';};
+  CONFIG.TEXT.UPGRADES.PULSE_TUNE.NAME='枪械校准';
+  CONFIG.TEXT.UPGRADES.PULSE_TUNE.DESC=function(d,s){return '枪械伤害 +'+d+'，弹速 +'+s;};
+  CONFIG.TEXT.UPGRADES.BARRAGE.DESC=function(){return '弹匣枪射速 +20%，弹道 +1';};
+  CONFIG.UPGRADES.V20_CARDS = [
+    ['V20_HEALTH','耐久补丁','最大生命 +8','all','MAX_HP',8,5,'COMMON'],
+    ['V20_SPEED','轻跑鞋','移动速度 +3%','all','MOVE_SPEED',.03,5,'COMMON'],
+    ['V20_PICKUP','磁力扣','拾取半径 +12','all','PICKUP_RADIUS',12,5,'COMMON'],
+    ['V20_CRIT','稳准镜','暴击率 +1%','all','CRIT_CHANCE',.01,5,'COMMON'],
+    ['V20_GUARD','软护垫','受到伤害 -2%','all','DAMAGE_REDUCTION',.02,5,'COMMON'],
+    ['V20_RELOAD','顺滑弹匣','换弹时间 -4%','firearm','RELOAD_SPEED',.04,5,'COMMON'],
+    ['V20_MAG','备用弹匣','弹匣容量 +2','firearm','MAGAZINE_CAPACITY',2,5,'COMMON'],
+    ['V20_BULLET','轻量弹头','弹速 +20','firearm','BULLET_SPEED',20,5,'COMMON'],
+    ['V20_DAMAGE','标准弹头','基础伤害 +4%','firearm','PULSE_DAMAGE_PERCENT',.04,5,'COMMON'],
+    ['V20_PISTOL','手枪握把','手枪伤害 +6%','pistol','PULSE_DAMAGE_PERCENT',.06,5,'COMMON'],
+    ['V20_SMG','冲锋枪枪机','冲锋枪射速 +4%','smg','FIRE_RATE',.04,5,'COMMON'],
+    ['V20_RIFLE','步枪枪托','自动步枪伤害 +5%','rifle','PULSE_DAMAGE_PERCENT',.05,5,'COMMON'],
+    ['V20_MG','机枪弹链','机枪弹匣 +6','machinegun','MAGAZINE_CAPACITY',6,5,'COMMON'],
+    ['V20_FLAME_RANGE','加长喷嘴','喷火射程 +12','flamethrower','FLAME_RANGE',12,5,'COMMON'],
+    ['V20_FLAME_BURN','续燃燃料','挂燃持续 +0.3秒','flamethrower','FLAME_BURN',.3,5,'COMMON'],
+    ['V20_BOW_COOLDOWN','轻弩机','弩箭冷却 -4%','crossbow','BOW_RATE',.04,5,'COMMON'],
+    ['V20_ARMOR','小型护盾','护盾上限 +12','all','ARMOR_SHIELD',12,4,'RARE'],
+    ['V20_CRIT_DAMAGE','要害判断','暴击倍率 +0.15','all','CRIT_DAMAGE',.15,4,'RARE'],
+    ['V20_SKILL_CD','技能节奏','技能冷却 -5%','all','SKILL_COOLDOWN',.05,4,'RARE'],
+    ['V20_CONTROL','枪口制退','弹道散布 -2°','firearm','SPREAD_CONTROL',.035,4,'RARE'],
+    ['V20_PEN','穿甲弹芯','额外贯穿 +1','firearm','PENETRATION',1,3,'RARE'],
+    ['V20_PISTOL_BLUE','手枪双发','手枪弹道 +1','pistol','MULTISHOT',1,2,'RARE'],
+    ['V20_SMG_BLUE','冲锋枪压制','冲锋枪射速 +8%','smg','FIRE_RATE',.08,4,'RARE'],
+    ['V20_RIFLE_BLUE','步枪长弹','自动步枪弹速 +60','rifle','BULLET_SPEED',60,4,'RARE'],
+    ['V20_MG_BLUE','机枪稳固','机枪伤害 +8%','machinegun','PULSE_DAMAGE_PERCENT',.08,4,'RARE'],
+    ['V20_FLAME_BLUE','宽幅喷焰','喷火锥角 +8°','flamethrower','FLAME_ANGLE',.14,3,'RARE'],
+    ['V20_BOW_BLUE','双箭机括','弩箭数量 +1','crossbow','BOW_COUNT',1,2,'RARE'],
+    ['V20_BLADE_BLUE','旋刃加固','飞刃伤害 +4','blade','BLADE_DAMAGE',4,4,'RARE']
+  ];
+  for(var ci=0;ci<CONFIG.UPGRADES.V20_CARDS.length;ci++) {
+    var ca=CONFIG.UPGRADES.V20_CARDS[ci];
+    CONFIG.UPGRADES.DEFINITIONS.push({ID:ca[0],TEXT_KEY:ca[0],weaponScope:ca[3],EFFECT:ca[4],AMOUNT:ca[5],MAX_LEVEL:ca[6],RARITY:ca[7]});
+    CONFIG.TEXT.UPGRADES[ca[0]]={NAME:ca[1],DESC:(function(t){return function(value){return value===undefined?t:t.replace(/([+-])\d+(?:\.\d+)?/,function(_,sign){return sign+value;});};})(ca[2])};
+  }
+  CONFIG.V20.FATE_CARDS = [
+    [87,'下局强健','下一局初始生命 +12','COMMON','MAX_HP',12],
+    [88,'下局轻快','下一局移速 +3%','COMMON','MOVE',.03],
+    [89,'下局磁吸','下一局拾取范围 +8%','COMMON','PICKUP',.08],
+    [90,'下局领悟','下一局经验获取 +6%','COMMON','EXP',.06],
+    [91,'下局节俭','下一局金币获取 +6%','COMMON','GOLD',.06],
+    [92,'下局弹速','下一局弹速 +6%','COMMON','BULLET_SPEED',.06],
+    [93,'下局护垫','下一局受伤 -3%','COMMON','REDUCE',.03],
+    [94,'下局药箱','下一局初始血包 +1','COMMON','ITEM',[2,1]],
+    [95,'下局磁铁','下一局初始磁铁 +1','COMMON','ITEM',[1,1]],
+    [96,'下局冰冻','下一局初始冰冻 +1','COMMON','ITEM',[3,1]],
+    [97,'下局装填','下一局换弹时间 -5%','COMMON','RELOAD',.05],
+    [98,'下局爆弹','下一局初始炸弹 +1','COMMON','ITEM',[0,1]],
+    [99,'下局开悟','下一局初始等级 +2','RARE','START_LEVEL',2],
+    [100,'下局鹰眼','下一局暴击率 +6%','RARE','CRIT',.06],
+    [101,'下局穿甲','下一局额外贯穿 +1','RARE','PIERCE',1],
+    [102,'下局节奏','下一局武器冷却 -8%','RARE','COOLDOWN',.08],
+    [103,'下局护盾','下一局护盾 +20% 最大生命','RARE','SHIELD',.2],
+    [104,'下局疾风','下一局移速 +10%','RARE','MOVE',.1],
+    [105,'下局暴击','下一局暴击倍率 +0.3','RARE','CRIT_DMG',.3],
+    [106,'下局储备','下一局四种道具各 +1','RARE','ALL_ITEMS',1]
+  ];
   // 地图迫击炮素材尺寸与固定爆炸池。
   CONFIG.TURRET_VISUAL = {
     BASE_SIZE: 86,
@@ -1989,11 +2104,11 @@
     DIAMOND_NOTICE_TIME: 2,
     FLAME: {
       TICK: 0.1,
-      DAMAGE: 9,
+      DAMAGE: 7.2,
       RANGE: 230,
       ANGLE: Math.PI / 3,
       BURN_TIME: 5,
-      BURN_DPS: 9,
+      BURN_DPS: 7.2,
       BURN_TICK: 1,
       // v014 #90 喷火A 烧地封路：凝固汽油落地留燃烧 DoT 区域，持续 PATCH_LIFE 秒。
       PATCH_LIFE: 5,
@@ -2002,7 +2117,7 @@
     },
     CROSSBOW: {
       COOLDOWN: 1.5,
-      DAMAGE: 40,
+      DAMAGE: 32,
       SPEED: 700,
       DECAY: 0.1,
       POOL: 48,
@@ -2010,8 +2125,8 @@
       ARROW_LIFE: 2,
       SCATTER_SPLITS: 4
     },
-    ACHIEVEMENT_COUNT: 35,
-    OUTFIT_COUNT: 12,
+    ACHIEVEMENT_COUNT: 36,
+    OUTFIT_COUNT: 15,
     SKIN_COUNT: 17
   };
   CONFIG.SCREEN_LAYOUT = {
@@ -2024,9 +2139,9 @@
       GEAR_X: 678,
       GEAR_Y: 42,
       GEAR_SIZE: 48,
-      LOGO_X: 105,
+      LOGO_X: 24,
       LOGO_Y: 225,
-      LOGO_W: 540,
+      LOGO_W: 702,
       LOGO_H: 270,
       HISTORY_Y: 616,
       BUFF_Y: 660,
@@ -2361,7 +2476,7 @@
       // 落点刷新 GUARD_COUNT 个守护敌人；玩家在 ACTIVATE_RADIUS 内站立 CHARGE_TIME 秒激活；
       // 激活掉 GOLD_MIN~MAX 金币（走 CoinDrops）+ ITEM_MIN~MAX 个随机道具（走 PowerUps.drop）；
       // DURATION 为存在时限，超时自动消失。
-      airdrop: { MIN_WAVE: 2, DURATION: 16, LAND: 1.2, GEMS: 8, MAX_PER_RUN: 3, BANNER: '空投坐标已标记', WEIGHT: 0, GOLD_MIN: 100, GOLD_MAX: 300,
+      airdrop: { MIN_WAVE: 2, DURATION: 16, LAND: 1.2, GEMS: 8, MAX_PER_RUN: 3, BANNER: '空投坐标已标记', WEIGHT: 0, GOLD_MIN: 75, GOLD_MAX: 200,
         WAVE_EVERY_MIN: 2, WAVE_EVERY_MAX: 3, GUARD_COUNT: 3, ACTIVATE_RADIUS: 95, CHARGE_TIME: 2, COIN_SPLIT: 5, ITEM_MIN: 1, ITEM_MAX: 2,
         GUIDE_MARGIN: 56, BEAM_WIDTH: 70, BEAM_HEIGHT: 720, LAND_SHAKE: 3, LAND_SHAKE_TIME: 0.16 },
       elite_rush: { MIN_WAVE: 3, DURATION: 20, EXTRA_ELITES: 2, BANNER: '精英坐标已暴露', WEIGHT: 3 },
@@ -2388,20 +2503,20 @@
     CLOSE_SIZE: 64,
     PANEL_ROW_H: 84,
     // 行序即面板行序；type 对齐 CONFIG.POWERUPS.TYPE_*，价格单位 = 局内金币。
-    PRICES: { MEDKIT: 35, LASER: 80, MAGNET: 30, FREEZE: 50, BOMB: 60 },
-    WEAPON_UPGRADE_PRICES: [100, 200, 400]
+    PRICES: { MEDKIT: 70, LASER: 160, MAGNET: 60, FREEZE: 100, BOMB: 120 },
+    WEAPON_UPGRADE_PRICES: [200, 400, 800]
   };
   // v015 #104~#106：局内军械强化、特殊弹药和被动技能。
   CONFIG.ARMORY = {
     SPECIAL_BLOCK: 30,
     WEAPON_MAX_LEVEL: 3,
     AMMO: [
-      { ID: 'firework', NAME: '爆裂焰火', ICON: 'ammo_firework', PRICE: 90, COLOR: '#ffb13b', RADIUS: 115, DAMAGE_RATIO: .7 },
-      { ID: 'corrupt', NAME: '大脑腐化', ICON: 'ammo_corrupt', PRICE: 100, COLOR: '#8be05a', DURATION: 6 },
-      { ID: 'napalm', NAME: '凝固汽油', ICON: 'ammo_napalm', PRICE: 80, COLOR: '#ff713d', DURATION: 4, DPS_RATIO: .35 },
-      { ID: 'void', NAME: '暗影裂缝', ICON: 'ammo_void', PRICE: 100, COLOR: '#a25cff', DURATION: 3, RADIUS: 105, DPS_RATIO: .45 },
-      { ID: 'shock', NAME: '致命电流', ICON: 'ammo_shock', PRICE: 85, COLOR: '#62e8ff', STUN: 1.5, RADIUS: 95, DAMAGE_RATIO: .5 },
-      { ID: 'frost', NAME: '急速冰冻', ICON: 'ammo_frost', PRICE: 75, COLOR: '#9fe8ff', DURATION: 4, SLOW: .55, VULNERABLE: 1.25 }
+      { ID: 'firework', NAME: '爆裂焰火', ICON: 'ammo_firework', PRICE: 180, COLOR: '#ffb13b', RADIUS: 115, DAMAGE_RATIO: .7 },
+      { ID: 'corrupt', NAME: '大脑腐化', ICON: 'ammo_corrupt', PRICE: 200, COLOR: '#8be05a', DURATION: 6 },
+      { ID: 'napalm', NAME: '凝固汽油', ICON: 'ammo_napalm', PRICE: 160, COLOR: '#ff713d', DURATION: 4, DPS_RATIO: .35 },
+      { ID: 'void', NAME: '暗影裂缝', ICON: 'ammo_void', PRICE: 200, COLOR: '#a25cff', DURATION: 3, RADIUS: 105, DPS_RATIO: .45 },
+      { ID: 'shock', NAME: '致命电流', ICON: 'ammo_shock', PRICE: 170, COLOR: '#62e8ff', STUN: 1.5, RADIUS: 95, DAMAGE_RATIO: .5 },
+      { ID: 'frost', NAME: '急速冰冻', ICON: 'ammo_frost', PRICE: 150, COLOR: '#9fe8ff', DURATION: 4, SLOW: .55, VULNERABLE: 1.25 }
     ],
     PERKS: [
       { ID: 'reload', NAME: '极速装填', ICON: 'skill_reload', COLOR: '#67df75', DESC: '换弹时间 ×0.7' },
@@ -2413,7 +2528,7 @@
       { ID: 'critical', NAME: '致命一击', ICON: 'skill_critical', COLOR: '#5d91ff', DESC: '暴击率 +5%，倍率 +0.5' },
       { ID: 'revive', NAME: '快速愈合', ICON: 'skill_revive', COLOR: '#ff82bd', DESC: '脱战后每秒回复 3' }
     ],
-    PERK_PRICES: [100, 150, 220, 300, 400, 500],
+    PERK_PRICES: [200, 300, 440, 600, 800, 1000],
     HEAL_COMBAT_WAIT: 5,
     HEAL_READY_TIME: 3,
     HEAL_PER_TICK: 3,
@@ -2427,20 +2542,54 @@
   // 角色表现：脚底始终与逻辑坐标重合；所有偏移只用于绘制。
   CONFIG.CHARACTER = {
     ID: 'firegrid_operator', HEIGHT: 96, CELL: 128, FOOT_X: 64, FOOT_Y: 116,
-    HYSTERESIS: 10 * Math.PI / 180, MOVE_EPS: .5, WALK_HZ: 10, STRIDE: 5,
-    BREATH_HZ: 2.5, BREATH: 1, RECOIL_TIME: .12, RECOIL: 3, FLASH_TIME: .055,
+    HYSTERESIS: 10 * Math.PI / 180, MOVE_EPS: .5,
+    BREATH_HZ: 2.5, RECOIL_TIME: .12, FLASH_TIME: .055,
     HIT_COLOR: '#ffffff', SHADOW: 'rgba(0,0,0,.35)', OUTLINE: '#6fdfef',
     HAND: '#bcc7c7', GLOVE: '#293d50', WEAPON: '#5e798e', WEAPON_LIGHT: '#f9c26a',
-    DIRECTION_ANGLES: [Math.PI / 2, -Math.PI / 2, Math.PI, 0],
-    ANCHORS: { HEAD: {x:0,y:-96}, RELOAD: {x:44,y:-104}, STATUS:{x:0,y:-130}, SKILLS:{x:0,y:28}, GRIP:{x:8,y:-44} },
+    // Direction ids are shared by sprite columns, preview controls and weapon grips.
+    DIRECTION_ANGLES: [Math.PI / 2, -Math.PI / 2, Math.PI, 0, Math.PI * 3 / 4, Math.PI / 4, -Math.PI * 3 / 4, -Math.PI / 4],
+    DIRECTION_SECTORS: [Math.PI / 2, -Math.PI / 2, Math.PI, 0, Math.PI * 3 / 4, Math.PI / 4, -Math.PI * 3 / 4, -Math.PI / 4],
+    ANCHORS: { HEAD: {x:0,y:-96}, RELOAD: {x:68,y:-104}, STATUS:{x:0,y:-130}, SKILLS:{x:0,y:28}, GRIP:{x:8,y:-44} },
+    RELOAD_RADIUS: 21,
+    // 所有服装共享关节，皮肤只提供五层静态部件。角度使用弧度。
+    RIG: {
+      STRIDE_LENGTH: 110, BLEND_RATE: 12, SPEED_REFERENCE: 220, MAX_PACE: 1.6,
+      HIP_Y: -29, HIP_X: 11, CHEST_Y: -48, NECK_Y: -65,
+      LEG_SWING: .32, FOOT_LIFT: 5, BODY_BOUNCE: 3, BODY_SWAY: 2,
+      LEAN: .085, HEAD_COUNTER: .65, PACK_LAG: .09,
+      SHOULDER_X: 22, SHOULDER_Y: -56, ELBOW_BEND: 11, ARM_WIDTH: 8, HAND_RADIUS: 5,
+      GRIP_BOB: .5,
+      PREVIEW_SPEED: 180, IDLE_BREATH: 1.2, FLAME_HZ: 19, FLAME_SHAKE: .7,
+      // [装填进度, 支撑手相对前托的 x/y]，平滑插值；装填过程与真实计时同步。
+      RELOAD_HANDS: {
+        pistol: [[0,0,0],[.18,-14,19],[.48,-14,23],[.66,-13,6],[.82,-6,-7],[.91,-16,-7],[1,0,0]],
+        smg: [[0,0,0],[.15,-9,13],[.42,-10,29],[.65,-9,10],[.78,-9,4],[1,0,0]],
+        ar: [[0,0,0],[.2,-17,18],[.48,-19,27],[.65,-16,8],[.85,-9,-5],[1,0,0]],
+        mg: [[0,0,0],[.18,-12,-14],[.35,-16,-9],[.52,-22,20],[.7,-13,-8],[.88,-11,-12],[1,0,0]],
+        flamer: [[0,0,0],[1,0,0]],
+        crossbow: [[0,0,0],[.16,5,-4],[.62,-32,-4],[.78,-25,-11],[.9,0,-5],[1,0,0]]
+      },
+      PROFILES: {
+        pistol: { BOUNCE:1, SWING:1, BRACE:.02, KICK:4, RELOAD_TILT:.55, PREVIEW_INTERVAL:.25 },
+        smg: { BOUNCE:1.15, SWING:1.1, BRACE:.055, KICK:2, RELOAD_TILT:.4, PREVIEW_INTERVAL:1/11 },
+        ar: { BOUNCE:.8, SWING:.85, BRACE:.07, KICK:3, RELOAD_TILT:.3, PREVIEW_INTERVAL:1/7 },
+        mg: { BOUNCE:.55, SWING:.65, BRACE:.13, KICK:2.5, RELOAD_TILT:.7, PREVIEW_INTERVAL:1/13 },
+        flamer: { BOUNCE:.7, SWING:.8, BRACE:.1, KICK:.6, RELOAD_TILT:0, PREVIEW_INTERVAL:.1 },
+        crossbow: { BOUNCE:.85, SWING:.9, BRACE:.04, KICK:5, RELOAD_TILT:-.25, PREVIEW_INTERVAL:1.5 }
+      }
+    },
     PERKS: { COLUMNS: 4, SIZE: 24, GAP: 8, FLASH_SCALE: 1.18, FLASH_TIME: 2.5 },
     PREVIEW: { SCALE: 1.4, MENU_SCALE: 1.2, END_SCALE: .9, HEIGHT: 740, WIDTH:660, ACTION_TIME: 1.4 },
-    DIRECTIONS: ['正面','背面','左侧','右侧'], ACTIONS: ['待机','移动','射击','换弹'],
-    LEGACY_IDS: ['default','cowboy','firefighter','special','medic','ninja','punk','hunter','mechanic','necromancer','gold','shadow'],
+    DIRECTIONS: ['正面','背面','左侧','右侧','左前','右前','左后','右后'], ACTIONS: ['待机','移动','射击','换弹'],
+    ATLAS_COLUMNS: 8, ATLAS_ROWS: 5,
+    LEGACY_IDS: ['default','cowboy','firefighter','special','medic','ninja','punk','hunter','mechanic','necromancer','gold','shadow','rainbow_pony','frog_raincoat','box_robot'],
     SKINS: {
       default: { NAME:'火网行动员', ATLAS:'assets/characters/default.png', COLOR:'#344c65', ACCENT:'#ffac43', BACK:'tactical', TEMPLATES:['short','long','heavy'] },
       special: { NAME:'灰烬重装', ATLAS:'assets/characters/special.png', COLOR:'#56616a', ACCENT:'#ff6843', BACK:'heavy', TEMPLATES:['short','long','heavy'] },
-      medic: { NAME:'极地救援', ATLAS:'assets/characters/medic.png', COLOR:'#d5e2e6', ACCENT:'#57d6e6', BACK:'rescue', TEMPLATES:['short','long','heavy'] }
+      medic: { NAME:'极地救援', ATLAS:'assets/characters/medic.png', COLOR:'#d5e2e6', ACCENT:'#57d6e6', BACK:'rescue', TEMPLATES:['short','long','heavy'] },
+      rainbow_pony: { NAME:'彩虹小马', ATLAS:'assets/characters/rainbow_pony.png', COLOR:'#ec83cf', ACCENT:'#ffd84f', TEMPLATES:['short','long','heavy'] },
+      frog_raincoat: { NAME:'青蛙雨衣', ATLAS:'assets/characters/frog_raincoat.png', COLOR:'#63c85c', ACCENT:'#ffe269', TEMPLATES:['short','long','heavy'] },
+      box_robot: { NAME:'纸箱机器人', ATLAS:'assets/characters/box_robot.png', COLOR:'#b78552', ACCENT:'#4dd4e5', TEMPLATES:['short','long','heavy'] }
     },
     WEAPON_ATLAS: 'assets/characters/weapons.png',
     PORTRAITS: 'assets/characters/portraits.png',
@@ -2452,16 +2601,16 @@
     ],
     OCCLUSION: { RISE:48, ALPHA:.42, COLOR:'#303e42', EDGE:'#729b9f' },
     TEMPLATES: {
-      short: { WIDTH:52, HEIGHT:26, GRIP_X:38/128, GRIP_Y:34/64, SUPPORT_X:43/128, SUPPORT_Y:36/64, MUZZLE_X:95/128, MUZZLE_Y:30/64, RECOIL:3, RELOAD_TILT:.3 },
-      long: { WIDTH:76, HEIGHT:38, GRIP_X:38/128, GRIP_Y:34/64, SUPPORT_X:70/128, SUPPORT_Y:36/64, MUZZLE_X:114/128, MUZZLE_Y:30/64, RECOIL:4, RELOAD_TILT:.45 },
-      heavy: { WIDTH:82, HEIGHT:41, GRIP_X:38/128, GRIP_Y:34/64, SUPPORT_X:77/128, SUPPORT_Y:36/64, MUZZLE_X:119/128, MUZZLE_Y:30/64, RECOIL:2, RELOAD_TILT:.55 }
+      short: { WIDTH:52, HEIGHT:26, GRIP_X:38/128, GRIP_Y:34/64, SUPPORT_X:68/128, SUPPORT_Y:32/64, MUZZLE_X:95/128, MUZZLE_Y:30/64 },
+      long: { WIDTH:76, HEIGHT:38, GRIP_X:38/128, GRIP_Y:34/64, SUPPORT_X:70/128, SUPPORT_Y:36/64, MUZZLE_X:114/128, MUZZLE_Y:30/64 },
+      heavy: { WIDTH:82, HEIGHT:41, GRIP_X:38/128, GRIP_Y:34/64, SUPPORT_X:77/128, SUPPORT_Y:36/64, MUZZLE_X:119/128, MUZZLE_Y:30/64 }
     },
     WEAPONS: {
       pistol:{ ROW:0, TEMPLATE:'short', SKIN_KEY:'pulse' }, smg:{ ROW:1,TEMPLATE:'long',SKIN_KEY:'smg' },
       ar:{ ROW:2,TEMPLATE:'long',SKIN_KEY:'ar' }, mg:{ ROW:3,TEMPLATE:'heavy',SKIN_KEY:'mg' },
       flamer:{ ROW:4,TEMPLATE:'heavy',SKIN_KEY:'flame' }, crossbow:{ ROW:5,TEMPLATE:'long',SKIN_KEY:'crossbow',MUZZLE_X:111/128 }
     },
-    DIRECTION_GRIPS: [{x:8,y:-43,behind:false},{x:32,y:-49,behind:true},{x:-12,y:-45,behind:false},{x:12,y:-45,behind:false}],
+    DIRECTION_GRIPS: [{x:8,y:-43,behind:false},{x:32,y:-49,behind:true},{x:-12,y:-45,behind:false},{x:12,y:-45,behind:false},{x:-5,y:-43,behind:false},{x:17,y:-43,behind:false},{x:23,y:-47,behind:true},{x:30,y:-47,behind:true}],
     PAINTS: { pulse_silver:'#d7dde2',pulse_red:'#bd443c',pulse_blue:'#54bcdf',pulse_gold:'#e3b33e',flame_green:'#599471',flame_hell:'#e88143',flame_frost:'#8bcbdc',bow_hunter:'#af875e',bow_machine:'#839cb8',bow_holy:'#f4d678' }
   };
   CONFIG.TEXT.CHARACTER = { TITLE:'行动队员', PREVIEW:'预览', EQUIP:'装备外观', NOTE:'预览不改变出战武器与战斗属性', WEAPON:'预览武器', BACK:'返回列表', LEGACY:'经典外观标识', IDENTITY:'火力网行动队员' };
@@ -2526,13 +2675,14 @@
   CONFIG.COLORS.AIRDROP = '#e9ad58';
   CONFIG.COLORS.WAVE_THEME = '#e9ad58';
   CONFIG.BOSS_MELEE = {
-    CHARGE_WARN: 1.2,
+    CHARGE_WARN: 0.9,
     CHARGE_SPEED: 340,
     CHARGE_DURATION: 0.85,
     CHARGE_COOLDOWN: 5.5,
     CHARGE_RANGE_MIN: 160,
     CHARGE_RANGE_MAX: 780,
     CHARGE_DAMAGE_MUL: 1.5,
+    WALL_STUN: 1.5,
     AIM_LINE_WIDTH: 4,
     // v014 #95 冲锋前 1s 红色预警线：线宽 20px、半透明红；最后 WARN_FLASH_WINDOW 秒明显前摇闪烁。
     WARN_LINE_WIDTH: 20,
@@ -2638,4 +2788,73 @@
       silent_hunt: { NAME: '静默猎杀', LABEL: '静默猎杀 · 精英提前', INTERVAL: 1.2, ELITE: 1 }
     }
   };
+  CONFIG.UI.COMPACT_HUD = { STATS_Y:90, BOSS_Y:128, WAVE_Y:73, ROW_GAP:12, OBJECTIVE_Y:168 };
+  CONFIG.QUIT_RUN={WIDTH:600,HEIGHT:420,BUTTON_H:66,GAP:20,PADDING:32,TEXT_SIZE:22,LINE_H:34};
+  CONFIG.TEXT.QUIT_RUN={TITLE:'离开本局',CONFIRM_TITLE:'确认返回主页？',HOME:'返回主页',RESUME:'返回游戏',CONFIRM:'确认退出',LINES:['本局尚未结束。','可以返回游戏继续挑战。'],WARNING:['退出后，本局进度不会保存，无法继续。','本局不结算奖励，也不会进行命运抽取。','已经保存的永久养成和解锁会保留。']};
+  CONFIG.TUTORIAL={MOVE_DISTANCE:140,GIFT_TYPE:3,TIP_TIME:9,TIP_GAP:10,ENEMY_DISTANCE:430,WIDTH:360,HEIGHT:220,LEVEL_HEIGHT:172,LEVEL_Y:12,JOYSTICK_X:120,JOYSTICK_BOTTOM:140,JOYSTICK_ALPHA:.4,X:18,PADDING:16,FONT:18,LINE_H:26,TITLE_FONT:21,BUTTON_H:34,HIGHLIGHT:8};
+  CONFIG.TEXT.TUTORIAL={TITLE:'新手引导',SKIP:'跳过引导',NEXT:'知道了',REPLAY:'新手教程',ITEM_EMPTY:'拾取道具后，点击右侧持有数量大于0的图标，实际使用一次。',DONE:'基础操作已掌握，继续布置你的火力网！',STEPS:[
+    {ID:'move',TITLE:'拖动摇杆，移动角色',LINES:['在屏幕下方拖动摇杆，','先移动一小段距离。']},
+    {ID:'fire',TITLE:'自动开火，走位躲避',LINES:['靠近可见敌人时会自动射击。','保持距离，先消灭一只敌人。']},
+    {ID:'xp',TITLE:'拾取经验与金币',LINES:['靠近蓝色经验晶体可以拾取。','经验用于升级，金币用于补给。']},
+    {ID:'upgrade',TITLE:'升级三选一',LINES:['升级时，从三张词条中选择一张。','选择会立即强化本局角色。']},
+    {ID:'dash',TITLE:'冲刺脱离包围',LINES:['按住方向，再点击发光冲刺键。','冲刺有冷却，请实际尝试一次。']},
+    {ID:'item',TITLE:'使用一次主动道具',LINES:['右侧图标下的数字是持有数量。','已提供练习道具，点击冰冻图标使用。']},
+    {ID:'turret',TITLE:'启动炮台，组织火力网',LINES:['跟随炮台方向提示，靠近充能。','完成一次启动，让炮台协助清敌。']},
+    {ID:'shop',TITLE:'补给点强化构筑',LINES:['靠近补给点打开商店。','花本局金币购买道具和武器强化。']},
+    {ID:'extract',TITLE:'每五波决定是否撤离',LINES:['撤离点开放后，靠近并停留充能。','成功撤离才能带走撤离奖励。']}
+  ],ITEMS:{0:['炸弹','拖动炸弹图标选择落点。','松手投掷；短按可快速投出。'],1:['强力磁铁','点击磁铁会持续吸附拾取物。','经验、金币和附近道具会靠近。'],2:['急救血包','受伤后点击血包回复生命。','满血时无法使用，不会浪费。'],3:['冰冻装置','点击冰冻可暂时冻结敌人。','适合被包围时争取脱身时间。'],4:['激光发射器','点击激光发射器，释放旋转光束。','墙体会挡住光束，注意站位。']},ENEMIES:{
+    walker:'行尸会直接追击，边退边射即可。',runner:'疾奔者速度快，前扑前会准备；提前侧移。',shell:'铁壳移动慢但耐打，用走位拉开距离。',spitter:'吐弹怪会蓄力发射，横向躲弹，也可借墙阻挡。',swarm:'群聚怪会从侧面包抄，避免钻入怪群。',
+    dash:'疾冲精英会快速突进，看到准备动作就侧移。',shield:'护盾精英更耐打，保持距离持续消耗。',blast:'爆裂精英会造成范围威胁，不要贴身停留。',split:'分裂精英死亡后会出现小怪，留好退路。',gunner:'射手精英会蓄力射击，借墙掩护。',frost:'冰痕精英留下减速轨迹，避开地面冰痕。',pull:'牵引精英会拉扯角色，保持距离并准备冲刺。',leap:'跳跃精英先标记落点，离开警示范围。',healer:'治疗精英会恢复附近敌人，优先处理它。',commander:'号令精英会强化周围敌人，优先打断其支援。',
+    charger:'重甲冲撞者沿预警线冲锋，横向躲开；撞墙后会眩晕。',artillery:'远程炮手锁定后连射，绕墙或横向移动躲避。',shade:'迅影会横移后高速突进，保留冲刺应对。',stalker:'潜行绕后者会绕到背侧；观察地面痕迹和显形预警。',melt:'熔环核心会标记火环落点，提前离开危险区。'
+  }};
+  // 敌人美术使用半径归一化的矢量部件，首次绘制烘焙到 Canvas 缓存。
+  // e=椭圆，r=矩形，p=多边形，l=线段；所有原型共用描边、面部与运动层。
+  CONFIG.ENEMY.ART = {
+    COLORS:{ink:'#17262d',shadow:'#30414a',metal:'#849497',light:'#d4e2db',bone:'#efdcac',eye:'#ffdf69',pupil:'#17212b',flesh:'#bf8a75',toxin:'#a4ef73',ice:'#91ecff',red:'#f37866',white:'#f3f4dd'},
+    OUTLINE:.055, DETAIL_WIDTH:.035, STEP_RATE:9, STEP_SWING:.13, FOOT_X:.45, FOOT_Y:.8, FOOT_W:.22, FOOT_H:.24,
+    GLOW_HZ:5, GLOW_ALPHA:.18, GLOW_RADIUS:.4, FROZEN_ALPHA:.24,
+    BASE:[['e','shadow',0,.15,.67,.7],['p','metal',[-.6,-.25,-.26,-.1,-.3,.4,-.62,.28]],['e','body',0,-.38,.43,.42],['e','shadow',0,-.28,.3,.17],['e','eye',-.17,-.4,.085,.075],['e','eye',.17,-.4,.085,.075],['r','bone',-.18,-.17,.36,.1],['l','ink',.025,[-.06,-.17,-.06,-.07,.06,-.07,.06,-.17]]],
+    MODELS:{
+      walker:[['p','body',[-.53,.05,.3,.03,.44,.58,.2,.72,-.36,.55]],['l','bone',.05,[-.26,.19,.21,.26]],['l','ink',.05,[-.1,.13,-.14,.32,.08,.17,.04,.37]],['e','flesh',.25,-.65,.14,.09]],
+      runner:[['p','bone',[-.35,-.58,-.15,-1.08,.05,-.63]],['p','body',[.2,-.5,.43,-.89,.55,-.32]],['p','shadow',[-.38,.08,0,.28,.33,.05,.12,.78]],['l','light',.055,[-.21,.16,.16,.35,-.15,.49]],['p','bone',[-.62,.23,-.94,.82,-.57,.61]]],
+      shell:[['p','metal',[-.85,-.41,-.38,-.59,-.27,.08,-.92,.09]],['p','metal',[.38,-.59,.85,-.41,.92,.09,.27,.08]],['r','shadow',-.49,.03,.98,.62],['r','metal',-.42,.06,.84,.2],['r','metal',-.37,.32,.74,.18],['e','bone',-.66,-.18,.07,.07],['e','bone',.66,-.18,.07,.07]],
+      spitter:[['e','shadow',-.55,-.46,.29,.4],['e','toxin',-.55,-.56,.2,.28],['e','toxin',.53,-.52,.24,.3],['e','toxin',.12,-.86,.24,.26],['e','shadow',0,-.04,.32,.24],['e','toxin',0,-.01,.18,.12],['l','toxin',.065,[.12,.06,.2,.32,.13,.44]]],
+      swarm:[['p','shadow',[-.52,-.13,-.92,-.62,-.43,-.36]],['p','shadow',[.52,-.13,.92,-.62,.43,-.36]],['e','body',0,.23,.51,.42],['l','ink',.045,[-.4,.2,.4,.2]],['p','bone',[-.3,-.1,-.06,.25,-.2,-.24]],['p','bone',[.3,-.1,.06,.25,.2,-.24]]],
+      dash:[['p','bone',[-.27,-.68,-.07,-1.15,.23,-.67]],['p','metal',[-.77,-.08,-.51,.66,-.27,.5]],['p','metal',[.77,-.08,.51,.66,.27,.5]],['l','eye',.08,[-.16,.12,.12,.27,-.14,.4,.13,.55]]],
+      shield:[['p','metal',[-1,-.55,-.48,-.72,-.09,-.48,-.18,.55,-.57,.85,-.95,.43]],['p','body',[-.85,-.4,-.5,-.53,-.27,-.36,-.33,.36,-.58,.58,-.8,.29]],['l','light',.055,[-.58,-.38,-.58,.38]],['e','eye',-.58,-.02,.13,.16]],
+      blast:[['r','metal',-.7,.03,1.4,.63],['r','red',-.6,.08,.28,.54],['r','red',-.15,.08,.28,.54],['r','red',.3,.08,.28,.54],['l','eye',.04,[-.48,.02,-.25,-.25,.51,-.09,.43,.13]],['p','ink',[-.05,.21,.09,.21,.14,.38,-.11,.38]]],
+      split:[['e','body',-.65,.02,.32,.4],['e','body',.64,.26,.33,.37],['e','eye',-.7,-.04,.065,.065],['e','eye',.62,.2,.065,.065],['l','light',.045,[0,-.03,-.09,.2,.08,.37,-.03,.64]]],
+      gunner:[['r','metal',.39,-.08,.52,.67],['r','ink',.46,.03,.38,.65],['r','light',.49,.64,.32,.14],['r','bone',-.53,.12,.13,.48],['r','bone',-.32,.12,.13,.48],['r','red',-.4,-.55,.8,.11]],
+      frost:[['p','ice',[-.6,-.48,-.56,-1.05,-.23,-.68,0,-1.2,.23,-.68,.56,-1.05,.6,-.48]],['p','ice',[-.49,.21,-.72,.67,-.3,.61]],['p','ice',[.49,.21,.72,.67,.3,.61]],['l','ice',.06,[0,.05,0,.59,-.23,.18,.23,.46,.23,.18,-.23,.46]]],
+      pull:[['p','metal',[-.94,-.28,-.94,.55,-.5,.86,.03,.66,.03,.17,-.22,.17,-.22,.49,-.5,.6,-.67,.41,-.67,-.28]],['r','red',-.96,-.38,.31,.31],['r','ice',-.26,-.03,.31,.31],['e','eye',.44,.25,.14,.22]],
+      leap:[['p','body',[-.41,.03,-1,.42,-.9,.96,-.55,.4,-.16,.26]],['p','body',[.41,.03,1,.42,.9,.96,.55,.4,.16,.26]],['e','eye',-.3,-.54,.17,.17],['e','eye',.3,-.54,.17,.17],['p','bone',[-.55,.81,-.95,.97,-.62,1.03]],['p','bone',[.55,.81,.95,.97,.62,1.03]]],
+      healer:[['r','white',-.4,-.83,.8,.25],['r','red',-.065,-.86,.13,.32],['r','shadow',-.74,.05,.47,.62],['r','white',-.67,.14,.34,.34],['r','red',-.56,.16,.11,.3],['r','red',-.66,.25,.31,.1],['e','toxin',.56,.4,.18,.29]],
+      commander:[['l','metal',.07,[.59,.76,.59,-1.17]],['p','red',[.61,-1.16,1.1,-.99,.93,-.8,1.1,-.62,.61,-.72]],['p','bone',[-.43,-.59,-.37,-.93,-.16,-.76,0,-1,.16,-.76,.37,-.93,.43,-.59]],['l','bone',.08,[-.39,.12,.35,.59]],['e','eye',.16,.46,.1,.12]],
+      charger:[['p','metal',[-1,-.41,-.65,-.76,-.27,-.52,-.28,.3,-.87,.4]],['p','metal',[1,-.41,.65,-.76,.27,-.52,.28,.3,.87,.4]],['p','bone',[-.64,-.65,-.91,-1.03,-.3,-.76]],['p','bone',[.64,-.65,.91,-1.03,.3,-.76]],['r','shadow',-.43,.03,.86,.62],['r','metal',-.33,.11,.66,.22],['r','metal',-.29,.42,.58,.16]],
+      artillery:[['r','ink',-.91,.12,.4,.74],['r','ink',.51,.12,.4,.74],['l','metal',.06,[-.85,.25,-.56,.25,-.85,.47,-.56,.47,-.85,.69,-.56,.69]],['r','metal',.04,-.41,.38,1.29],['r','ink',.08,.33,.3,.61],['e','shadow',.23,.88,.22,.15],['e','eye',-.36,-.49,.2,.14]],
+      shade:[['p','shadow',[-.37,-.64,0,-1.02,.37,-.64,.43,-.16,-.42,-.16]],['l','ice',.06,[-.22,-.42,.21,-.42]],['p','metal',[-.57,-.14,-.94,.92,-.62,.61,-.42,.07]],['p','metal',[.57,-.14,.94,.92,.62,.61,.42,.07]],['l','ice',.045,[-.88,.69,-.57,.03]],['l','ice',.045,[.88,.69,.57,.03]]],
+      stalker:[['p','shadow',[-.73,.35,-.5,-.76,.03,-1.02,.61,-.68,.4,.65,.06,.91,-.15,.55,-.44,.82]],['p','ink',[-.32,-.46,0,-.68,.3,-.47,.2,-.06,-.22,-.06]],['l','ice',.05,[-.19,-.36,-.07,-.31,.06,-.31,.2,-.36]],['p','bone',[-.73,.16,-1.07,.74,-.57,.48]],['p','metal',[.65,.02,.94,.68,.55,.37]]],
+      melt:[['e','ink',0,0,.72,.72],['e','red',0,0,.59,.59],['e','eye',0,0,.4,.4],['e','white',-.09,-.1,.2,.22],['l','bone',.07,[-.84,-.46,-.43,-.2,-.57,.31,-.87,.49]],['l','bone',.07,[.84,-.46,.43,-.2,.57,.31,.87,.49]],['p','metal',[-.17,.68,0,1.02,.17,.68]]]
+    }
+  };
+  CONFIG.V20.HUD.Y=CONFIG.UI.COMPACT_HUD.WAVE_Y;
+  CONFIG.CHARACTER.AMMO_DISPLAY = { WIDTH:42, HEIGHT:32, FONT:16, ICON:22, RING_WIDTH:4, INSET:4, COLOR:'#ffd166', BACKGROUND:'rgba(8,14,16,.82)' };
+  CONFIG.CHARACTER.STATUS_DISPLAY={WIDTH:70,HEIGHT:6,GAP:12,ICON:18,ICON_GAP:4,FONT:12,LEVEL_Y:-16,MARGIN:10};
+  CONFIG.TEXT.BASE_ITEM_HINT='激光 / 急救 / 炸弹 / 磁铁 / 冰冻 · 左右切换';
+  CONFIG.POWERUPS.UPGRADE_SHIELD_TIME=6;
+  CONFIG.META.GADGET_UPGRADES.bomb={NAME:'投掷炸弹',items:[
+    {ID:'radius',NAME:'扩大爆破',DESC:'爆炸半径 +16',BASE:70,MAX_LEVEL:5,AMOUNT:16},
+    {ID:'damage',NAME:'高能装药',DESC:'炸弹伤害 +10%（普通怪秒杀不变）',BASE:100,MAX_LEVEL:5,AMOUNT:.1},
+    {ID:'stun',NAME:'震荡冲击',DESC:'Boss眩晕时间 +0.25秒',BASE:110,MAX_LEVEL:4,AMOUNT:.25}
+  ]};
+  CONFIG.META.GADGET_UPGRADES.magnet={NAME:'强力磁铁',items:[
+    {ID:'duration',NAME:'持久磁场',DESC:'磁铁持续时间 +0.5秒',BASE:65,MAX_LEVEL:4,AMOUNT:.5},
+    {ID:'speed',NAME:'高速吸附',DESC:'磁铁吸附速度 +15%',BASE:70,MAX_LEVEL:4,AMOUNT:.15},
+    {ID:'capacity',NAME:'磁铁收纳',DESC:'磁铁携带上限 +1',BASE:140,MAX_LEVEL:2,AMOUNT:1}
+  ]};
+  CONFIG.META.GADGET_UPGRADES.freeze={NAME:'冰冻装置',items:[
+    {ID:'duration',NAME:'深度冷冻',DESC:'冰冻持续时间 +0.6秒',BASE:90,MAX_LEVEL:4,AMOUNT:.6},
+    {ID:'shield',NAME:'寒冰护甲',DESC:'使用获得5%最大生命护盾，持续6秒',BASE:120,MAX_LEVEL:3,AMOUNT:.05},
+    {ID:'capacity',NAME:'冷冻收纳',DESC:'冰冻装置携带上限 +1',BASE:160,MAX_LEVEL:2,AMOUNT:1}
+  ]};
 })();

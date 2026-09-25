@@ -117,7 +117,7 @@ WeaponSelect.draw(context);
   assert(CONFIG.QUALITY && CONFIG.QUALITY[id], '缺少品质 ' + id);
 });
 assert(global.CampNav, 'v007 营地导航未加载');
-assert(global.FateCards && global.FateCards.defs.length === 86, '命运卡组不是 86 张');
+assert(global.FateCards && global.FateCards.defs.length === 106, '命运卡组不是 106 张');
 global.FateCards.open();
 assert(global.FateCards.cards.length === 9, '结算没有生成 9 张牌');
 

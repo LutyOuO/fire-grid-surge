@@ -232,6 +232,7 @@
       });
     },
     enterMenu: function () {
+      if(root.Tutorial)root.Tutorial.stop();
       this.state = CONFIG.GAME.STATE_MENU;
       Input.reset();
       Input.setMovementEnabled(false);
@@ -287,6 +288,12 @@
       root.FlameWeapon.unlocked = root.WeaponProgress.selected === 'flamer';
       root.Crossbow.unlocked = root.WeaponProgress.selected === 'crossbow';
       root.NextRun.start();
+      if(root.Tutorial)root.Tutorial.start();
+    },
+    abandonRun: function () {
+      if(this.state!=='QUIT_CONFIRM')return;
+      this.exitType='quit';this.runProgress=null;RunStats.gold=0;
+      this.enterMenu();this.lastTimestamp=0;
     },
     loop: function (timestamp) {
       // 先预约下一帧，防止真机专属 API 偶发异常导致 requestAnimationFrame 永久中断。
@@ -356,7 +363,7 @@
       }
       var gameDt = dt * root.DevConsole.timeScale * this.slowMoScale;
       FX.update(gameDt);
-      if (this.state === 'PAUSED' || this.state === 'SETTINGS' || this.state === 'HELP' || this.state === 'BUILD') {
+      if (this.state === 'PAUSED' || this.state === 'SETTINGS' || this.state === 'HELP' || this.state === 'BUILD' || this.state==='QUIT_RUN' || this.state==='QUIT_CONFIRM') {
         Panels.update();
         return;
       }
@@ -364,11 +371,13 @@
         Panels.pause();
         return;
       }
+      if(root.Tutorial && root.Tutorial.handleInput())return;
       // #85 商店面板打开期间为模态：小目标折叠不消费点击，点击全归商店面板。
-      if (this.state === CONFIG.GAME.STATE_PLAYING && !(root.SupplyPoint && root.SupplyPoint.open) && root.Objectives.handle()) return;
+      if (this.state === CONFIG.GAME.STATE_PLAYING && !(root.SupplyPoint && root.SupplyPoint.open) && !(root.Tutorial && root.Tutorial.visible()) && root.Objectives.handle()) return;
       Meta.update(gameDt);
       if (this.state === CONFIG.GAME.STATE_MENU) this.updateMenu();else if (this.state === CONFIG.GAME.STATE_HISTORY) this.updateHistory();else if (this.state === CONFIG.GAME.STATE_BASE) this.updateBase(gameDt);else if (this.state === CONFIG.GAME.STATE_PLAYING) this.updatePlaying(gameDt);else if (this.state === CONFIG.GAME.STATE_LEVELUP) ExpLevelUp.handleInput();else if (this.state === CONFIG.GAME.STATE_GAMEOVER || this.state === CONFIG.GAME.STATE_VICTORY) this.updateSettlement(this.state === CONFIG.GAME.STATE_VICTORY);
       root.NextRun.update(gameDt);
+      if(root.Tutorial)root.Tutorial.update(gameDt);
       if (Spawner.waveIndex > FX.wave) {
         FX.wave = Spawner.waveIndex;
         FX.notice = CONFIG.POLISH.WAVE_NOTICE_TIME;
@@ -503,7 +512,7 @@
     },
     requestLevelRefresh: function () {
       if (this.state === CONFIG.GAME.STATE_LEVELUP && !Ads.active && RunStats.freeRefreshUsed < CONFIG.PRODUCT.FREE_REFRESH) {
-        if (ExpLevelUp.refreshOffersWithRareGuarantee()) RunStats.freeRefreshUsed++;
+        if (ExpLevelUp.refreshOffers()) RunStats.freeRefreshUsed++;
         Input.clearTap();
         return;
       }
@@ -511,7 +520,7 @@
       Ads.showRewarded(CONFIG.ADS.PLACEMENT_LEVEL_REFRESH, function () {
         if (Game.state !== CONFIG.GAME.STATE_LEVELUP || RunStats.getRefreshRemaining() <= 0) return;
         RunStats.adRefreshUsed += 1;
-        ExpLevelUp.refreshOffersWithRareGuarantee();
+        ExpLevelUp.refreshOffers();
         Input.clearTap();
       }, this.handleAdFail.bind(this));
     },
@@ -557,6 +566,7 @@
       this.slowMoTimer = Math.max(this.slowMoTimer, duration);
     },
     commitSettlement: function (isVictory) {
+      if(this.exitType==='quit')return;
       Player.visual.end=this.exitType==='death'?'death':this.exitType==='extract'||isVictory?'extract':'';
       Player.visual.flash=0;Player.visual.reload=0;Player.visual.recoil=0;
       RunStats.calculateCoins(this.survivedSeconds, ExpLevelUp.level, isVictory);
@@ -601,6 +611,7 @@
       Camera.update();
     },
     requestCoinDouble: function (isVictory) {
+      if(this.exitType==='quit')return;
       if (this.state !== CONFIG.GAME.STATE_GAMEOVER && this.state !== CONFIG.GAME.STATE_VICTORY || !RunStats.canDoubleCoins()) return;
       Ads.showRewarded(CONFIG.ADS.PLACEMENT_COIN_DOUBLE, function () {
         if (!RunStats.canDoubleCoins()) return;
@@ -634,9 +645,9 @@
           root.WeaponSelect.draw(ctx);
           return;
         }
-        if (this.state === 'PAUSED' || this.state === 'SETTINGS' || this.state === 'HELP' || this.state === 'BUILD') {
+        if (this.state === 'PAUSED' || this.state === 'SETTINGS' || this.state === 'HELP' || this.state === 'BUILD' || this.state==='QUIT_RUN' || this.state==='QUIT_CONFIRM') {
           // 暂停及其子页是战斗画面上的覆层：先画完整战场，再由 Panels 压暗。
-          if ((this.state === 'PAUSED' || Panels.parent === 'PAUSED') && root.BattleView) root.BattleView.draw();
+          if ((this.state === 'PAUSED' || this.state==='QUIT_RUN' || this.state==='QUIT_CONFIRM' || Panels.parent === 'PAUSED') && root.BattleView) root.BattleView.draw();
           Panels.draw(ctx);
           return;
         }

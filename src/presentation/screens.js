@@ -207,9 +207,9 @@
       UI.drawMenuGear(ctx, c, top);
       // Logo 只走统一资源预加载，避免首帧为同一路径重复创建图片对象。
       var logoImg = UI.icon('menu_logo');
-      if (logoImg) drawContainedLogo(ctx, logoImg, c.LOGO_X - 30, c.LOGO_Y + top, c.LOGO_W - 110, c.LOGO_H);
+      var logoW = Math.min(c.LOGO_W, CONFIG.VIEW.WIDTH - 48);
+      if (logoImg) drawContainedLogo(ctx, logoImg, (CONFIG.VIEW.WIDTH - logoW) / 2, c.LOGO_Y + top, logoW, c.LOGO_H);
       else UI.drawCenteredText(ctx, CONFIG.TEXT.GAME_TITLE, c.LOGO_Y + c.LOGO_H / 2 + top, 66, true, CONFIG.COLORS.TEXT);
-      root.CharacterView.draw(ctx, 630, c.LOGO_Y + c.LOGO_H + top - 12, CONFIG.CHARACTER.PREVIEW.MENU_SCALE, root.CharacterView.menuLook(), root.CharacterView.menuState);
       UI.drawCenteredText(ctx, CONFIG.TEXT.HISTORY(Meta.data.bestWave, UI.formatTime(Meta.data.bestTime), Meta.data.bestKills), c.HISTORY_Y + top, 21, false, CONFIG.COLORS.HINT_TEXT);
       if (Meta.data.nextRunBuff) UI.drawCenteredText(ctx, '下一局增益：' + Meta.data.nextRunBuff.name, c.BUFF_Y + top, 20, true, Meta.data.nextRunBuff.rarity === 'LEGENDARY' ? '#ffd54a' : Meta.data.nextRunBuff.rarity === 'EPIC' ? '#E67E22' : Meta.data.nextRunBuff.rarity === 'RARE' ? '#3498DB' : '#95A5A6');
       // 5 个按钮：0 开始战斗 / 1 幸存者基地 / 2 成就 / 3 加速补给 / 4 历史战绩。
@@ -462,6 +462,7 @@
       label(ctx, d[1], 375, 560, 31, '#ffe49a', 'center', true);
       label(ctx, d[2], 375, 615, 19, '#d1ddd7', 'center');
       label(ctx, '进度 ' + val + ' / ' + d[4], 375, 665, 18, done ? '#59e58a' : '#83d7ff', 'center', true);
+      if (d[5] === 'outfit' && d[6] === 'rainbow_pony') label(ctx, '荣誉奖励：彩虹小马（仅限第20波成功撤离解锁）', 375, 710, 16, '#ffd166', 'center', true);
       UI.drawActionButton(ctx, 210, 725, 330, 62, '关闭', true, 21);
     };
     Achievements.handlePage = function () {
@@ -645,33 +646,35 @@
       var x=f.x+f.w/2,y=f.bodyY;
       root.CharacterView.draw(ctx,x,y+168,c.PREVIEW.SCALE,this.previewLook,root.CharacterView.previewState);
       label(ctx,t.IDENTITY,x,y+204,18,'#8fc2d0','center');
-      var bw=(f.w-48)/4;
-      for(var i=0;i<4;i++) {
-        this.drawPreviewTab(ctx,f.x+24+i*bw,y+226,bw-8,c.DIRECTIONS[i],root.CharacterView.previewDirection===i);
-        this.drawPreviewTab(ctx,f.x+24+i*bw,y+292,bw-8,c.ACTIONS[i],root.CharacterView.previewAction===i);
+      var dw=(f.w-48)/4;
+      for(var i=0;i<8;i++) {
+        var dx=f.x+24+(i%4)*dw,dy=y+220+Math.floor(i/4)*50;
+        this.drawPreviewTab(ctx,dx,dy,dw-8,c.DIRECTIONS[i],root.CharacterView.previewDirection===i);
       }
+      for(var a=0;a<4;a++)this.drawPreviewTab(ctx,f.x+24+a*dw,y+332,dw-8,c.ACTIONS[a],root.CharacterView.previewAction===a);
       var weaponName=CONFIG.TEXT.CHARACTER.WEAPONS[this.previewWeapon] || this.previewWeapon;
-      UI.drawActionButton(ctx,f.x+36,y+362,f.w-72,58,t.WEAPON+'：'+weaponName,true,22);
-      label(ctx,t.NOTE,x,y+452,18,'#a7bbb9','center');
-      label(ctx,this.isOwned(d)?'已拥有':d[3]==='achievement'?'成就解锁':d[4]+' '+(d[3]==='diamonds'?'钻石':'幸存者硬币'),x,y+492,20,'#f4cc77','center');
+      UI.drawActionButton(ctx,f.x+36,y+398,f.w-72,58,t.WEAPON+'：'+weaponName,true,22);
+      label(ctx,t.NOTE,x,y+478,18,'#a7bbb9','center');
+      label(ctx,this.isOwned(d)?'已拥有':d[3]==='achievement'?'成就解锁':d[4]+' '+(d[3]==='diamonds'?'钻石':'幸存者硬币'),x,y+518,20,'#f4cc77','center');
       ctx.restore();
       var equipped=this.isEquipped(d),owned=this.isOwned(d),enabled=!equipped&&(owned||d[3]!=='achievement');
       UI.drawActionButton(ctx,f.x+36,f.y+f.h-f.footer+20,f.w-72,68,equipped?'已装备':owned?t.EQUIP:'购买并装备',enabled,24);
     };
     Wardrobe.handleDetail = function () {
       var p=peek();if(!p)return;
-      var f=this.detailLayout(),y=f.bodyY,bw=(f.w-48)/4;
+      var f=this.detailLayout(),y=f.bodyY,dw=(f.w-48)/4;
       Input.clearTap();
       if(inside(p,f.x+f.w-70,f.y+18,48,48)){this.previewItem=null;return;}
       if(p.y<y || p.y>y+f.bodyH) {
         if(inside(p,f.x+36,f.y+f.h-f.footer+20,f.w-72,68))this.activateCard(this.previewItem);
         return;
       }
-      for(var i=0;i<4;i++) {
-        if(inside(p,f.x+24+i*bw,y+226,bw-8,48))root.CharacterView.previewDirection=i;
-        if(inside(p,f.x+24+i*bw,y+292,bw-8,48))root.CharacterView.previewAction=i;
+      for(var i=0;i<8;i++) {
+        var dx=f.x+24+(i%4)*dw,dy=y+220+Math.floor(i/4)*50;
+        if(inside(p,dx,dy,dw-8,48))root.CharacterView.previewDirection=i;
       }
-      if(inside(p,f.x+36,y+362,f.w-72,58)) {
+      for(var a=0;a<4;a++)if(inside(p,f.x+24+a*dw,y+332,dw-8,48))root.CharacterView.previewAction=a;
+      if(inside(p,f.x+36,y+398,f.w-72,58)) {
         var ids=Object.keys(CONFIG.CHARACTER.WEAPONS),index=ids.indexOf(this.previewWeapon);
         for(var n=1;n<=ids.length;n++){var next=ids[(index+n)%ids.length];if(root.WeaponProgress.unlocked(next)){this.previewWeapon=next;break;}}
         this.refreshPreview();
@@ -811,81 +814,36 @@
     CONFIG.POLISH.TOOL_H = 50;
     UI.drawHud = function (ctx) {
       this.drawBoundaryWarnings(ctx);
-      drawTopStats(ctx);
-      if (root.Objectives) root.Objectives.draw(ctx);
+      this.drawRunStats(ctx);
+      drawBossLane(ctx);
+      if (root.Objectives && !(root.Tutorial&&root.Tutorial.visible())) root.Objectives.draw(ctx);
       if (root.DiamondFX) root.DiamondFX.draw(ctx);
       if (Achievements) Achievements.drawToast(ctx);
     };
-    function drawTopStats(ctx) {
-      label(ctx, '第 ' + Math.max(1, Spawner.waveIndex) + ' 波', 20, 34, 22, '#fff', 'left', true);
-      label(ctx, UI.formatTime(Game.survivedSeconds), 20, 62, 18, '#d8e0dc', 'left', true);
-    }
     UI.drawPlayerStatus = function (ctx) {
-      var sx = Player.x - Camera.x, sy = Player.y - Camera.y, w = 70, h = 6;
+      var c=CONFIG.CHARACTER.STATUS_DISPLAY,w=c.WIDTH,h=c.HEIGHT;
+      var sx=Math.max(w/2+c.ICON+c.ICON_GAP+c.MARGIN,Math.min(CONFIG.VIEW.WIDTH-w/2-c.MARGIN,Player.x-Camera.x)),sy=Player.y-Camera.y;
       var armorMax = Math.max(Player.armorMax || 0, Player.upgradeShieldMax || 0, Player.shield || 0);
       var targets = [ExpLevelUp.need ? ExpLevelUp.exp / ExpLevelUp.need : 0, Player.hp / Player.maxHp, armorMax ? Player.shield / armorMax : 0];
-      if (!this._playerStatusSmooth) this._playerStatusSmooth = targets.slice();
-      var ay = sy + CONFIG.CHARACTER.ANCHORS.STATUS.y;
-      var ys = [ay, ay + 12, ay + 24], colors = ['#e5bd42', '#e45656', armorMax ? '#55cfee' : '#777'], icons = ['status_xp', 'status_hp', 'status_armor'];
+      var ay=Math.max(c.MARGIN-c.LEVEL_Y,sy+CONFIG.CHARACTER.ANCHORS.STATUS.y);
+      var ys = [ay, ay+c.GAP, ay+c.GAP*2], colors = ['#e5bd42', '#e45656', armorMax ? '#55cfee' : '#777'], icons = ['status_xp', 'status_hp', 'status_armor'];
+      label(ctx,CONFIG.TEXT.LEVEL(ExpLevelUp.level),sx,ay+c.LEVEL_Y,c.FONT,CONFIG.COLORS.TEXT,'center',true);
       for (var i = 0; i < 3; i++) {
-        this._playerStatusSmooth[i] += (targets[i] - this._playerStatusSmooth[i]) * .085;
-        var img = this.icon(icons[i]); if (img) ctx.drawImage(img, sx - w / 2 - 22, ys[i] - 6, 18, 18);
+        var img = this.icon(icons[i]); if (img) ctx.drawImage(img,sx-w/2-c.ICON-c.ICON_GAP,ys[i]+h/2-c.ICON/2,c.ICON,c.ICON);
         ctx.fillStyle = 'rgba(4,10,12,.78)'; ctx.fillRect(sx - w / 2, ys[i], w, h);
-        ctx.fillStyle = colors[i]; ctx.fillRect(sx - w / 2, ys[i], w * Math.max(0, Math.min(1, this._playerStatusSmooth[i])), h);
+        ctx.fillStyle = colors[i]; ctx.fillRect(sx - w / 2, ys[i], w * Math.max(0, Math.min(1,targets[i])), h);
       }
-      if (CONFIG.WEAPONS.FIREARMS[root.WeaponProgress.selected] && !root.PulseGun.reloading) label(ctx, Math.max(0, Math.ceil(root.PulseGun.ammo)) + '/' + root.PulseGun.getMagazineSize(), sx + 28, sy - 40, 14, '#ffd166', 'left', true);
     };
-    function drawHpLane(ctx) {
-      var x = 20,
-        y = 72,
-        w = 430,
-        h = 32,
-        r = Math.max(0, Player.hp / Player.maxHp);
-      box(ctx, x, y, w, h, 12, CONFIG.COLORS.HP_BACKGROUND, CONFIG.COLORS.HP_BORDER);
-      ctx.save();
-      UI.roundedRectPath(ctx, x, y, w * r, h, 12);
-      ctx.fillStyle = r < .3 ? CONFIG.COLORS.HP_LOW : CONFIG.COLORS.HP_FILL;
-      ctx.fill();
-      ctx.restore();
-      label(ctx, 'HP ' + Math.ceil(Player.hp) + ' / ' + Math.ceil(Player.maxHp), x + w / 2, y + h / 2, 17, '#fff', 'center', true);
-      var armorMax = Math.max(Player.armorMax || 0, Player.upgradeShieldMax || 0, Player.shield || 0);
-      var ar = armorMax > 0 ? Math.max(0, Player.shield / armorMax) : 0;
-      ctx.fillStyle = armorMax > 0 ? 'rgba(16,48,60,.95)' : 'rgba(80,84,85,.85)'; ctx.fillRect(x, y - 9, w, 6);
-      if (ar > 0) { ctx.fillStyle = '#59d8f3'; ctx.fillRect(x, y - 9, w * Math.min(1, ar), 6); }
-      ctx.strokeStyle = armorMax > 0 ? '#9af2ff' : '#777'; ctx.lineWidth = 1; ctx.strokeRect(x, y - 9, w, 6);
-      if (Player.reviveCharges > 0) {
-        label(ctx, '复活 ×' + Player.reviveCharges, 478, y + h / 2, 18, '#e0b6ff', 'left', true);
-      }
-      if (CONFIG.WEAPONS.FIREARMS[root.WeaponProgress.selected]) {
-        var firearm = CONFIG.WEAPONS.FIREARMS[root.WeaponProgress.selected], weaponIcon = UI.icon(firearm.ICON);
-        if (weaponIcon) ctx.drawImage(weaponIcon, 612, y + 3, 26, 26);
-        label(ctx, Math.max(0, Math.ceil(root.PulseGun.ammo)) + '/' + root.PulseGun.getMagazineSize(), 720, y + h / 2, 17, '#ffd166', 'right', true);
-      }
-    }
-    function drawExpLane(ctx) {
-      var x = 20,
-        y = 110,
-        w = 710,
-        h = 24,
-        r = ExpLevelUp.need ? ExpLevelUp.exp / ExpLevelUp.need : 0;
-      box(ctx, x, y, w, h, 10, CONFIG.COLORS.EXP_BACKGROUND, CONFIG.COLORS.EXP_BORDER);
-      ctx.save();
-      UI.roundedRectPath(ctx, x, y, w * r, h, 10);
-      ctx.fillStyle = CONFIG.COLORS.EXP_FILL;
-      ctx.fill();
-      ctx.restore();
-      label(ctx, 'Lv.' + ExpLevelUp.level + '   EXP ' + Math.floor(ExpLevelUp.exp) + ' / ' + ExpLevelUp.need, x + 16, y + h / 2, 15, '#fff', 'left', true);
-    }
     function drawBossLane(ctx) {
       var bs = Enemy.getActiveBosses();
       for (var i = 0; i < bs.length; i++) {
         var b = bs[i],
-          y = 148 + i * 20,
-          x = 20,
-          w = 710,
+          y = CONFIG.UI.BOSS_BAR_Y + i * CONFIG.BOSS.BAR_GAP,
+          x = 280,
+          w = 450,
           h = 14,
           r = b.maxHp ? b.hp / b.maxHp : 0,
-          name = b.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED ? CONFIG.TEXT.BOSS_RANGED_NAME : CONFIG.TEXT.BOSS_MELEE_NAME;
+          name = b.archetype ? b.archetype.NAME : b.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED ? CONFIG.TEXT.BOSS_RANGED_NAME : CONFIG.TEXT.BOSS_MELEE_NAME;
         ctx.fillStyle = 'rgba(25,5,28,.9)';
         ctx.fillRect(x, y, w, h);
         ctx.fillStyle = '#d64141';

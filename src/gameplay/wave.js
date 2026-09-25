@@ -28,7 +28,11 @@
       this.waveRest = 2;
       this.waveQuota = 0;
       this.eliteQuota = 0;
-      this.eliteTimer = 60;
+      this.eliteTimer = CONFIG.V20.ELITE_GAP;
+      this.eliteSpawned = 0;
+      this.bossTimer = 0;
+      this.bossQueue = [];
+      this.bossSpawnPoints = [];
       this.phase = 'normal';
       this.phaseIndex = 0;
       this.phaseTimer = CONFIG.WAVE.PHASES.normal.dur;
@@ -36,27 +40,50 @@
     update: function (dt, elapsed) {
       this.updatePhase(dt);
       this.updateQuota(dt, elapsed);
-      if (this.bossPending && this.bossRemaining > 0) {
-        if (Enemy.activeCount >= CONFIG.ENEMY.POOL_SIZE) Enemy.recycleOneNonBoss();
-        var b = this.spawnType(CONFIG.ENEMY.TYPE_BOSS, elapsed);
-        if (b) {
-          this.bossRemaining -= 1;
-          this.waveBossSpawned = this.bossRemaining <= 0;
+      this.bossTimer = Math.max(0, this.bossTimer - dt);
+      if (this.bossQueue.length && this.bossTimer <= 0 && this.activeFamilyCount('boss') < CONFIG.V20.BOSS_ACTIVE_MAX) {
+        var boss = this.spawnBoss(this.bossQueue[0]);
+        if (boss) {
+          this.bossQueue.shift(); this.bossRemaining = this.bossQueue.length;
           this.bossPending = this.bossRemaining > 0;
+          this.waveBossSpawned = this.bossRemaining === 0;
+          this.bossTimer = CONFIG.V20.BOSS_GAP;
         }
       }
-      if (this.rangedPending && !this.waveRangedSpawned) {
-        if (Enemy.activeCount >= CONFIG.ENEMY.POOL_SIZE) Enemy.recycleOneNonBoss();
-        var r = this.spawnType(CONFIG.ENEMY.TYPE_BOSS_RANGED, elapsed);
-        if (r) {
-          if (this.waveIndex % CONFIG.BALANCE.DUAL_BOSS_WAVE === 0) {
-            r.maxHp = Math.ceil(r.maxHp * CONFIG.BALANCE.DUAL_RANGED_HP);
-            r.hp = r.maxHp;
-          }
-          this.waveRangedSpawned = true;
-          this.rangedPending = false;
+    },
+    activeFamilyCount: function (family) {
+      var n = 0;
+      for (var i = 0; i < Enemy.pool.length; i++) if (Enemy.pool[i].active && Enemy.pool[i].family === family && !Enemy.pool[i].isSummonTurret) n++;
+      return n;
+    },
+    remaining: function () {
+      var n = this.waveQuota + this.eliteQuota + this.bossQueue.length;
+      for (var i = 0; i < Enemy.pool.length; i++) if (Enemy.pool[i].active && Enemy.pool[i].waveId === this.waveIndex) n++;
+      return n;
+    },
+    spawnBoss: function (archetypeId) {
+      if (Enemy.activeCount >= CONFIG.ENEMY.POOL_SIZE) return null;
+      var cfg = CONFIG.V20, def = null;
+      for (var i = 0; i < cfg.BOSSES.length; i++) if (cfg.BOSSES[i].ID === archetypeId) def = cfg.BOSSES[i];
+      if (!def) return null;
+      var hw = CONFIG.VIEW.WIDTH / (2 * Camera.zoom), hh = CONFIG.VIEW.HEIGHT / (2 * Camera.zoom);
+      for (var t = 0; t < cfg.BOSS_SPAWN_TRIES; t++) {
+        var a = Math.random() * Math.PI * 2, d = cfg.BOSS_MIN_DISTANCE + Math.random() * Math.max(hw, hh);
+        var x = Player.x + Math.cos(a) * d, y = Player.y + Math.sin(a) * d;
+        var radius = def.RADIUS || CONFIG.ENEMY.TYPES[def.BASE].RADIUS;
+        if (x < radius + cfg.BOSS_SPAWN_MARGIN || y < radius + cfg.BOSS_SPAWN_MARGIN || x > CONFIG.WORLD.WIDTH - radius - cfg.BOSS_SPAWN_MARGIN || y > CONFIG.WORLD.HEIGHT - radius - cfg.BOSS_SPAWN_MARGIN) continue;
+        if (Math.abs(x - Camera.cx) < hw + radius && Math.abs(y - Camera.cy) < hh + radius) continue;
+        if (root.WallCollision.inside(x, y, def.RADIUS || CONFIG.ENEMY.TYPES[def.BASE].RADIUS)) continue;
+        var clear = true;
+        for (var j = 0; j < this.bossSpawnPoints.length; j++) {
+          var p = this.bossSpawnPoints[j], da = Math.abs(Math.atan2(Math.sin(a - p.a), Math.cos(a - p.a)));
+          if (Math.hypot(x-p.x, y-p.y) < cfg.BOSS_PAIR_DISTANCE || da < cfg.BOSS_PAIR_ANGLE) { clear = false; break; }
         }
+        if (!clear) continue;
+        var e = Enemy.spawn(x, y, def.BASE, 1);
+        if (e) { e.archetypeId = def.ID; e.waveId = this.waveIndex; Enemy.applyArchetype(e); this.bossSpawnPoints.push({x:x,y:y,a:a}); return e; }
       }
+      return null;
     },
     getHpMultiplier: function () {
       var w = Math.max(1, this.waveIndex),
@@ -86,7 +113,6 @@
       this.phaseTimer = this.getPhaseDef().dur;
       // 精英阶段补一只精英，要求改路线；notable 阶段（精英/BOSS/整理）播横幅，普通/占优不刷屏。
       if (this.phase === 'elite') {
-        if (Enemy.activeCount < CONFIG.ENEMY.POOL_SIZE) this.spawnType(CONFIG.ENEMY.TYPE_ELITE, Game.survivedSeconds);
         this.phaseBanner(CONFIG.TEXT.PHASE_ELITE);
       } else if (this.phase === 'boss') {
         this.phaseBanner(CONFIG.TEXT.PHASE_BOSS);
@@ -125,13 +151,20 @@
       var n = Math.random() * (wts.walker + wts.runner + wts.tank);
       return n < wts.walker ? CONFIG.ENEMY.TYPE_WALKER : n < wts.walker + wts.runner ? CONFIG.ENEMY.TYPE_RUNNER : CONFIG.ENEMY.TYPE_TANK;
     },
+    rollArchetype: function (family) {
+      var list = family === 'elite' ? CONFIG.V20.ELITES : CONFIG.V20.NORMALS, total = 0, i;
+      for (i=0;i<list.length;i++) if (this.waveIndex >= list[i].UNLOCK) total += list[i].WEIGHT || 1;
+      var n = Math.random()*total;
+      for (i=0;i<list.length;i++) if (this.waveIndex >= list[i].UNLOCK) { n -= list[i].WEIGHT || 1; if (n <= 0) return list[i]; }
+      return list[0];
+    },
     spawnType: function (typeIndex, elapsedSeconds) {
       if (Enemy.activeCount >= CONFIG.ENEMY.POOL_SIZE) return null;
       var firstSide = Math.floor(Math.random() * 4);
       for (var offset = 0; offset < 4; offset++) {
         var side = (firstSide + offset) % 4;
         var enemy = this.trySpawnOnSide(side, typeIndex, elapsedSeconds);
-        if (enemy) return enemy;
+        if (enemy) { enemy.waveId = this.waveIndex; return enemy; }
       }
       return null;
     },
@@ -162,28 +195,39 @@
     },
     // 每波创建配额；十波 Boss 独立记账。
     beginWave: function () {
+      this.waveRest = 0;
       this.waveIndex++;
       this.waveBossSpawned = false;
       this.waveRangedSpawned = false;
       this.theme = null;
       // v012 #73 撤离激活后难度惩罚：刷怪配额 ×SPAWN_QUOTA_MULT（按波重算，激活后的新一波生效）。
       var quotaMul = this.extractionSurge ? CONFIG.EXTRACTION.SPAWN_QUOTA_MULT : 1;
-      this.waveQuota = Math.floor((8 + this.waveIndex * 4) * quotaMul);
-      this.eliteQuota = Math.floor((this.waveIndex >= 3 ? 1 + Math.floor((this.waveIndex - 3) / 2) : 0) * quotaMul);
+      var q = CONFIG.V20.NORMAL_QUOTA;
+      var base = this.waveIndex < 10 ? q.EARLY_BASE + this.waveIndex * q.EARLY_STEP : this.waveIndex === 10 ? q.WAVE_TEN : this.waveIndex < 20 ? Math.max(q.LATE_FLOOR, q.LATE_START - (this.waveIndex - 10) * q.LATE_STEP) : q.ENDGAME;
+      this.waveQuota = Math.floor(base * quotaMul);
+      this.eliteQuota = Math.min(CONFIG.V20.ELITE_MAX, this.waveIndex >= 3 ? 1 + Math.floor((this.waveIndex-3)/4) : 0);
       this.normalTimer = 0;
+      this.eliteTimer = CONFIG.V20.ELITE_GAP;
+      this.eliteSpawned = 0;
+      this.bossTimer = 0;
+      this.bossQueue = [];
+      this.bossSpawnPoints = [];
       if (root.FX) {
         root.FX.wave = this.waveIndex - 1;
       }
       this.bossPending = this.waveIndex % CONFIG.BALANCE.BOSS_EVERY === 0;
-      this.bossRemaining = this.bossPending ? Math.max(1, Math.min(CONFIG.BALANCE.BOSS_MAX_COUNT, Math.round(this.waveIndex / CONFIG.BALANCE.BOSS_COUNT_DIVISOR))) : 0;
-      this.rangedPending = this.waveIndex % CONFIG.BALANCE.DUAL_BOSS_WAVE === 0;
+      var bossCount = this.bossPending ? (this.waveIndex >= CONFIG.BALANCE.DUAL_BOSS_WAVE ? 3 : 1) : 0;
+      var eligible = CONFIG.V20.BOSSES.filter(function(d){ return d.UNLOCK <= this.waveIndex; }, this);
+      for (var b = 0; b < bossCount; b++) this.bossQueue.push(eligible[(this.waveIndex / CONFIG.BALANCE.BOSS_EVERY + b - 1) % eligible.length | 0].ID);
+      this.bossRemaining = this.bossQueue.length;
+      this.rangedPending = false;
       if (this.bossPending) this.waveQuota = Math.max(4, Math.floor(this.waveQuota * CONFIG.BALANCE.BOSS_NORMAL_QUOTA_RATIO));
       var themed = CONFIG.WAVE_THEMES && CONFIG.WAVE_THEMES.WAVES;
       if (themed && themed.indexOf(this.waveIndex) >= 0) {
         var ids = Object.keys(CONFIG.WAVE_THEMES.KINDS);
         this.theme = ids[Math.floor(Math.random() * ids.length)];
         var def = CONFIG.WAVE_THEMES.KINDS[this.theme];
-        if (def && def.ELITE) this.eliteQuota += def.ELITE;
+        if (def && def.ELITE) this.eliteQuota = Math.min(CONFIG.V20.ELITE_MAX, this.eliteQuota + def.ELITE);
       }
     },
     // 单帧最多补发8只，避免恢复前台瞬间刷爆。
@@ -196,21 +240,32 @@
       this.normalTimer -= dt;
       var guard = 8;
       while (this.waveQuota > 0 && this.normalTimer <= 0 && Enemy.activeCount < CONFIG.ENEMY.POOL_SIZE && guard-- > 0) {
-        if (this.spawnNormal(elapsed)) this.waveQuota--;
+        var normal = this.rollArchetype('normal');
+        var group = Math.min(this.waveQuota, normal.GROUP || 1);
+        var groupX=0,groupY=0;
+        for (var si=0;si<group;si++) {
+          var spawned=null;
+          if(si>0){
+            var gx=groupX+(si%2?1:-1)*Math.ceil(si/2)*normal.GROUP_SPACING,gy=groupY;
+            if(gx>normal.RADIUS && gx<CONFIG.WORLD.WIDTH-normal.RADIUS && !root.WallCollision.inside(gx,gy,normal.RADIUS))spawned=Enemy.spawn(gx,gy,normal.BASE,this.getHpMultiplier());
+            if(spawned)spawned.waveId=this.waveIndex;
+          }
+          if(!spawned)spawned=this.spawnType(normal.BASE, elapsed);
+          if (!spawned) break;
+          if(si===0){groupX=spawned.x;groupY=spawned.y;}
+          spawned.archetypeId = normal.ID; Enemy.applyArchetype(spawned); this.waveQuota--;
+        }
         // v014 #94 阶段配额倍率：间隔 / quota（boss 阶段 1.5x 更快，lull 0.3x 放慢喘息）。
         this.normalTimer += this.getSpawnInterval(elapsed) / this.getPhaseQuota();
       }
-      if (this.eliteQuota > 0 && Enemy.activeCount < CONFIG.ENEMY.POOL_SIZE) {
-        if (this.spawnType(CONFIG.ENEMY.TYPE_ELITE, elapsed)) this.eliteQuota--;
-      }
       this.eliteTimer -= dt;
-      if (this.eliteTimer <= 0) {
-        if (Enemy.activeCount < CONFIG.ENEMY.POOL_SIZE) this.spawnType(CONFIG.ENEMY.TYPE_ELITE, elapsed);
-        this.eliteTimer = 60;
+      if(this.eliteSpawned>=CONFIG.V20.ELITE_MAX)this.eliteQuota=0;
+      if (this.eliteQuota > 0 && this.eliteTimer <= 0 && Enemy.activeCount < CONFIG.ENEMY.POOL_SIZE) {
+        var elite = this.spawnType(CONFIG.ENEMY.TYPE_ELITE, elapsed);
+        if (elite) { elite.archetypeId = this.rollArchetype('elite').ID; Enemy.applyArchetype(elite); this.eliteQuota--; this.eliteSpawned++; this.eliteTimer = CONFIG.V20.ELITE_GAP; }
       }
-      if (this.waveQuota <= 0 && this.eliteQuota <= 0) {
-        this.pressureWait += dt;
-        if (Enemy.activeCount <= CONFIG.PRODUCT.WAVE_REMAINING || this.pressureWait >= CONFIG.PRODUCT.WAVE_MAX_WAIT) {
+      if (this.waveQuota <= 0 && this.eliteQuota <= 0 && this.bossQueue.length === 0) {
+        if (this.remaining() === 0) {
           this.waveRest = CONFIG.PRODUCT.WAVE_REST;
           this.pressureWait = 0;
         }
@@ -250,6 +305,10 @@
         this.banner(CONFIG.TEXT.PRODUCT.FIRST);
       }
       if (this.active) {
+        if(this.active.id==='elite_rush' && this.active.pendingElites>0 && Spawner.eliteTimer<=0 && Spawner.eliteSpawned<CONFIG.V20.ELITE_MAX){
+          var eventElite=Spawner.spawnType(CONFIG.ENEMY.TYPE_ELITE,Game.survivedSeconds);
+          if(eventElite){eventElite.waveId=0;eventElite.archetypeId=Spawner.rollArchetype('elite').ID;Enemy.applyArchetype(eventElite);this.active.pendingElites--;Spawner.eliteSpawned++;Spawner.eliteQuota=Math.min(Spawner.eliteQuota,CONFIG.V20.ELITE_MAX-Spawner.eliteSpawned);Spawner.eliteTimer=CONFIG.V20.ELITE_GAP;}
+        }
         this.active.t -= dt;
         this.tickActive(dt);
         if (this.active.t <= 0) {
@@ -281,6 +340,7 @@
       for (var id in kinds) {
         var def = kinds[id];
         if (wave < def.MIN_WAVE) continue;
+        if (id==='elite_rush' && Spawner.eliteSpawned>=CONFIG.V20.ELITE_MAX) continue;
         // v012 #76 空投已改为波次触发（WEIGHT=0），不再走计时器加权池。
         if (id === 'airdrop') continue;
         for (var w = 0; w < (def.WEIGHT || 1); w++) pool.push(id);
@@ -319,7 +379,7 @@
         this.banner(CONFIG.TEXT.PRODUCT.AIRDROP_MARKED);
         if (root.Settings && root.Settings.shake) Camera.startShake(def.LAND_SHAKE * 0.65, def.LAND_SHAKE_TIME);
       } else if (id === 'elite_rush') {
-        for (var i = 0; i < def.EXTRA_ELITES; i++) Spawner.spawnType(CONFIG.ENEMY.TYPE_ELITE, Game.survivedSeconds);
+        this.active.pendingElites=def.EXTRA_ELITES;
         // v014 #97 精英狂潮开始提示
         this.banner(CONFIG.TEXT.PRODUCT.ELITE_RUSH_START);
       } else if (id === 'grid_surge') {

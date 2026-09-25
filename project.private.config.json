@@ -18,6 +18,7 @@
     "checkInvalidKey": true,
     "ignoreDevUnusedFiles": true,
     "bigPackageSizeSupport": false,
-    "useIsolateContext": false
+    "useIsolateContext": false,
+    "useGlassEaselForWxml": false
   }
 }

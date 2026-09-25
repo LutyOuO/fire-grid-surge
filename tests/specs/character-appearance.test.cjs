@@ -11,8 +11,9 @@ for(const mode of ['h5','wx']) {
  g.Player.updateAppearance(1/60);g.Enemy.findNearest=nearest;
  assert.equal(g.Player.visual.facing,3);assert(g.Player.visual.moving);
  const s=g.CharacterView.makeState();s.facing=3;
- for(const degrees of [43,47,52,46,50])g.CharacterView.setDirection(s,degrees*Math.PI/180);
- assert.equal(s.facing,3,'滞回角以内不应翻面');g.CharacterView.setDirection(s,60*Math.PI/180);assert.equal(s.facing,0);
+ for(const degrees of [5,7,9,-5,-7])g.CharacterView.setDirection(s,degrees*Math.PI/180);
+ assert.equal(s.facing,3,'滞回角以内不应翻面');g.CharacterView.setDirection(s,30*Math.PI/180);assert.equal(s.facing,5);
+ for(let d=0;d<8;d++){s.facing=0;g.CharacterView.setDirection(s,C.CHARACTER.DIRECTION_ANGLES[d]);assert.equal(s.facing,d,'八向 '+d+' 均可到达');}
  // 改外观/预览不能改变属性、出战选择、拥有记录；已开局外观保持快照。
  const snapshot=g.Player.runLook, original=JSON.stringify(g.Meta.data), hp=g.Player.hp,ammo=g.PulseGun.ammo;
  g.Wardrobe.mode='outfit';g.Wardrobe.openDetail(g.Wardrobe.outfits.find(d=>d[0]==='special'));
@@ -21,13 +22,45 @@ for(const mode of ['h5','wx']) {
  assert.equal(JSON.stringify(g.Meta.data),original);assert.equal(g.Player.hp,hp);assert.equal(g.PulseGun.ammo,ammo);
  assert.equal(snapshot.outfit,'default');
  // 六武器与三身体的真实绘制、缺图回退、异步加载与有界缓存。
- for(const id of ['default','special','medic','cowboy'])for(const weapon of Object.keys(C.CHARACTER.WEAPONS)) {
+ for(const id of [...Object.keys(C.CHARACTER.SKINS),'cowboy'])for(const weapon of Object.keys(C.CHARACTER.WEAPONS)) {
    const look=g.CharacterView.snapshot(id,weapon);
-   for(let d=0;d<4;d++){s.facing=d;s.angle=C.CHARACTER.DIRECTION_ANGLES[d];g.CharacterView.draw(r.ctx,200,200,1,look,s);}
+   for(let d=0;d<8;d++){s.facing=d;s.angle=C.CHARACTER.DIRECTION_ANGLES[d];g.CharacterView.draw(r.ctx,200,200,1,look,s);}
    r.finishImages();g.CharacterView.draw(r.ctx,200,200,1,look,s);
  }
  for(let i=0;i<24;i++){g.Platform.characterImage(['default','special','medic'][i%3]);r.finishImages();}
  assert(g.Platform.characterKeys.length<=2);assert(Object.keys(g.Platform.images).filter(k=>/^character_(default|special|medic)$/.test(k)).length<=2);
+ // 加载的图集必须走真实分层路径，不能让旧四列素材一直退回简化小人。
+ for(const id of Object.keys(C.CHARACTER.SKINS)) {
+   g.Platform.characterImage(id);r.finishImages();const img=g.Platform.characterImage(id);
+   assert.equal(img.width,C.CHARACTER.CELL*8);assert.equal(img.height,C.CHARACTER.CELL*5);
+   const count=r.drawnImages.length;
+   g.CharacterView.draw(r.ctx,200,200,1,g.CharacterView.snapshot(id,'pistol'),s);
+   assert(r.drawnImages.length-count>=5,'未绘制五层身体 '+id);
+ }
+ // 相同速度经过相同时间应产生相同步态；松开摇杆后的姿势平滑归零。
+ function gait(fps) {
+   const a=g.CharacterView.makeState();
+   for(let i=0;i<fps;i++)g.CharacterView.advanceGait(a,1/fps,180,1,0);
+   return a;
+ }
+ const gait60=gait(60),gait120=gait(120);
+ assert(Math.abs(gait60.step-gait120.step)<1e-8);assert(Math.abs(gait60.pace-gait120.pace)<1e-8);
+ const beforeStop=gait60.pace;g.CharacterView.advanceGait(gait60,1/60,0,0,0);
+ assert(gait60.pace>0&&gait60.pace<beforeStop);
+ for(let i=0;i<120;i++)g.CharacterView.advanceGait(gait60,1/60,0,0,0);
+ assert(gait60.pace<1e-8);
+ // 八方向、六武器、各动作的视觉枪口必须使用同一姿势；绘制不推进时间。
+ for(const weapon of Object.keys(C.CHARACTER.WEAPONS))for(let dir=0;dir<8;dir++)for(const reload of [0,.3,.7]) {
+   const a=gait(60);a.time=1;a.facing=dir;a.angle=C.CHARACTER.DIRECTION_ANGLES[dir];a.reload=reload;a.recoil=.06;
+   const pose=g.CharacterView.weaponPose(a,weapon,{}),m={};
+   g.CharacterView.muzzle(0,0,a.angle,weapon,dir,m,a);
+   const def=C.CHARACTER.WEAPONS[weapon],t=C.CHARACTER.TEMPLATES[def.TEMPLATE];
+   const dx=((def.MUZZLE_X||t.MUZZLE_X)-t.GRIP_X)*t.WIDTH,dy=(t.MUZZLE_Y-t.GRIP_Y)*t.HEIGHT*(Math.cos(pose.angle)<0?-1:1),scale=C.CHARACTER.HEIGHT/96;
+   assert(Math.abs(m.x-(pose.x+Math.cos(pose.angle)*dx-Math.sin(pose.angle)*dy)*scale)<1e-8);
+   assert(Math.abs(m.y-(pose.y+Math.sin(pose.angle)*dx+Math.cos(pose.angle)*dy)*scale)<1e-8);
+   const saved=JSON.stringify(a);g.CharacterView.draw(r.ctx,200,200,1,g.CharacterView.snapshot('default',weapon),a);
+   assert.equal(JSON.stringify(a),saved,'绘制不得推进动画');
+ }
  g.Platform.imageReady.character_default=false;g.Platform.imageFailed.character_default=true;
  g.CharacterView.draw(r.ctx,200,200,1,g.CharacterView.snapshot('default'),s);
  // 普通子弹枪口与发射口一致，枪口到脚底间的细墙不可绕过。

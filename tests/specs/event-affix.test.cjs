@@ -43,6 +43,7 @@ for (var i = 0; i < Exp.candidateIndices.length; i++) flamer[C.UPGRADES.DEFINITI
 assert(flamer.NAPALM && flamer.INFERNO, '喷火局缺少史诗/传说词条');
 
 assert.strictEqual(C.CONTENT.ACHIEVEMENT_COUNT, global.Achievements.defs.length, '成就数量未跟配置走');
-assert.strictEqual(global.Achievements.defs.length, 35, 'A30-A35 未加入');
+assert.strictEqual(global.Achievements.defs.length, 36, 'A30-A36 未加入');
+assert.strictEqual(global.Achievements.defs[35][6], 'rainbow_pony', 'A36 彩虹小马荣誉外观奖励');
 
-console.log('PASS: 事件/词缀互斥/新词条过滤/成就35');
+console.log('PASS: 事件/词缀互斥/新词条过滤/成就36');

@@ -29,6 +29,7 @@
       upgrades.gadget = this.createDefaultGadget();
       return {
         version: CONFIG.SAVE.VERSION,
+        tutorial: { enabled:true, done:false, step:0, gift:false, enemies:{}, items:{} },
         survivorCoins: 0,
         upg: upgrades,
         bestWave: 0,
@@ -157,6 +158,15 @@
       var mastery = saved.weaponMastery && typeof saved.weaponMastery === 'object' ? saved.weaponMastery : {};
       for (var masteryId in this.data.weaponMastery) this.data.weaponMastery[masteryId] = this.safeInt(mastery[masteryId], 0);
       this.data.runs = this.safeInt(saved.runs, 0);
+      var tutorial=saved.tutorial;
+      if(tutorial && typeof tutorial==='object'){
+        this.data.tutorial.enabled=tutorial.enabled!==false;
+        this.data.tutorial.done=tutorial.done===true;
+        this.data.tutorial.step=Math.min(CONFIG.TEXT.TUTORIAL.STEPS.length,this.safeInt(tutorial.step,0));
+        this.data.tutorial.gift=tutorial.gift===true;
+        for(var enemyId in CONFIG.TEXT.TUTORIAL.ENEMIES)if(tutorial.enemies&&tutorial.enemies[enemyId]===true)this.data.tutorial.enemies[enemyId]=true;
+        for(var itemId in CONFIG.TEXT.TUTORIAL.ITEMS)if(tutorial.items&&tutorial.items[itemId]===true)this.data.tutorial.items[itemId]=true;
+      } else if(this.data.runs>0){this.data.tutorial.enabled=false;this.data.tutorial.done=true;}
       // v012 #75 地图解锁进度：只信任 LAYOUTS 范围内的整数索引，永远保底解锁第 0 张。
       var maxMap = (CONFIG.FIELD.LAYOUTS || []).length - 1;
       var savedUnlocked = Array.isArray(saved.unlockedMaps) ? saved.unlockedMaps : [];
@@ -301,6 +311,10 @@
       if (!g) return 0;
       return this.safeInt(g[itemId], 0);
     },
+    getGadgetAmount: function (gadgetId, itemId) {
+      var def=this.getGadgetDef(gadgetId,itemId);
+      return def?this.getGadgetLevel(gadgetId,itemId)*def.AMOUNT:0;
+    },
     getGadgetPrice: function (gadgetId, itemId) {
       var def = this.getGadgetDef(gadgetId, itemId);
       if (!def) return 0;
@@ -401,6 +415,7 @@
       this.refreshMapUnlocks();
       this.save();
       this.recordRunAchievements(seconds, kills, wave, coins);
+      if (root.Achievements && root.Achievements.recordRun) root.Achievements.recordRun(Game.exitType, wave);
     },
     // v013 #83 挂机奖励削弱：离线产出固定为 CONFIG.META.OFFLINE_BASE_PER_MINUTE（约 0.5/分钟）。
     // 不再按最佳波次(waveMultiplier)与贪婪倍率(greedMultiplier)放大——挂机只是补充，不随养成膨胀。

@@ -5,7 +5,7 @@
   // item.js — 道具与掉落模块
   // 职责：RunStats/Experience/ExpLevelUp/CoinDrops/PowerUps
   // 主要对象：RunStats(calculateCoins/canDoubleCoins/adRefreshUsed/...), Experience(update/draw/initPool),
-  //           ExpLevelUp(prepareOffers/handleInput/rollRarity/refreshOffersWithRareGuarantee),
+  //           ExpLevelUp(prepareOffers/handleInput/rollRarity/refreshOffers),
   //           CoinDrops(update/draw), PowerUps(handleInput/update/useBomb/inventory)
   // 全局状态：G.run(RunStats), G.bag(PowerUps.inventory 道具栏)
   // #57 磁铁改为主动道具：3 秒全图高速吸附（magnetTimer）
@@ -86,7 +86,8 @@
     extractContinueEstimate: function () {
       var cur = root.Spawner.waveIndex;
       var every = CONFIG.EXTRACTION.WAVE_EVERY;
-      var perWaveNormal = 8 + Math.max(1, cur) * 4; // 当前每波普通怪配额量级（粗估）
+      var nq=CONFIG.V20.NORMAL_QUOTA, next=cur+1;
+      var perWaveNormal=next<10?nq.EARLY_BASE+nq.EARLY_STEP*next:next===10?nq.WAVE_TEN:next<20?Math.max(nq.LATE_FLOOR,nq.LATE_START-(next-10)*nq.LATE_STEP):nq.ENDGAME;
       var estNormal = this.killNormal + perWaveNormal * every;
       var estElite = this.killElite + 2;            // 粗估再撑 5 波多 2 精英
       var estLevel = ExpLevelUp.level + 1;          // 粗估再升 1 级
@@ -235,7 +236,7 @@
       }
       if (distanceSq > 0) {
         var distance = Math.sqrt(distanceSq);
-        var speed = magnet ? CONFIG.POWERUPS.MAGNET_PULL_SPEED : CONFIG.EXPERIENCE.FLY_SPEED;
+        var speed = magnet ? (CONFIG.POWERUPS.MAGNET_PULL_SPEED * (1 + Meta.getGadgetAmount('magnet', 'speed'))) : CONFIG.EXPERIENCE.FLY_SPEED;
         var moveDistance = Math.min(distance, speed * dt);
         gem.x += dx / distance * moveDistance;
         gem.y += dy / distance * moveDistance;
@@ -337,19 +338,13 @@
       var legendarySeen = false;
       var goldSeen = false;
       for (var i = 0; i < this.offerCount; i++) {
-        var rarity = this.rollRarity();
+        var rarity = this.rollAvailableRarity();
+        if (!rarity) { this.offerCount=i; break; }
         var matching = [];
         for (var c = 0; c < this.candidateIndices.length; c++) {
           var candidate = CONFIG.UPGRADES.DEFINITIONS[this.candidateIndices[c]];
           // #84 第五档 RAINBOW(彩) 复用 LEGENDARY(金) 词条池：彩虹只换视觉光效，不新增词条。
-          if (candidate.RARITY && (candidate.RARITY === rarity.ID || (rarity.ID === 'RAINBOW' && candidate.RARITY === 'LEGENDARY')) || !candidate.RARITY && (rarity.ID === 'COMMON' || rarity.ID === 'RARE')) matching.push(c);
-        }
-        // 某档固定池已满时降级抽取，保证三张卡仍可正常生成。
-        if (!matching.length) {
-          rarity = CONFIG.UPGRADES.RARITIES[Math.random() < 0.6875 ? 0 : 1];
-          for (var c = 0; c < this.candidateIndices.length; c++) {
-            if (!CONFIG.UPGRADES.DEFINITIONS[this.candidateIndices[c]].RARITY) matching.push(c);
-          }
+          if (candidate.RARITY === rarity.ID || (rarity.ID === 'RAINBOW' && candidate.RARITY === 'LEGENDARY')) matching.push(c);
         }
         if (!matching.length) {
           this.offerCount = i;
@@ -360,10 +355,10 @@
         var preferred = [];
         for (var m = 0; m < matching.length; m++) {
           var def = CONFIG.UPGRADES.DEFINITIONS[this.candidateIndices[matching[m]]];
-          var isWeapon = def.weapon === curWeapon;
+          var scope=CONFIG.UPGRADES.WEAPON_IDS[curWeapon]||curWeapon;
+          var isWeapon = def.weaponScope === scope || def.weaponScope === 'firearm' && !!CONFIG.WEAPONS.FIREARMS[curWeapon];
           var survival = ['MAX_HP', 'MOVE_SPEED', 'PICKUP_RADIUS'].indexOf(def.EFFECT) >= 0;
-          // #93 新手保护：前 EARLY_CHOICES 次升级，前两张都优先当前主武器专属词条（保底 ≥2 张主武器相关），
-          // 第三张偏生存/功能，保证三卡方向不全是纯数值。#58 已过滤掉他武器专属，这里只是提高主武器保底。
+          // 前期在已抽中的品质档内倾向当前武器和生存词条；不改变品质概率。
           var wanted = early ? (i < 2 ? isWeapon : survival) :
             i === 0 ? isWeapon : i === 1 ? survival : false;
           if (wanted) preferred.push(matching[m]);
@@ -379,6 +374,11 @@
         offer.description = this.buildDescription(definition, rarity);
         this.candidateIndices[pick] = this.candidateIndices[this.candidateIndices.length - 1];
         this.candidateIndices.length -= 1;
+        for(var mx=0;mx<CONFIG.UPGRADES.MUTEX.length;mx++){
+          var pair=CONFIG.UPGRADES.MUTEX[mx],other=pair[0]===definition.ID?pair[1]:pair[1]===definition.ID?pair[0]:null;
+          if(!other)continue;
+          for(var ix=this.candidateIndices.length-1;ix>=0;ix--)if(CONFIG.UPGRADES.DEFINITIONS[this.candidateIndices[ix]].ID===other)this.candidateIndices.splice(ix,1);
+        }
         if (rarity.ID === 'LEGENDARY' || rarity.ID === 'RAINBOW') legendarySeen = true;
         if (rarity.ID === 'LEGENDARY') goldSeen = true;
       }
@@ -403,9 +403,7 @@
       // #58 解锁词条(UNLOCK_FLAME/UNLOCK_CROSSBOW)已被开局武器选择取代：进喷火器/弩箭局时
       // 该武器已解锁，这两个词条在任何局都不再刷出（他武器局已被下方 weapon 规则排除，此处补本武器局）。
       if (definition.EFFECT === 'UNLOCK_FLAME' || definition.EFFECT === 'UNLOCK_CROSSBOW') return false;
-      var w = definition.weapon;
-      var firearm = !!(CONFIG.WEAPONS.FIREARMS && CONFIG.WEAPONS.FIREARMS[curWeapon]);
-      if (w && w !== 'all' && w !== 'blade' && w !== curWeapon && !(firearm && w === 'pistol')) return false;
+      if (!CONFIG.UPGRADES.weaponEligible(definition, curWeapon)) return false;
       if (definition.EFFECT === 'MULTISHOT') return PulseGun.projectileCount < CONFIG.WEAPONS.PULSE.MAX_PROJECTILES;
       if (definition.EFFECT === 'PENETRATION') return PulseGun.penetration < CONFIG.WEAPONS.PULSE.MAX_PENETRATION;
       if (definition.EFFECT === 'CRIT_CHANCE') return Player.critChance < CONFIG.PLAYER.MAX_CRIT_CHANCE;
@@ -426,9 +424,28 @@
       }
       return tiers[0];
     },
+    rollAvailableRarity: function () {
+      var tiers=CONFIG.UPGRADES.RARITIES,weights=CONFIG.UPGRADES.RARITY_WEIGHTS_INRUN,available=[],total=0;
+      for(var i=0;i<tiers.length;i++){
+        var target=tiers[i].ID==='RAINBOW'?'LEGENDARY':tiers[i].ID,found=false;
+        for(var j=0;j<this.candidateIndices.length;j++)if(CONFIG.UPGRADES.DEFINITIONS[this.candidateIndices[j]].RARITY===target){found=true;break;}
+        available[i]=found;if(found)total+=weights[i];
+      }
+      if(total<=0)return null;
+      var roll=Math.random()*total;
+      for(var i=0;i<tiers.length;i++)if(available[i]){roll-=weights[i];if(roll<0)return tiers[i];}
+      return tiers[0];
+    },
     buildDescription: function (definition, rarity) {
       var text = CONFIG.TEXT.UPGRADES[definition.TEXT_KEY];
       var quality = rarity.MULTIPLIER;
+      if(definition.ID.indexOf('V20_')===0){
+        var value=definition.AMOUNT*quality;
+        if(['MOVE_SPEED','CRIT_CHANCE','DAMAGE_REDUCTION','RELOAD_SPEED','PULSE_DAMAGE_PERCENT','FIRE_RATE','SKILL_COOLDOWN'].indexOf(definition.EFFECT)>=0)value*=100;
+        if(['SPREAD_CONTROL','FLAME_ANGLE'].indexOf(definition.EFFECT)>=0)value*=180/Math.PI;
+        if(['MAGAZINE_CAPACITY','PENETRATION','MULTISHOT','BOW_COUNT'].indexOf(definition.EFFECT)>=0)value=Math.round(value);
+        return text.DESC(Math.round(value*100)/100);
+      }
       if (definition.EFFECT === 'PULSE_DAMAGE_PERCENT' || definition.EFFECT === 'FIRE_RATE' || definition.EFFECT === 'MOVE_SPEED' || definition.EFFECT === 'CRIT_CHANCE') {
         return text.DESC(this.toCleanNumber(definition.AMOUNT * quality * 100));
       }
@@ -478,21 +495,8 @@
     toCleanNumber: function (value) {
       return Math.round(value * 10) / 10;
     },
-    refreshOffersWithRareGuarantee: function () {
-      if (!this.prepareOffers()) return false;
-      var hasRareOrBetter = false;
-      for (var i = 0; i < this.offerCount; i++) {
-        if (this.offers[i].rarity.ID !== 'COMMON') {
-          hasRareOrBetter = true;
-          break;
-        }
-      }
-      if (!hasRareOrBetter && this.offerCount > 0) {
-        var guaranteedRarity = CONFIG.UPGRADES.RARITIES[1];
-        this.offers[0].rarity = guaranteedRarity;
-        this.offers[0].description = this.buildDescription(this.offers[0].definition, guaranteedRarity);
-      }
-      return true;
+    refreshOffers: function () {
+      return this.prepareOffers();
     },
     handleInput: function () {
       if (UI.consumeSkipLevelAction()) {
@@ -549,6 +553,25 @@
         PulseGun.penetration = Math.min(CONFIG.WEAPONS.PULSE.MAX_PENETRATION, PulseGun.penetration + this.getDiscreteAmount(amount, quality));
       } else if (definition.EFFECT === 'PICKUP_RADIUS') {
         Player.pickupRadius = Math.min(CONFIG.EXPERIENCE.MAX_PICKUP_RADIUS, Player.pickupRadius + amount * quality);
+      } else if (definition.EFFECT === 'DAMAGE_REDUCTION') {
+        Player.incomingDamageMultiplier *= 1 - amount * quality;
+      } else if (definition.EFFECT === 'RELOAD_SPEED') {
+        PulseGun.reloadMultiplier *= 1 - amount * quality;
+      } else if (definition.EFFECT === 'MAGAZINE_CAPACITY') {
+        PulseGun.magazineBonus += Math.round(amount * quality);
+      } else if (definition.EFFECT === 'BULLET_SPEED') {
+        PulseGun.speedFlat += amount * quality;
+      } else if (definition.EFFECT === 'ARMOR_SHIELD') {
+        Player.upgradeShieldMax += amount * quality;
+        Player.shield += amount * quality;
+      } else if (definition.EFFECT === 'CRIT_DAMAGE') {
+        Player.critDamageBonus += amount * quality;
+      } else if (definition.EFFECT === 'SKILL_COOLDOWN') {
+        Player.skillCooldownMultiplier *= 1 - amount * quality;
+      } else if (definition.EFFECT === 'SPREAD_CONTROL') {
+        PulseGun.spreadBonus = Math.max(-PulseGun.getSpec().SPREAD, PulseGun.spreadBonus - amount * quality);
+      } else if (definition.EFFECT === 'BLADE_DAMAGE') {
+        OrbitBlade.damageFlat += amount * quality;
       } else if (definition.EFFECT === 'PULSE_TUNE') {
         this.applyPulseTune(definition, quality);
       } else if (definition.EFFECT === 'BLADE_TUNE') {
@@ -612,7 +635,7 @@
         root.Crossbow.wallPierce = true;
       }
       var e = definition.EFFECT;
-      if (e === 'UNLOCK_FLAME') root.FlameWeapon.unlocked = true;else if (e === 'FLAME_DAMAGE') root.FlameWeapon.damageMul *= 1.2;else if (e === 'FLAME_RATE') root.FlameWeapon.rate *= 1.15;else if (e === 'FLAME_ANGLE') root.FlameWeapon.angle += Math.PI / 12;else if (e === 'FLAME_RANGE') root.FlameWeapon.range += 30;else if (e === 'FLAME_BURN') root.FlameWeapon.burnLife += 1;else if (e === 'NAPALM') root.FlameWeapon.napalm = true;else if (e === 'BACKDRAFT') root.FlameWeapon.backdraft = true;else if (e === 'INFERNO') root.FlameWeapon.inferno = true;else if (e === 'UNLOCK_CROSSBOW') root.Crossbow.unlocked = true;else if (e === 'BOW_DAMAGE') root.Crossbow.damage *= 1.25;else if (e === 'BOW_RATE') root.Crossbow.rate *= 1.15;else if (e === 'BOW_COUNT') root.Crossbow.count += 1;else if (e === 'BOW_DECAY') root.Crossbow.decay = Math.max(0, root.Crossbow.decay - .1);else if (e === 'BOW_CRIT') root.Crossbow.crit += .1;else if (e === 'PILEDRIVER') root.Crossbow.piledriver = true;else if (e === 'SCATTER_BOLT') root.Crossbow.scatter = true;else if (e === 'MARKSMAN') root.Crossbow.marksman = true;
+      if (e === 'UNLOCK_FLAME') root.FlameWeapon.unlocked = true;else if (e === 'FLAME_DAMAGE') root.FlameWeapon.damageMul *= 1.2;else if (e === 'FLAME_RATE') root.FlameWeapon.rate *= 1.15;else if (e === 'FLAME_ANGLE') root.FlameWeapon.angle += (amount || Math.PI / 12) * quality;else if (e === 'FLAME_RANGE') root.FlameWeapon.range += (amount || 30) * quality;else if (e === 'FLAME_BURN') root.FlameWeapon.burnLife += (amount || 1) * quality;else if (e === 'NAPALM') root.FlameWeapon.napalm = true;else if (e === 'BACKDRAFT') root.FlameWeapon.backdraft = true;else if (e === 'INFERNO') root.FlameWeapon.inferno = true;else if (e === 'UNLOCK_CROSSBOW') root.Crossbow.unlocked = true;else if (e === 'BOW_DAMAGE') root.Crossbow.damage *= 1.25;else if (e === 'BOW_RATE') root.Crossbow.rate *= amount ? 1 / (1 - amount * quality) : 1.15;else if (e === 'BOW_COUNT') root.Crossbow.count += Math.round((amount || 1) * quality);else if (e === 'BOW_DECAY') root.Crossbow.decay = Math.max(0, root.Crossbow.decay - .1);else if (e === 'BOW_CRIT') root.Crossbow.crit += .1;else if (e === 'PILEDRIVER') root.Crossbow.piledriver = true;else if (e === 'SCATTER_BOLT') root.Crossbow.scatter = true;else if (e === 'MARKSMAN') root.Crossbow.marksman = true;
       var id = rarity && rarity.ID;
       if (id === 'RARE' || id === 'EPIC' || id === 'LEGENDARY' || id === 'RAINBOW') root.Objectives.add(id === 'RARE' ? 'rare' : id === 'EPIC' ? 'epic' : 'legend', 1);
     },
@@ -713,7 +736,7 @@
       if (distanceSq > 0) {
         var distance = Math.sqrt(distanceSq);
         var magnet = root.PowerUps.magnetActive();
-        var speed = magnet ? CONFIG.POWERUPS.MAGNET_PULL_SPEED : CONFIG.COIN.FLY_SPEED;
+        var speed = magnet ? (CONFIG.POWERUPS.MAGNET_PULL_SPEED * (1 + Meta.getGadgetAmount('magnet', 'speed'))) : CONFIG.COIN.FLY_SPEED;
         var movement = Math.min(distance, speed * dt);
         coin.x += dx / distance * movement;
         coin.y += dy / distance * movement;
@@ -787,7 +810,7 @@
       this.updateThrownBombs(dt);
       var magnet = this.magnetActive();
       var pickupDistanceSquared = CONFIG.POWERUPS.PICKUP_DISTANCE * CONFIG.POWERUPS.PICKUP_DISTANCE;
-      var pullSpeed = CONFIG.POWERUPS.MAGNET_PULL_SPEED;
+      var pullSpeed = (CONFIG.POWERUPS.MAGNET_PULL_SPEED * (1 + Meta.getGadgetAmount('magnet', 'speed')));
       for (var i = 0; i < this.pool.length; i++) {
         var item = this.pool[i];
         if (!item.active) continue;
@@ -856,9 +879,9 @@
     maxFor: function (typeIndex) {
       var M = CONFIG.POWERUPS.MAX;
       if (typeIndex === CONFIG.POWERUPS.TYPE_BOMB) return M.BOMB;
-      if (typeIndex === CONFIG.POWERUPS.TYPE_MAGNET) return M.MAGNET;
+      if (typeIndex === CONFIG.POWERUPS.TYPE_MAGNET) return M.MAGNET + Meta.getGadgetAmount('magnet', 'capacity');
       if (typeIndex === CONFIG.POWERUPS.TYPE_MEDKIT) return M.MEDKIT;
-      if (typeIndex === CONFIG.POWERUPS.TYPE_FREEZE) return M.FREEZE;
+      if (typeIndex === CONFIG.POWERUPS.TYPE_FREEZE) return M.FREEZE + Meta.getGadgetAmount('freeze', 'capacity');
       if (typeIndex === CONFIG.POWERUPS.TYPE_LASER_EMITTER) return M.LASER;
       return CONFIG.POWERUPS.MAX_INVENTORY_EACH;
     },
@@ -896,7 +919,7 @@
     },
     throwBomb: function (x, y) {
       for (var i = 0; i < this.thrownBombs.length; i++) if (!this.thrownBombs[i].active) {
-        var b = this.thrownBombs[i]; b.active = true; b.state = 'flight'; b.sx = Player.x; b.sy = Player.y; b.x = x; b.y = y; b.t = 0; return true;
+        var b = this.thrownBombs[i]; b.active = true; b.state = 'flight'; b.sx = Player.x; b.sy = Player.y; b.x = x; b.y = y; b.t = 0; if(root.Tutorial)root.Tutorial.notify('item');return true;
       }
       return false;
     },
@@ -907,11 +930,14 @@
         else if (b.state === 'fuse' && b.t >= CONFIG.BOMB_THROW.FUSE) { this.explodeThrownBomb(b); b.active = false; }
       }
     },
+    bombRadius: function (thrown) {
+      return (thrown ? CONFIG.BOMB_THROW.RADIUS : CONFIG.BALANCE.BOMB_RADIUS) + Meta.getGadgetAmount('bomb', 'radius');
+    },
     explodeThrownBomb: function (b) {
-      var r2 = CONFIG.BOMB_THROW.RADIUS * CONFIG.BOMB_THROW.RADIUS;
+      var radius=this.bombRadius(true), r2=radius*radius, bonus=1+Meta.getGadgetAmount('bomb','damage');
       for (var i = 0; i < Enemy.pool.length; i++) { var e = Enemy.pool[i], dx, dy; if (!e.active) continue; dx = e.x - b.x; dy = e.y - b.y; if (dx * dx + dy * dy > r2) continue;
-        if (e.typeIndex === CONFIG.ENEMY.TYPE_BOSS || e.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED) { e.hp -= e.maxHp * CONFIG.BOMB_THROW.BOSS_RATIO; e.stunTimer = Math.max(e.stunTimer || 0, CONFIG.BOMB_THROW.BOSS_STUN); if (e.hp <= 0) Enemy.kill(e); }
-        else Combat.hitEnemyFixed(e, e.maxHp * CONFIG.BOMB_THROW.HP_RATIO, e.x, e.y);
+        if (e.typeIndex === CONFIG.ENEMY.TYPE_BOSS || e.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED) { e.hp -= e.maxHp * Math.min(1, CONFIG.BOMB_THROW.BOSS_RATIO * bonus); e.stunTimer = Math.max(e.stunTimer || 0, CONFIG.BOMB_THROW.BOSS_STUN + Meta.getGadgetAmount('bomb','stun')); if (e.hp <= 0) Enemy.kill(e); }
+        else Combat.hitEnemyFixed(e, e.maxHp * Math.min(1, CONFIG.BOMB_THROW.HP_RATIO * bonus), e.x, e.y);
       }
       if (FX) FX.burst(b.x, b.y, '#ff8c00'); if (Camera && root.Settings.shake) Camera.startShake(8, .3);
     },
@@ -920,6 +946,7 @@
       if (typeIndex === CONFIG.POWERUPS.TYPE_LASER_EMITTER) {
         if (!root.LaserEmitter.activate()) return false;
         this.inventory[typeIndex]--;
+        if(root.Tutorial)root.Tutorial.notify('item');
         root.Objectives.add('items', 1);
         root.Achievements.add('items', 1);
         return true;
@@ -929,12 +956,14 @@
         used = this.useBomb();
       } else if (typeIndex === CONFIG.POWERUPS.TYPE_MAGNET) {
         // #57 主动磁铁：激活 N 秒全图高速吸附
-        this.magnetTimer = CONFIG.POWERUPS.MAGNET_DURATION;
+        this.magnetTimer = CONFIG.POWERUPS.MAGNET_DURATION + Meta.getGadgetAmount('magnet', 'duration');
         used = true;
       } else if (typeIndex === CONFIG.POWERUPS.TYPE_MEDKIT) {
         used = this.useMedkit();
       } else if (typeIndex === CONFIG.POWERUPS.TYPE_FREEZE) {
-        this.freezeTimer = CONFIG.POWERUPS.FREEZE_DURATION;
+        this.freezeTimer = CONFIG.POWERUPS.FREEZE_DURATION + Meta.getGadgetAmount('freeze', 'duration');
+        var shield = Player.maxHp * Meta.getGadgetAmount('freeze', 'shield');
+        if (shield > 0) { Player.shield = Math.max(Player.shield, shield); Player.shieldTimer = Math.max(Player.shieldTimer || 0, CONFIG.POWERUPS.UPGRADE_SHIELD_TIME); }
         used = true;
       } else if (typeIndex === CONFIG.POWERUPS.TYPE_LASER_EMITTER) {
         used = root.LaserEmitter.activate();
@@ -942,6 +971,7 @@
         used = root.MortarStrike.activate();
       }
       if (used) {
+        if(root.Tutorial)root.Tutorial.notify('item');
         this.inventory[typeIndex] -= 1;
         root.Objectives.add('items', 1);
         root.Achievements.add('items', 1);
@@ -949,18 +979,18 @@
       return used;
     },
     useBomb: function () {
-      var r2 = CONFIG.BALANCE.BOMB_RADIUS * CONFIG.BALANCE.BOMB_RADIUS;
+      var radius=this.bombRadius(false),r2=radius*radius,bonus=1+Meta.getGadgetAmount('bomb','damage');
       // 即使范围内暂时没有敌人也明确播放中心爆炸，便于确认道具已触发。
       if (FX && FX.burst) FX.burst(Player.x, Player.y, '#ffb13b');
       for (var i = 0; i < Enemy.pool.length; i++) {
         var e = Enemy.pool[i];
         if (!e.active || (e.x - Player.x) * (e.x - Player.x) + (e.y - Player.y) * (e.y - Player.y) > r2) continue;
         if (e.typeIndex === CONFIG.ENEMY.TYPE_BOSS || e.typeIndex === CONFIG.ENEMY.TYPE_BOSS_RANGED) {
-          e.hp = Math.max(0, e.hp - e.hp * CONFIG.BALANCE.BOMB_BOSS_CURRENT_HP_RATIO);
-          e.stunTimer = Math.max(e.stunTimer, CONFIG.BALANCE.BOSS_STUN);
+          e.hp = Math.max(0, e.hp - e.hp * Math.min(1, CONFIG.BALANCE.BOMB_BOSS_CURRENT_HP_RATIO * bonus));
+          e.stunTimer = Math.max(e.stunTimer, CONFIG.BALANCE.BOSS_STUN + Meta.getGadgetAmount('bomb','stun'));
           if (e.hp <= 0) Enemy.kill(e);
         } else if (e.typeIndex === CONFIG.ENEMY.TYPE_ELITE) {
-          Combat.hitEnemyFixed(e, root.Weapons.getMainDamage() * CONFIG.BALANCE.BOMB_ELITE_MULTIPLIER, e.x, e.y);
+          Combat.hitEnemyFixed(e, root.Weapons.getMainDamage() * CONFIG.BALANCE.BOMB_ELITE_MULTIPLIER * bonus, e.x, e.y);
         } else {
           e.hp = 0;
           Enemy.kill(e);
@@ -1032,7 +1062,7 @@
       if (this.bombAim.active) { var px = Player.x - Camera.x, py = Player.y - Camera.y, ax = this.bombAim.x - Camera.x, ay = this.bombAim.y - Camera.y; ctx.save(); ctx.fillStyle = 'rgba(255,140,0,.08)'; ctx.strokeStyle = '#ff8c00'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(px, py, c.RANGE, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(ax, ay); ctx.stroke(); ctx.beginPath(); ctx.arc(ax, ay, 14, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
       for (var i = 0; i < this.thrownBombs.length; i++) { var b = this.thrownBombs[i]; if (!b.active) continue; var x = b.x - Camera.x, y = b.y - Camera.y;
         if (b.state === 'flight') { var p = Math.min(1, b.t / c.FLIGHT), arc = Math.sin(p * Math.PI) * 35; x = (b.sx + (b.x - b.sx) * p) - Camera.x; y = (b.sy + (b.y - b.sy) * p) - Camera.y - arc; ctx.fillStyle = '#ff8c00'; ctx.beginPath(); ctx.arc(x, y, 10, 0, Math.PI * 2); ctx.fill(); }
-        else { var pulse = 1 + .08 * (.5 + .5 * Math.sin(b.t * 7)); ctx.save(); ctx.strokeStyle = '#e74c3c'; ctx.fillStyle = 'rgba(231,76,60,.12)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x, y, c.RADIUS * pulse, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#fff'; ctx.font = 'bold 34px Arial'; ctx.textAlign = 'center'; ctx.fillText(String(Math.max(1, Math.ceil(c.FUSE - b.t))), x, y - c.RADIUS - 12); ctx.restore(); }
+        else { var pulse = 1 + .08 * (.5 + .5 * Math.sin(b.t * 7)); ctx.save(); ctx.strokeStyle = '#e74c3c'; ctx.fillStyle = 'rgba(231,76,60,.12)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(x, y, this.bombRadius(true) * pulse, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#fff'; ctx.font = 'bold 34px Arial'; ctx.textAlign = 'center'; ctx.fillText(String(Math.max(1, Math.ceil(c.FUSE - b.t))), x, y - this.bombRadius(true) - 12); ctx.restore(); }
       }
     }
   };
